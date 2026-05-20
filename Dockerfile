@@ -188,9 +188,9 @@ RUN --mount=type=bind,from=flashinfer-builder,source=/wheels,target=/fi-wheels \
 # Point PyTorch's bundled NCCL symlink at the Spark-aware NCCL built in base.
 # Without this, torch/ray would load the wheel-bundled NCCL instead.
 RUN rm -f /usr/local/lib/python3.12/dist-packages/nvidia/nccl/lib/libnccl.so.2 \
- && ln -s /usr/lib/aarch64-linux-gnu/libnccl.so.2 \
+ && ln -s /usr/local/lib/libnccl.so.2 \
       /usr/local/lib/python3.12/dist-packages/nvidia/nccl/lib/libnccl.so.2 \
- && sha256sum /usr/lib/aarch64-linux-gnu/libnccl.so.2 \
+ && sha256sum /usr/local/lib/libnccl.so.2 \
       > /workspace/build-artifacts/nccl-sha256.txt
 
 COPY build-metadata.yaml /workspace/build-metadata.yaml

@@ -30,7 +30,9 @@ COPY locks/apt-sources.list /tmp/apt-sources.list
 COPY locks/apt-packages.txt /tmp/apt-packages.txt
 COPY locks/python-bootstrap.txt /tmp/python-bootstrap.txt
 COPY locks/python-build.txt /tmp/python-build.txt
-COPY locks/python-runtime.txt /tmp/python-runtime.txt
+# NOTE: python-runtime.txt is intentionally NOT copied here.
+# It is copied in the runner stage so that bumping runtime deps
+# only invalidates runner, not the expensive torch/NCCL/flashinfer caches.
 
 # Replace apt sources with pinned snapshot, install exact-versioned packages,
 # then bootstrap uv from the hashed lockfile.
@@ -146,6 +148,9 @@ RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
 FROM base AS runner
 ARG PYTORCH_INDEX_URL
 ARG PYPI_INDEX_URL
+
+# Copied here (not in apt-base) so runtime dep changes only bust this stage.
+COPY locks/python-runtime.txt /tmp/python-runtime.txt
 
 WORKDIR /workspace
 

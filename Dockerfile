@@ -158,6 +158,12 @@ RUN mkdir -p tiktoken_encodings \
  && cd tiktoken_encodings && sha256sum -c /tmp/tiktoken.sha256
 ENV TIKTOKEN_ENCODINGS_BASE=/workspace/tiktoken_encodings
 
+# instanttensor==0.1.0 requires libboost headers to compile from sdist.
+# Installed here (not in apt-base) so only the runner stage is invalidated
+# when this dep changes, preserving expensive upstream build caches.
+RUN apt-get install -y --no-install-recommends libboost-dev \
+ && rm -rf /var/lib/apt/lists/*
+
 # Install runtime deps and the wheels built in stages 2 and 3.
 # External deps are resolved from the hashed lockfile; locally-built wheels
 # are installed by exact file path.

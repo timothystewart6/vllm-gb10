@@ -58,7 +58,8 @@ RUN rm -f /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources \
 RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
     uv pip install --require-hashes -r /tmp/python-build.txt \
       --index-url ${PYPI_INDEX_URL} \
-      --extra-index-url ${PYTORCH_INDEX_URL}
+      --extra-index-url ${PYTORCH_INDEX_URL} \
+      --index-strategy unsafe-best-match
 
 # NCCL - clone the exact tag, verify the commit SHA matches versions.env,
 # then build with sm_121 gencode and install as .deb so it replaces the
@@ -152,6 +153,7 @@ RUN --mount=type=bind,from=flashinfer-builder,source=/wheels,target=/fi-wheels \
     uv pip install --require-hashes -r /tmp/python-runtime.txt \
       --index-url ${PYPI_INDEX_URL} \
       --extra-index-url ${PYTORCH_INDEX_URL} \
+      --index-strategy unsafe-best-match \
  && uv pip install --no-deps /fi-wheels/*.whl /vllm-wheels/*.whl \
  && mkdir -p /workspace/build-artifacts \
  && sha256sum /fi-wheels/*.whl /vllm-wheels/*.whl \

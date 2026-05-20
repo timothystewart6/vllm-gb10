@@ -4,26 +4,16 @@ ARG CUDA_BASE_IMAGE
 ARG CUDA_BASE_DIGEST
 
 ############################################################
-# STAGE 1: base - CUDA + system deps + PyTorch + NCCL
+# STAGE 1a: apt-base - CUDA + system packages + uv bootstrap
+# Cache key: apt-sources.list, apt-packages.txt, python-bootstrap.txt
 ############################################################
 # Base image is pinned by digest, not just tag - Docker tags are mutable.
-FROM ${CUDA_BASE_IMAGE}@${CUDA_BASE_DIGEST} AS base
+FROM ${CUDA_BASE_IMAGE}@${CUDA_BASE_DIGEST} AS apt-base
 
 ARG BUILD_JOBS=8
 ARG UV_VERSION
-ARG TORCH_VERSION
-ARG TORCHVISION_VERSION
-ARG TORCHAUDIO_VERSION
-ARG TRITON_VERSION
 ARG PYTORCH_INDEX_URL
 ARG PYPI_INDEX_URL
-ARG NVSHMEM_VERSION
-ARG TVM_FFI_VERSION
-ARG TILELANG_VERSION
-ARG NUMBA_VERSION
-ARG NCCL_REPO
-ARG NCCL_REF
-ARG NCCL_COMMIT
 ARG TORCH_CUDA_ARCH_LIST=12.1a
 ARG SOURCE_DATE_EPOCH
 
@@ -54,12 +44,38 @@ RUN rm -f /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources \
       -r /tmp/python-bootstrap.txt \
       --index-url ${PYPI_INDEX_URL}
 
+############################################################
+# STAGE 1b: torch-base - PyTorch stack on top of apt-base
+# Cache key: python-build.txt, PYTORCH_INDEX_URL
+# Rebuilds only when PyTorch/triton version changes.
+############################################################
+FROM apt-base AS torch-base
+
 # PyTorch stack and build deps - exact versions and hashes from the lockfile.
 RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
     uv pip install --require-hashes -r /tmp/python-build.txt \
       --index-url ${PYPI_INDEX_URL} \
       --extra-index-url ${PYTORCH_INDEX_URL} \
       --index-strategy unsafe-best-match
+
+############################################################
+# STAGE 1c: base - NCCL built from source on top of torch-base
+# Cache key: NCCL_REPO, NCCL_REF, NCCL_COMMIT
+# Rebuilds only when NCCL version changes.
+############################################################
+FROM torch-base AS base
+
+ARG TORCH_VERSION
+ARG TORCHVISION_VERSION
+ARG TORCHAUDIO_VERSION
+ARG TRITON_VERSION
+ARG NVSHMEM_VERSION
+ARG TVM_FFI_VERSION
+ARG TILELANG_VERSION
+ARG NUMBA_VERSION
+ARG NCCL_REPO
+ARG NCCL_REF
+ARG NCCL_COMMIT
 
 # NCCL - clone the exact tag, verify the commit SHA matches versions.env,
 # then build with sm_121 gencode and install as .deb so it replaces the

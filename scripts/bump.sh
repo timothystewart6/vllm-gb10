@@ -213,11 +213,8 @@ _fetch_vllm_req "requirements/build/cuda.txt" >> "${TMP_BUILD}"
 # Only extract the 'requires' array - not build-backend or backend-path values.
 python3 -c "
 import urllib.request, re, sys
-commit = '${FLASHINFER_COMMIT}'
-url = f'https://raw.githubusercontent.com/flashinfer-ai/flashinfer/{commit}/pyproject.toml'
-try:
-    with urllib.request.urlopen(url, timeout=30) as r:
-        content = r.read().decode()
+
+def extract_build_requires(content):
     in_build = False
     in_requires = False
     for line in content.splitlines():
@@ -235,8 +232,24 @@ try:
                     print(dep)
                 if ']' in stripped:
                     in_requires = False
-except Exception as e:
-    print(f'# WARNING: could not fetch FlashInfer pyproject.toml: {e}', file=sys.stderr)
+
+commit = '${FLASHINFER_COMMIT}'
+# Parse top-level + sub-package pyproject.toml files so that build deps
+# declared only in flashinfer-cubin or flashinfer-jit-cache (e.g. nvidia-ml-py)
+# are included in python-build.txt.
+pyproject_paths = [
+    'pyproject.toml',
+    'flashinfer-cubin/pyproject.toml',
+    'flashinfer-jit-cache/pyproject.toml',
+]
+for relpath in pyproject_paths:
+    url = f'https://raw.githubusercontent.com/flashinfer-ai/flashinfer/{commit}/{relpath}'
+    try:
+        with urllib.request.urlopen(url, timeout=30) as r:
+            content = r.read().decode()
+        extract_build_requires(content)
+    except Exception as e:
+        print(f'# WARNING: could not fetch FlashInfer {relpath}: {e}', file=sys.stderr)
 " >> "${TMP_BUILD}"
 
 uv pip compile \

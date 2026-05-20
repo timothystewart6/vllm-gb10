@@ -1,0 +1,43 @@
+# .dockerignore
+#
+# Keep the build context small. The Dockerfile only COPYs:
+#   locks/         - all lockfiles
+#   checksums/     - tiktoken.sha256
+#   build-metadata.yaml - generated before docker build; must NOT be excluded
+#
+# build-metadata.yaml is in .gitignore but must be present in the build
+# context. Do not add it here.
+
+# Version control
+.git/
+.gitignore
+
+# Working/scratch folder (gitignored)
+zIgnore/
+
+# Scripts are not COPYed into the image
+scripts/
+
+# Docs and CI config are not needed in the build context
+docs/
+tests/
+.github/
+
+# Build-time generated files that should not bleed into the context
+build-metadata.yaml.bak
+*.local
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# macOS
+.DS_Store
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo

@@ -85,10 +85,8 @@ RUN git clone --depth 1 -b ${NCCL_REF} ${NCCL_REPO} /opt/nccl \
  && [ "$(git rev-parse HEAD)" = "${NCCL_COMMIT}" ] \
  && make -j ${BUILD_JOBS} src.build \
       NVCC_GENCODE="-gencode=arch=compute_121,code=sm_121" \
- && make pkg.debian.build \
- && apt-get install -y --no-install-recommends --allow-downgrades \
-      ./build/pkg/deb/*.deb \
- && rm -rf /var/lib/apt/lists/*
+ && make install PREFIX=/usr/local \
+ && ldconfig
 
 ############################################################
 # STAGE 2: flashinfer-builder - build FlashInfer wheels

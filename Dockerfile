@@ -109,7 +109,8 @@ RUN git clone --recursive ${FLASHINFER_REPO} /workspace/flashinfer \
 WORKDIR /workspace/flashinfer
 RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
     --mount=type=cache,id=ccache,target=/root/.ccache \
-    uv build --no-build-isolation --wheel . --out-dir=/wheels -v \
+    if [ -z "${SOURCE_DATE_EPOCH}" ]; then unset SOURCE_DATE_EPOCH; fi \
+ && uv build --no-build-isolation --wheel . --out-dir=/wheels -v \
  && cd flashinfer-cubin && uv build --no-build-isolation --wheel . --out-dir=/wheels -v \
  && cd ../flashinfer-jit-cache && uv build --no-build-isolation --wheel . --out-dir=/wheels -v
 
@@ -130,7 +131,8 @@ RUN git clone --recursive ${VLLM_REPO} /workspace/vllm \
 WORKDIR /workspace/vllm
 RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
     --mount=type=cache,id=ccache,target=/root/.ccache \
-    python3 use_existing_torch.py \
+    if [ -z "${SOURCE_DATE_EPOCH}" ]; then unset SOURCE_DATE_EPOCH; fi \
+ && python3 use_existing_torch.py \
  && uv build --no-build-isolation --wheel . --out-dir=/wheels -v
 
 # NOTE: No patches, no PR reverts, no requirements/cuda.txt edits. If upstream

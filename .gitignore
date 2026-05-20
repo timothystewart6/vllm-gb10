@@ -1,0 +1,29 @@
+# Local working folder - not committed
+zIgnore/
+
+# Generated at build time - not a repo artifact
+build-metadata.yaml
+
+# Local overrides and personal config
+*.local
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+
+# macOS
+.DS_Store
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Downloaded / scratch
+/tmp/

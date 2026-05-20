@@ -1,0 +1,35 @@
+# apt packages required by the Dockerfile.
+# Format: one package per line. Comments (#) and blank lines are ignored.
+#
+# After running scripts/bump.sh, each entry is pinned to an exact version:
+#   package=1.2.3-4ubuntu5
+# bump.sh resolves versions via apt-cache madison inside a container running
+# the pinned CUDA base image against the pinned apt snapshot in apt-sources.list.
+#
+# Until bump.sh has run, these unversioned names are seeds only.
+# Do NOT build the Docker image until bump.sh has populated exact versions.
+
+# --- Build tools ---
+git
+build-essential
+cmake
+ninja-build
+ccache
+wget
+curl
+ca-certificates
+pkg-config
+unzip
+
+# --- Python development headers ---
+python3-dev
+python3-pip
+
+# --- NCCL .deb packaging (required for `make pkg.debian.build`) ---
+debhelper
+dh-make
+fakeroot
+
+# --- NCCL InfiniBand and NUMA support ---
+libibverbs-dev
+libnuma-dev

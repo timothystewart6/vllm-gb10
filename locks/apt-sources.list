@@ -1,0 +1,16 @@
+# Pinned apt repositories for reproducible builds.
+# snapshot.ubuntu.com provides immutable, point-in-time mirrors of Ubuntu repos.
+# Snapshot date: 2026-04-01T00:00:00Z
+#
+# The Dockerfile replaces /etc/apt/sources.list with this file and removes
+# all /etc/apt/sources.list.d/ entries before running apt-get update, so
+# no CUDA or third-party apt repos are active during the build.
+# CUDA is pre-installed in the base image; we do not add CUDA apt repos here.
+#
+# To advance the snapshot date: update the timestamp below, commit this file,
+# then run scripts/bump.sh to regenerate locks/apt-packages.txt with new
+# versioned entries from the new snapshot.
+
+deb https://snapshot.ubuntu.com/ubuntu/20260401T000000Z/ noble main restricted universe multiverse
+deb https://snapshot.ubuntu.com/ubuntu/20260401T000000Z/ noble-updates main restricted universe multiverse
+deb https://snapshot.ubuntu.com/ubuntu/20260401T000000Z/ noble-security main restricted universe multiverse

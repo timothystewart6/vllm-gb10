@@ -60,6 +60,7 @@ OLD_NCCL_COMMIT="${NCCL_COMMIT:-UNSET}"
 OLD_VLLM_COMMIT="${VLLM_COMMIT:-UNSET}"
 OLD_FLASHINFER_COMMIT="${FLASHINFER_COMMIT:-UNSET}"
 OLD_CUDA_BASE_DIGEST="${CUDA_BASE_DIGEST:-UNSET}"
+OLD_RAY_VERSION="${RAY_VERSION}"
 OLD_UV_VERSION="${UV_VERSION}"
 OLD_TORCH_VERSION="${TORCH_VERSION}"
 OLD_TORCHVISION_VERSION="${TORCHVISION_VERSION}"
@@ -81,6 +82,33 @@ resolve_git_sha() {
   printf '%s' "${sha}"
 }
 
+# ---------------------------------------------------------------------------
+# 3a. Resolve latest stable PyPI versions
+# Queries PyPI JSON API for the highest non-pre-release version of each package.
+# This keeps runtime dependencies current without manual edits to versions.env.
+# ---------------------------------------------------------------------------
+resolve_pypi_latest() {
+  local pkg="$1"
+  python3 -c "
+import urllib.request, json, sys
+url = 'https://pypi.org/pypi/${pkg}/json'
+with urllib.request.urlopen(url, timeout=30) as r:
+    data = json.load(r)
+vers = [
+    v for v in data['releases']
+    if not any(c in v for c in ('a', 'b', 'rc', 'dev'))
+    and data['releases'][v]  # skip empty/yanked
+]
+vers.sort(key=lambda v: list(map(int, v.split('.'))))
+print(vers[-1])
+" 2>/dev/null || { echo "[bump.sh] ERROR: failed to resolve latest PyPI version for ${pkg}" >&2; exit 1; }
+}
+
+log "Resolving latest Ray version from PyPI..."
+RAY_VERSION=$(resolve_pypi_latest ray)
+log "  RAY_VERSION=${RAY_VERSION} (was ${OLD_RAY_VERSION})"
+
+# ---------------------------------------------------------------------------
 log "Resolving NCCL_COMMIT for ${NCCL_REF}..."
 NCCL_COMMIT=$(resolve_git_sha "${NCCL_REPO}" "${NCCL_REF}")
 log "  NCCL_COMMIT=${NCCL_COMMIT}"
@@ -124,6 +152,7 @@ if [[ "${VLLM_COMMIT}" != "${OLD_VLLM_COMMIT}" ]]; then
 elif [[ "${NCCL_COMMIT}"         != "${OLD_NCCL_COMMIT}"         ||
         "${FLASHINFER_COMMIT}"   != "${OLD_FLASHINFER_COMMIT}"   ||
         "${CUDA_BASE_DIGEST}"    != "${OLD_CUDA_BASE_DIGEST}"    ||
+        "${RAY_VERSION}"         != "${OLD_RAY_VERSION}"         ||
         "${UV_VERSION}"          != "${OLD_UV_VERSION}"          ||
         "${TORCH_VERSION}"       != "${OLD_TORCH_VERSION}"       ||
         "${TORCHVISION_VERSION}" != "${OLD_TORCHVISION_VERSION}" ]]; then
@@ -151,6 +180,7 @@ _update_env GB10_BUILD        "${GB10_BUILD}"
 _update_env NCCL_COMMIT       "${NCCL_COMMIT}"
 _update_env VLLM_COMMIT       "${VLLM_COMMIT}"
 _update_env FLASHINFER_COMMIT "${FLASHINFER_COMMIT}"
+_update_env RAY_VERSION       "${RAY_VERSION}"
 
 log "versions.env updated with resolved SHAs and digest."
 

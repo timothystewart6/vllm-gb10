@@ -162,7 +162,7 @@ ENV TIKTOKEN_ENCODINGS_BASE=/workspace/tiktoken_encodings
 # Installed here (not in apt-base) so only the runner stage is invalidated
 # when this dep changes, preserving expensive upstream build caches.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends libboost-dev \
+ && apt-get install -y --no-install-recommends libboost-dev libaio-dev \
  && rm -rf /var/lib/apt/lists/*
 
 # Install runtime deps and the wheels built in stages 2 and 3.

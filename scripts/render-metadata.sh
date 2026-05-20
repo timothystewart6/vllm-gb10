@@ -22,8 +22,10 @@ set -a
 source "${REPO_ROOT}/versions.env"
 set +a
 
-# Git SHA of this repo
-REPO_COMMIT="$(git -C "${REPO_ROOT}" rev-parse HEAD)"
+# Git SHA of this repo (env override allows use on hosts without .git, e.g. rsync deployments)
+if [[ -z "${REPO_COMMIT:-}" ]]; then
+  REPO_COMMIT="$(git -C "${REPO_ROOT}" rev-parse HEAD)"
+fi
 
 # Build timestamp from SOURCE_DATE_EPOCH (set by caller, not stored in repo)
 if [[ -z "${SOURCE_DATE_EPOCH:-}" ]]; then

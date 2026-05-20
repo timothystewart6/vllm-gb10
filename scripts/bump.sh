@@ -210,6 +210,7 @@ _fetch_vllm_req "requirements/build.txt"      >> "${TMP_BUILD}"
 _fetch_vllm_req "requirements/build/cuda.txt" >> "${TMP_BUILD}"
 
 # FlashInfer [build-system].requires from pyproject.toml at FLASHINFER_COMMIT
+# Only extract the 'requires' array - not build-backend or backend-path values.
 python3 -c "
 import urllib.request, re, sys
 commit = '${FLASHINFER_COMMIT}'
@@ -218,6 +219,7 @@ try:
     with urllib.request.urlopen(url, timeout=30) as r:
         content = r.read().decode()
     in_build = False
+    in_requires = False
     for line in content.splitlines():
         stripped = line.strip()
         if stripped == '[build-system]':
@@ -226,8 +228,13 @@ try:
         if stripped.startswith('[') and in_build:
             break
         if in_build:
-            for dep in re.findall(r'\"([^\"]+)\"', stripped):
-                print(dep)
+            if stripped.startswith('requires'):
+                in_requires = True
+            if in_requires:
+                for dep in re.findall(r'\"([^\"]+)\"', stripped):
+                    print(dep)
+                if ']' in stripped:
+                    in_requires = False
 except Exception as e:
     print(f'# WARNING: could not fetch FlashInfer pyproject.toml: {e}', file=sys.stderr)
 " >> "${TMP_BUILD}"
@@ -237,6 +244,7 @@ uv pip compile \
   --python-version 3.12 \
   --index-url "${PYPI_INDEX_URL}" \
   --extra-index-url "${PYTORCH_INDEX_URL}" \
+  --index-strategy unsafe-best-match \
   --output-file "${LOCKS}/python-build.txt" \
   "${TMP_BUILD}"
 
@@ -274,6 +282,7 @@ uv pip compile \
   --python-version 3.12 \
   --index-url "${PYPI_INDEX_URL}" \
   --extra-index-url "${PYTORCH_INDEX_URL}" \
+  --index-strategy unsafe-best-match \
   --output-file "${LOCKS}/python-runtime.txt" \
   "${TMP_RUNTIME}"
 

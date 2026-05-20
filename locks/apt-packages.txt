@@ -10,26 +10,26 @@
 # Do NOT build the Docker image until bump.sh has populated exact versions.
 
 # --- Build tools ---
-git
-build-essential
-cmake
-ninja-build
-ccache
-wget
-curl
-ca-certificates
-pkg-config
-unzip
 
 # --- Python development headers ---
-python3-dev
-python3-pip
 
 # --- NCCL .deb packaging (required for `make pkg.debian.build`) ---
-debhelper
-dh-make
-fakeroot
 
 # --- NCCL InfiniBand and NUMA support ---
-libibverbs-dev
-libnuma-dev
+build-essential=12.10ubuntu1
+ca-certificates=20240203
+ccache=4.9.1-1
+cmake=3.28.3-1build7
+curl=8.5.0-2ubuntu10.8
+debhelper=13.14.1ubuntu5
+dh-make=2.202304
+fakeroot=1.33-1
+git=1:2.43.0-1ubuntu7.3
+libibverbs-dev=50.0-2ubuntu0.2
+libnuma-dev=2.0.18-1ubuntu0.24.04.1
+ninja-build=1.11.1-2
+pkg-config=1.8.1-2build1
+python3-dev=3.12.3-0ubuntu2.1
+python3-pip=24.0+dfsg-1ubuntu1.3
+unzip=6.0-28ubuntu4.1
+wget=1.21.4-1ubuntu4.1

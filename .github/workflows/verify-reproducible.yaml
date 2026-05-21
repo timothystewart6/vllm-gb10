@@ -22,9 +22,9 @@
 # Actions are pinned by SHA per the SPEC. Update via Dependabot (Phase 5).
 #
 # actions/checkout             v4.2.2  => 11bd71901bbe5b1630ceea73d27597364c9af683
-# docker/setup-buildx-action   v3.10.0 => b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2
-# docker/build-push-action     v6.15.0 => 471d1dc4e07e5cdedd4c2171150001c434f0b7a4
-# actions/upload-artifact      v4.6.2  => ea165f8d65b6e75b540449e92b4886f43607fa02
+# docker/setup-buildx-action   v4.0.0  => 4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd
+# docker/build-push-action     v7.2.0  => f9f3042f7e2789586610d6e8b85c8f03e5195baf
+# actions/upload-artifact      v7.0.1  => 043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
 
 name: Verify reproducible build
 
@@ -57,11 +57,11 @@ jobs:
           bash scripts/render-metadata.sh > build-metadata.yaml
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd
 
       # ── Build 1 of 2 (warm BuildKit cache) ─────────────────────────────────
       - name: Build 1 of 2 (warm cache)
-        uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf
         with:
           context: .
           target: runner
@@ -131,7 +131,7 @@ jobs:
 
       # ── Build 2 of 2 (no-cache - full rebuild from scratch) ────────────────
       - name: Build 2 of 2 (no-cache)
-        uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf
         with:
           context: .
           target: runner
@@ -248,7 +248,7 @@ jobs:
 
       - name: Upload artifacts and diffs
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: verify-reproducible-${{ github.run_id }}
           path: /tmp/verify/

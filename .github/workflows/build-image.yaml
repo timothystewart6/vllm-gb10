@@ -7,11 +7,11 @@
 # (added in Phase 5) - do NOT track floating tags.
 #
 # actions/checkout             v4.2.2  => 11bd71901bbe5b1630ceea73d27597364c9af683
-# docker/setup-buildx-action   v3.10.0 => b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2
-# docker/login-action          v3.3.0  => 9780b0c442fbb1117ed29e0efdff1e18412f7567
-# docker/metadata-action       v5.7.0  => 902fa8ec7d6ecbf8d84d538b9b233a880e428804
-# docker/build-push-action     v6.15.0 => 471d1dc4e07e5cdedd4c2171150001c434f0b7a4
-# actions/upload-artifact      v4.6.2  => ea165f8d65b6e75b540449e92b4886f43607fa02
+# docker/setup-buildx-action   v4.0.0  => 4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd
+# docker/login-action          v4.1.0  => 4907a6ddec9925e35a0a9e82d7399ccc52663121
+# docker/metadata-action       v6.0.0  => 030e881283bb7a6894de51c315a6bfe6a94e05cf
+# docker/build-push-action     v7.2.0  => f9f3042f7e2789586610d6e8b85c8f03e5195baf
+# actions/upload-artifact      v7.0.1  => 043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
 
 name: Build vllm-gb10 image
 
@@ -56,10 +56,10 @@ jobs:
           bash scripts/render-metadata.sh > build-metadata.yaml
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd
 
       - name: Log in to GHCR
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -76,7 +76,7 @@ jobs:
 
       - name: Docker metadata
         id: meta
-        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804
+        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf
         with:
           images: ghcr.io/timothystewart6/vllm-gb10
           # Four published tags per build:
@@ -91,7 +91,7 @@ jobs:
             type=sha,prefix=sha-,format=short
 
       - name: Build image (push=false, iterate until green)
-        uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf
         with:
           context: .
           target: runner
@@ -171,7 +171,7 @@ jobs:
             > /tmp/build-artifacts/apt-versions.txt
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: build-artifacts-${{ github.sha }}
           path: /tmp/build-artifacts/

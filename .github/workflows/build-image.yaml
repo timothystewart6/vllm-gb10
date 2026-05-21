@@ -127,6 +127,17 @@ jobs:
             FLASHINFER_CUDA_ARCH_LIST=${{ env.FLASHINFER_CUDA_ARCH_LIST }}
             SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }}
 
+      - name: Smoke test
+        # Runs tests/smoke-test.sh inside the locally-loaded image.
+        # The runner IS a DGX Spark so --gpus all works here.
+        # Multiple docker containers can share GPU access; the running vllm
+        # service does not prevent the smoke test from seeing the GPU.
+        run: |
+          IMAGE="ghcr.io/timothystewart6/vllm-gb10:${{ env.VLLM_REF }}-gb10.${{ env.GB10_BUILD }}"
+          docker run --rm --gpus all \
+            -v "${{ github.workspace }}/tests/smoke-test.sh:/tmp/smoke-test.sh:ro" \
+            "${IMAGE}" bash /tmp/smoke-test.sh
+
       - name: Extract build artifacts from image
         # Extract the authoritative artifact set for the verify-reproducible
         # workflow to compare. pip freeze and apt versions are runtime reads;

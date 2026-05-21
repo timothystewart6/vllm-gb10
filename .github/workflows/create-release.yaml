@@ -1,0 +1,144 @@
+# .github/workflows/create-release.yaml
+#
+# Creates a GitHub Release whenever a v*-gb10.* tag is pushed.
+# Runs on ubuntu-latest (GitHub-hosted) - no GPU or aarch64 needed.
+# The release body is a markdown table of every pinned component from
+# versions.env, so users can diff two builds without pulling either image.
+#
+# Typical flow:
+#   1. CI green on main.
+#   2. git tag v0.20.1-gb10.0 && git push origin v0.20.1-gb10.0
+#   3. This workflow fires, creates the release with the component table.
+#
+# actions/checkout v4.2.2 => 11bd71901bbe5b1630ceea73d27597364c9af683
+
+name: Create release on tag
+
+on:
+  push:
+    tags:
+      - 'v*-gb10.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Source versions.env into GITHUB_ENV
+        run: |
+          grep -v '^\s*#' versions.env | grep -v '^\s*$' >> "$GITHUB_ENV"
+
+      - name: Generate release notes
+        run: |
+          TAG="${{ github.ref_name }}"
+          SHORT_SHA="${GITHUB_SHA::7}"
+
+          # Truncate long digests and commit SHAs for readability.
+          CUDA_DIGEST_SHORT="${CUDA_BASE_DIGEST::19}..."
+          VLLM_COMMIT_SHORT="${VLLM_COMMIT::12}"
+          FLASHINFER_COMMIT_SHORT="${FLASHINFER_COMMIT::12}"
+          NCCL_COMMIT_SHORT="${NCCL_COMMIT::12}"
+
+          python3 - <<PYEOF
+          import os
+
+          tag               = os.environ["GITHUB_REF_NAME"]
+          short_sha         = os.environ["GITHUB_SHA"][:7]
+          cuda_base_image   = os.environ["CUDA_BASE_IMAGE"]
+          cuda_base_digest  = os.environ["CUDA_BASE_DIGEST"]
+          gb10_build        = os.environ["GB10_BUILD"]
+          uv_version        = os.environ["UV_VERSION"]
+          torch_version     = os.environ["TORCH_VERSION"]
+          torchvision       = os.environ["TORCHVISION_VERSION"]
+          torchaudio        = os.environ["TORCHAUDIO_VERSION"]
+          triton_version    = os.environ["TRITON_VERSION"]
+          pytorch_index     = os.environ["PYTORCH_INDEX_URL"]
+          nvshmem_version   = os.environ["NVSHMEM_VERSION"]
+          tvm_ffi_version   = os.environ["TVM_FFI_VERSION"]
+          tilelang_version  = os.environ["TILELANG_VERSION"]
+          numba_version     = os.environ["NUMBA_VERSION"]
+          nccl_ref          = os.environ["NCCL_REF"]
+          nccl_commit       = os.environ["NCCL_COMMIT"]
+          vllm_ref          = os.environ["VLLM_REF"]
+          vllm_commit       = os.environ["VLLM_COMMIT"]
+          flashinfer_ref    = os.environ["FLASHINFER_REF"]
+          flashinfer_commit = os.environ["FLASHINFER_COMMIT"]
+          ray_version       = os.environ["RAY_VERSION"]
+          fastsafe_version  = os.environ["FASTSAFETENSORS_VERSION"]
+          instant_version   = os.environ["INSTANTTENSOR_VERSION"]
+          arch_list         = os.environ["TORCH_CUDA_ARCH_LIST"]
+
+          # GHCR image pull command
+          image = f"ghcr.io/timothystewart6/vllm-gb10:{tag}"
+
+          body = f"""## {tag}
+
+          > Reproducible vLLM image for NVIDIA DGX Spark (GB10 / sm_121a)
+
+          \`\`\`
+          docker pull {image}
+          \`\`\`
+
+          ### Component versions
+
+          | Component | Version / Ref | Commit / Digest |
+          |---|---|---|
+          | **vLLM** | {vllm_ref} | [{vllm_commit[:12]}](https://github.com/vllm-project/vllm/commit/{vllm_commit}) |
+          | **FlashInfer** | {flashinfer_ref} | [{flashinfer_commit[:12]}](https://github.com/flashinfer-ai/flashinfer/commit/{flashinfer_commit}) |
+          | **NCCL** | {nccl_ref} | [{nccl_commit[:12]}](https://github.com/NVIDIA/nccl/commit/{nccl_commit}) |
+          | **PyTorch** | {torch_version} | {pytorch_index} |
+          | **torchvision** | {torchvision} | - |
+          | **torchaudio** | {torchaudio} | - |
+          | **Triton** | {triton_version} | - |
+          | **CUDA base** | {cuda_base_image.split(":")[1]} | `{cuda_base_digest[:32]}...` |
+          | **uv** | {uv_version} | - |
+          | **Ray** | {ray_version} | - |
+          | **NVSHMEM** | {nvshmem_version} | - |
+          | **TVM-FFI** | {tvm_ffi_version} | - |
+          | **TileLang** | {tilelang_version} | - |
+          | **Numba** | {numba_version} | - |
+          | **fastsafetensors** | {fastsafe_version} | - |
+          | **instanttensor** | {instant_version} | - |
+          | **Target arch** | {arch_list} | - |
+          | **GB10_BUILD** | {gb10_build} | - |
+          | **Repo SHA** | {short_sha} | [{short_sha}](https://github.com/timothystewart6/vllm-gb10/commit/{os.environ["GITHUB_SHA"]}) |
+
+          ### Inspect inside the image
+
+          \`\`\`
+          docker run --rm {image} cat /workspace/build-metadata.yaml
+          \`\`\`
+
+          ### Quick start
+
+          \`\`\`
+          docker run --rm -it --gpus all --ipc=host --network host \\
+            -v ~/.cache/huggingface:/root/.cache/huggingface \\
+            {image} \\
+            vllm serve <model> --host 0.0.0.0 --port 8000
+          \`\`\`
+          """
+
+          # Strip leading indentation from the heredoc
+          import textwrap
+          body = textwrap.dedent(body)
+
+          with open("/tmp/release-notes.md", "w") as f:
+              f.write(body)
+
+          print("Release notes written.")
+          PYEOF
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "vllm-gb10 ${{ github.ref_name }}" \
+            --notes-file /tmp/release-notes.md

@@ -28,6 +28,10 @@ on:
       - tests/**
       - .github/workflows/build-image.yaml
 
+concurrency:
+  group: dgx-spark
+  cancel-in-progress: false
+
 permissions:
   contents: write
   packages: write

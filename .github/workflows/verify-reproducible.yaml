@@ -32,6 +32,10 @@ on:
   workflow_dispatch:
 
 # No packages: write needed - both builds are local only, never pushed.
+concurrency:
+  group: dgx-spark
+  cancel-in-progress: false
+
 permissions:
   contents: read
 

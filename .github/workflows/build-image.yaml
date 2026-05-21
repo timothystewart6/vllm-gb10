@@ -1,9 +1,7 @@
 # .github/workflows/build-image.yaml
 #
 # Builds the vllm-gb10 image on the self-hosted DGX Spark runner.
-#
-# Phase 3 state: push=false. Flip to true in the 'publish' job (Phase 3
-# step 18) once the first run is confirmed green.
+# Pushes to GHCR on every green build of main.
 #
 # Actions are pinned by SHA per the SPEC. Update SHAs via Dependabot
 # (added in Phase 5) - do NOT track floating tags.
@@ -66,15 +64,29 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Compute tag shorthand components
+        # Derive cu<major.minor> from CUDA_BASE_IMAGE and torch<major.minor>
+        # from TORCH_VERSION for the human-readable shorthand tag.
+        run: |
+          CUDA_SHORT="cu$(echo "$CUDA_BASE_IMAGE" | sed 's/.*cuda:\([0-9]*\.[0-9]*\)\.[0-9]*.*/\1/')"
+          TORCH_SHORT="torch$(echo "$TORCH_VERSION" | cut -d. -f1-2)"
+          echo "CUDA_SHORT=${CUDA_SHORT}" >> "$GITHUB_ENV"
+          echo "TORCH_SHORT=${TORCH_SHORT}" >> "$GITHUB_ENV"
+
       - name: Docker metadata
         id: meta
         uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804
         with:
           images: ghcr.io/timothystewart6/vllm-gb10
-          # No :latest tag. No bare VLLM_REF tag (it would be mutable).
-          # Exact gb10 revision + short SHA only.
+          # Four published tags per build:
+          #   1. Canonical immutable: VLLM_REF-gb10.N
+          #   2. Component shorthand: VLLM_REF-cu<x.y>-torch<x.y>-gb10.N
+          #   3. latest (mutable - always points at the most recent green build)
+          #   4. sha-<short_sha> (immutable, useful for exact-build references)
           tags: |
             type=raw,value=${{ env.VLLM_REF }}-gb10.${{ env.GB10_BUILD }}
+            type=raw,value=${{ env.VLLM_REF }}-${{ env.CUDA_SHORT }}-${{ env.TORCH_SHORT }}-gb10.${{ env.GB10_BUILD }}
+            type=raw,value=latest
             type=sha,prefix=sha-,format=short
 
       - name: Build image (push=false, iterate until green)
@@ -83,15 +95,15 @@ jobs:
           context: .
           target: runner
           platforms: linux/arm64
-          # Phase 3: push=false. Flip to true in the publish job (step 18).
-          push: false
+          push: true
           load: true
-          # provenance/sbom must be false with load=true for large images.
+          # provenance/sbom must remain false while load=true is set.
           # With provenance=true, buildx exports an OCI manifest-list and streams
           # it back to the Docker daemon; for images this size the BuildKit gRPC
           # session times out before the transfer completes (context deadline
-          # exceeded). provenance=false forces plain Docker image format, which
-          # loads without the session-level timeout.
+          # exceeded). provenance=false forces plain Docker image format, avoiding
+          # the timeout. The pushed image is a plain Docker manifest; attestations
+          # can be added in a later phase once load=true is dropped from this job.
           provenance: false
           sbom: false
           tags: ${{ steps.meta.outputs.tags }}

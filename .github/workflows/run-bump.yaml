@@ -1,0 +1,55 @@
+# .github/workflows/run-bump.yaml
+#
+# Runs scripts/bump.sh on the DGX Spark whenever versions.env changes in a PR.
+# Commits the resolved SHAs, updated GB10_BUILD, and regenerated lockfiles back
+# to the PR branch so the PR is always self-contained and ready to merge.
+#
+# Trigger: any PR (from this repo, not forks) that touches versions.env.
+#
+# actions/checkout  v4.2.2 => 11bd71901bbe5b1630ceea73d27597364c9af683
+
+name: Run bump.sh
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - versions.env
+
+# Only run one bump at a time per PR branch - cancel in-flight runs if a new
+# commit lands before the previous bump finishes.
+concurrency:
+  group: bump-${{ github.head_ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    runs-on: [self-hosted, linux, ARM64, dgx-spark]
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          # Check out the actual PR branch, not the synthetic merge commit,
+          # so we can commit and push back to it.
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run bump.sh
+        run: bash scripts/bump.sh
+
+      - name: Commit resolved SHAs and lockfiles back to PR branch
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add versions.env locks/
+          if git diff --staged --quiet; then
+            echo "Nothing changed - bump.sh was a no-op (all pins already current)."
+          else
+            git commit -m "chore(bump): resolve SHAs and regenerate lockfiles [skip ci]"
+            git push origin HEAD:${{ github.head_ref }}
+          fi

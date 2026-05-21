@@ -96,7 +96,7 @@ jobs:
           | **torchvision** | {torchvision} | - |
           | **torchaudio** | {torchaudio} | - |
           | **Triton** | {triton_version} | - |
-          | **CUDA base** | {cuda_base_image.split(":")[1]} | {cuda_base_digest[:32]}... |
+          | **CUDA base** | [{cuda_base_image.split(":")[1]}](https://hub.docker.com/layers/nvidia/cuda/{cuda_base_image.split(":")[1]}/images/{cuda_base_digest.replace(":", "-")}) | {cuda_base_digest[:32]}... |
           | **uv** | {uv_version} | - |
           | **Ray** | {ray_version} | - |
           | **NVSHMEM** | {nvshmem_version} | - |

@@ -96,8 +96,6 @@ jobs:
           sbom: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=vllm-gb10
-          cache-to: type=gha,mode=max,scope=vllm-gb10
           build-args: |
             CUDA_BASE_IMAGE=${{ env.CUDA_BASE_IMAGE }}
             CUDA_BASE_DIGEST=${{ env.CUDA_BASE_DIGEST }}

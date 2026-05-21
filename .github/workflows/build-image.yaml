@@ -29,7 +29,7 @@ on:
       - .github/workflows/build-image.yaml
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 jobs:
@@ -176,3 +176,12 @@ jobs:
           name: build-artifacts-${{ github.sha }}
           path: /tmp/build-artifacts/
           if-no-files-found: error
+
+      - name: Push release tag
+        # Tags the commit that produced this green build so create-release.yaml
+        # fires automatically. Skipped on workflow_dispatch re-runs of old commits
+        # (tag already exists) - the || true swallows the non-zero exit.
+        run: |
+          TAG="${VLLM_REF}-gb10.${GB10_BUILD}"
+          git tag "$TAG" || true
+          git push origin "$TAG" || true

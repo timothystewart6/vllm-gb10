@@ -86,8 +86,14 @@ jobs:
           # Phase 3: push=false. Flip to true in the publish job (step 18).
           push: false
           load: true
-          provenance: true
-          sbom: true
+          # provenance/sbom must be false with load=true for large images.
+          # With provenance=true, buildx exports an OCI manifest-list and streams
+          # it back to the Docker daemon; for images this size the BuildKit gRPC
+          # session times out before the transfer completes (context deadline
+          # exceeded). provenance=false forces plain Docker image format, which
+          # loads without the session-level timeout.
+          provenance: false
+          sbom: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=vllm-gb10

@@ -1,0 +1,255 @@
+# .github/workflows/verify-reproducible.yaml
+#
+# Builds the same commit twice and compares the five authoritative artifacts.
+# Manual trigger only - run before going public and after structural changes.
+#
+# Build 1 uses the warm BuildKit layer cache.
+# Build 2 uses no-cache to rebuild every layer from scratch, which is the
+# meaningful reproducibility test: the NCCL .deb packaging embeds build
+# timestamps, so the .deb bytes differ between runs, but the installed
+# libnccl.so.2 bytes must be identical. See SPEC section 7.
+#
+# Authoritative artifacts (FAIL on diff):
+#   wheel-sha256.txt    FlashInfer + vLLM wheel SHA256s
+#   nccl-sha256.txt     installed libnccl.so.2 SHA256 (not the .deb wrapper)
+#   build-metadata.yaml all version pins plus repo SHA and build timestamp
+#   pip-freeze.txt      pip freeze output from the runner image
+#   apt-versions.txt    dpkg-query installed package list
+#
+# Non-authoritative (REPORT only, never a gate):
+#   image digest - may differ due to NCCL .deb timestamp and layer mtimes
+#
+# Actions are pinned by SHA per the SPEC. Update via Dependabot (Phase 5).
+#
+# actions/checkout             v4.2.2  => 11bd71901bbe5b1630ceea73d27597364c9af683
+# docker/setup-buildx-action   v3.10.0 => b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2
+# docker/build-push-action     v6.15.0 => 471d1dc4e07e5cdedd4c2171150001c434f0b7a4
+# actions/upload-artifact      v4.6.2  => ea165f8d65b6e75b540449e92b4886f43607fa02
+
+name: Verify reproducible build
+
+on:
+  workflow_dispatch:
+
+# No packages: write needed - both builds are local only, never pushed.
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: [self-hosted, linux, ARM64, dgx-spark]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Source versions.env into GITHUB_ENV
+        run: |
+          grep -v '^\s*#' versions.env | grep -v '^\s*$' >> "$GITHUB_ENV"
+
+      - name: Set SOURCE_DATE_EPOCH from last commit
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+
+      - name: Generate build-metadata.yaml
+        # Generated once on the host, identical for both builds.
+        run: |
+          SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }} \
+          bash scripts/render-metadata.sh > build-metadata.yaml
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2
+
+      # ── Build 1 of 2 (warm BuildKit cache) ─────────────────────────────────
+      - name: Build 1 of 2 (warm cache)
+        uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4
+        with:
+          context: .
+          target: runner
+          platforms: linux/arm64
+          push: false
+          load: true
+          # provenance/sbom must remain false while load=true is set.
+          # See the comment in build-image.yaml for the full explanation.
+          provenance: false
+          sbom: false
+          tags: vllm-gb10:verify-build1
+          build-args: |
+            CUDA_BASE_IMAGE=${{ env.CUDA_BASE_IMAGE }}
+            CUDA_BASE_DIGEST=${{ env.CUDA_BASE_DIGEST }}
+            GB10_BUILD=${{ env.GB10_BUILD }}
+            UV_VERSION=${{ env.UV_VERSION }}
+            TORCH_VERSION=${{ env.TORCH_VERSION }}
+            TORCHVISION_VERSION=${{ env.TORCHVISION_VERSION }}
+            TORCHAUDIO_VERSION=${{ env.TORCHAUDIO_VERSION }}
+            TRITON_VERSION=${{ env.TRITON_VERSION }}
+            PYTORCH_INDEX_URL=${{ env.PYTORCH_INDEX_URL }}
+            PYPI_INDEX_URL=${{ env.PYPI_INDEX_URL }}
+            NVSHMEM_VERSION=${{ env.NVSHMEM_VERSION }}
+            TVM_FFI_VERSION=${{ env.TVM_FFI_VERSION }}
+            TILELANG_VERSION=${{ env.TILELANG_VERSION }}
+            NUMBA_VERSION=${{ env.NUMBA_VERSION }}
+            NCCL_REPO=${{ env.NCCL_REPO }}
+            NCCL_REF=${{ env.NCCL_REF }}
+            NCCL_COMMIT=${{ env.NCCL_COMMIT }}
+            VLLM_REPO=${{ env.VLLM_REPO }}
+            VLLM_REF=${{ env.VLLM_REF }}
+            VLLM_COMMIT=${{ env.VLLM_COMMIT }}
+            FLASHINFER_REPO=${{ env.FLASHINFER_REPO }}
+            FLASHINFER_REF=${{ env.FLASHINFER_REF }}
+            FLASHINFER_COMMIT=${{ env.FLASHINFER_COMMIT }}
+            RAY_VERSION=${{ env.RAY_VERSION }}
+            FASTSAFETENSORS_VERSION=${{ env.FASTSAFETENSORS_VERSION }}
+            INSTANTTENSOR_VERSION=${{ env.INSTANTTENSOR_VERSION }}
+            TORCH_CUDA_ARCH_LIST=${{ env.TORCH_CUDA_ARCH_LIST }}
+            FLASHINFER_CUDA_ARCH_LIST=${{ env.FLASHINFER_CUDA_ARCH_LIST }}
+            SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }}
+
+      - name: Extract artifacts from build 1
+        run: |
+          mkdir -p /tmp/verify/build1
+          docker run --rm vllm-gb10:verify-build1 \
+            cat /workspace/build-artifacts/wheel-sha256.txt \
+            > /tmp/verify/build1/wheel-sha256.txt
+          docker run --rm vllm-gb10:verify-build1 \
+            cat /workspace/build-artifacts/nccl-sha256.txt \
+            > /tmp/verify/build1/nccl-sha256.txt
+          docker run --rm vllm-gb10:verify-build1 \
+            cat /workspace/build-metadata.yaml \
+            > /tmp/verify/build1/build-metadata.yaml
+          docker run --rm vllm-gb10:verify-build1 \
+            python3 -m pip freeze \
+            > /tmp/verify/build1/pip-freeze.txt
+          docker run --rm vllm-gb10:verify-build1 \
+            bash -c "dpkg-query -W -f='\${Package}=\${Version}\n' | sort" \
+            > /tmp/verify/build1/apt-versions.txt
+          docker inspect --format='{{.Id}}' vllm-gb10:verify-build1 \
+            > /tmp/verify/build1/image-id.txt
+          echo "Build 1 image ID: $(cat /tmp/verify/build1/image-id.txt)"
+
+      - name: Remove build 1 image to free disk
+        run: docker rmi vllm-gb10:verify-build1
+
+      # ── Build 2 of 2 (no-cache - full rebuild from scratch) ────────────────
+      - name: Build 2 of 2 (no-cache)
+        uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4
+        with:
+          context: .
+          target: runner
+          platforms: linux/arm64
+          push: false
+          load: true
+          provenance: false
+          sbom: false
+          # no-cache forces a full rebuild. This is the meaningful part of the
+          # test: if build 2 produces the same authoritative artifacts as build
+          # 1 without reusing any cached layers, the build is reproducible.
+          no-cache: true
+          tags: vllm-gb10:verify-build2
+          build-args: |
+            CUDA_BASE_IMAGE=${{ env.CUDA_BASE_IMAGE }}
+            CUDA_BASE_DIGEST=${{ env.CUDA_BASE_DIGEST }}
+            GB10_BUILD=${{ env.GB10_BUILD }}
+            UV_VERSION=${{ env.UV_VERSION }}
+            TORCH_VERSION=${{ env.TORCH_VERSION }}
+            TORCHVISION_VERSION=${{ env.TORCHVISION_VERSION }}
+            TORCHAUDIO_VERSION=${{ env.TORCHAUDIO_VERSION }}
+            TRITON_VERSION=${{ env.TRITON_VERSION }}
+            PYTORCH_INDEX_URL=${{ env.PYTORCH_INDEX_URL }}
+            PYPI_INDEX_URL=${{ env.PYPI_INDEX_URL }}
+            NVSHMEM_VERSION=${{ env.NVSHMEM_VERSION }}
+            TVM_FFI_VERSION=${{ env.TVM_FFI_VERSION }}
+            TILELANG_VERSION=${{ env.TILELANG_VERSION }}
+            NUMBA_VERSION=${{ env.NUMBA_VERSION }}
+            NCCL_REPO=${{ env.NCCL_REPO }}
+            NCCL_REF=${{ env.NCCL_REF }}
+            NCCL_COMMIT=${{ env.NCCL_COMMIT }}
+            VLLM_REPO=${{ env.VLLM_REPO }}
+            VLLM_REF=${{ env.VLLM_REF }}
+            VLLM_COMMIT=${{ env.VLLM_COMMIT }}
+            FLASHINFER_REPO=${{ env.FLASHINFER_REPO }}
+            FLASHINFER_REF=${{ env.FLASHINFER_REF }}
+            FLASHINFER_COMMIT=${{ env.FLASHINFER_COMMIT }}
+            RAY_VERSION=${{ env.RAY_VERSION }}
+            FASTSAFETENSORS_VERSION=${{ env.FASTSAFETENSORS_VERSION }}
+            INSTANTTENSOR_VERSION=${{ env.INSTANTTENSOR_VERSION }}
+            TORCH_CUDA_ARCH_LIST=${{ env.TORCH_CUDA_ARCH_LIST }}
+            FLASHINFER_CUDA_ARCH_LIST=${{ env.FLASHINFER_CUDA_ARCH_LIST }}
+            SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }}
+
+      - name: Extract artifacts from build 2
+        run: |
+          mkdir -p /tmp/verify/build2
+          docker run --rm vllm-gb10:verify-build2 \
+            cat /workspace/build-artifacts/wheel-sha256.txt \
+            > /tmp/verify/build2/wheel-sha256.txt
+          docker run --rm vllm-gb10:verify-build2 \
+            cat /workspace/build-artifacts/nccl-sha256.txt \
+            > /tmp/verify/build2/nccl-sha256.txt
+          docker run --rm vllm-gb10:verify-build2 \
+            cat /workspace/build-metadata.yaml \
+            > /tmp/verify/build2/build-metadata.yaml
+          docker run --rm vllm-gb10:verify-build2 \
+            python3 -m pip freeze \
+            > /tmp/verify/build2/pip-freeze.txt
+          docker run --rm vllm-gb10:verify-build2 \
+            bash -c "dpkg-query -W -f='\${Package}=\${Version}\n' | sort" \
+            > /tmp/verify/build2/apt-versions.txt
+          docker inspect --format='{{.Id}}' vllm-gb10:verify-build2 \
+            > /tmp/verify/build2/image-id.txt
+          echo "Build 2 image ID: $(cat /tmp/verify/build2/image-id.txt)"
+
+      - name: Remove build 2 image
+        run: docker rmi vllm-gb10:verify-build2
+
+      # ── Compare ─────────────────────────────────────────────────────────────
+      - name: Compare authoritative artifacts
+        run: |
+          FAILED=0
+
+          for artifact in wheel-sha256.txt nccl-sha256.txt build-metadata.yaml pip-freeze.txt apt-versions.txt; do
+            if diff -u \
+                "/tmp/verify/build1/${artifact}" \
+                "/tmp/verify/build2/${artifact}" \
+                > "/tmp/verify/diff-${artifact}.txt" 2>&1
+            then
+              echo "PASS: ${artifact}"
+            else
+              echo "FAIL: ${artifact} differs between builds:"
+              cat "/tmp/verify/diff-${artifact}.txt"
+              FAILED=$((FAILED + 1))
+            fi
+          done
+
+          echo ""
+
+          # Image digest comparison - non-authoritative, report only.
+          BUILD1_ID=$(cat /tmp/verify/build1/image-id.txt)
+          BUILD2_ID=$(cat /tmp/verify/build2/image-id.txt)
+          if [ "$BUILD1_ID" = "$BUILD2_ID" ]; then
+            echo "INFO: image digests match (${BUILD1_ID})"
+          else
+            echo "INFO: image digests differ (expected - NCCL .deb embeds timestamps)"
+            echo "  build 1: ${BUILD1_ID}"
+            echo "  build 2: ${BUILD2_ID}"
+          fi
+
+          echo ""
+          if [ $FAILED -ne 0 ]; then
+            echo "RESULT: reproducibility check FAILED (${FAILED} artifact(s) differ)"
+            echo ""
+            echo "Common causes:"
+            echo "  - apt install missing a =<version> pin in locks/apt-packages.txt"
+            echo "  - pip dep floating transitively (audit pip-freeze diff above)"
+            echo "  - uv build embedding a wall-clock timestamp (check SOURCE_DATE_EPOCH)"
+            exit 1
+          fi
+
+          echo "RESULT: all authoritative artifacts match - build is reproducible"
+
+      - name: Upload artifacts and diffs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: verify-reproducible-${{ github.run_id }}
+          path: /tmp/verify/
+          if-no-files-found: error

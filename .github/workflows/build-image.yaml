@@ -65,6 +65,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Log in to Docker Hub
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121
+        with:
+          username: timothystewart6
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Compute tag shorthand components
         # Derive cu<major.minor> from CUDA_BASE_IMAGE and torch<major.minor>
         # from TORCH_VERSION for the human-readable shorthand tag.
@@ -185,3 +191,18 @@ jobs:
           TAG="${VLLM_REF}-gb10.${GB10_BUILD}"
           git tag "$TAG" || true
           git push origin "$TAG" || true
+
+      - name: Mirror to Docker Hub
+        # Re-tags the locally-loaded image and pushes the same four tags to
+        # Docker Hub. The image is already in the local daemon from build-push-action
+        # (load: true), so no re-pull is needed.
+        run: |
+          SRC="ghcr.io/timothystewart6/vllm-gb10"
+          DST="timothystewart6/vllm-gb10"
+          CANONICAL="${VLLM_REF}-gb10.${GB10_BUILD}"
+          SHORTHAND="${VLLM_REF}-${CUDA_SHORT}-${TORCH_SHORT}-gb10.${GB10_BUILD}"
+          SHA_TAG="sha-$(git rev-parse --short HEAD)"
+          for TAG in "${CANONICAL}" "${SHORTHAND}" "latest" "${SHA_TAG}"; do
+            docker tag "${SRC}:${TAG}" "${DST}:${TAG}"
+            docker push "${DST}:${TAG}"
+          done

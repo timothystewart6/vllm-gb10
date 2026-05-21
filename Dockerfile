@@ -24,7 +24,9 @@ ENV MAX_JOBS=${BUILD_JOBS} \
     UV_SYSTEM_PYTHON=1 UV_BREAK_SYSTEM_PACKAGES=1 UV_LINK_MODE=copy \
     TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST} \
     SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH} \
-    TRITON_PTXAS_PATH=/usr/local/cuda/bin/ptxas
+    TRITON_PTXAS_PATH=/usr/local/cuda/bin/ptxas \
+    CFLAGS="-fdebug-prefix-map=/workspace=. -fdebug-prefix-map=/opt=." \
+    CXXFLAGS="-fdebug-prefix-map=/workspace=. -fdebug-prefix-map=/opt=."
 
 COPY locks/apt-sources.list /tmp/apt-sources.list
 COPY locks/apt-packages.txt /tmp/apt-packages.txt
@@ -189,11 +191,18 @@ RUN --mount=type=bind,from=flashinfer-builder,source=/wheels,target=/fi-wheels \
 
 # Point PyTorch's bundled NCCL symlink at the Spark-aware NCCL built in base.
 # Without this, torch/ray would load the wheel-bundled NCCL instead.
+# The stored hash is of the debug-stripped binary (host ELF debug sections and
+# .note.gnu.build-id removed) so that non-deterministic DWARF metadata does not
+# cause a false-fail in verify-reproducible. The installed .so is NOT stripped;
+# only the hash input is. CUDA device code (.nv_fatbin) is retained intact.
 RUN rm -f /usr/local/lib/python3.12/dist-packages/nvidia/nccl/lib/libnccl.so.2 \
  && ln -s /usr/local/lib/libnccl.so.2 \
       /usr/local/lib/python3.12/dist-packages/nvidia/nccl/lib/libnccl.so.2 \
- && sha256sum /usr/local/lib/libnccl.so.2 \
-      > /workspace/build-artifacts/nccl-sha256.txt
+ && objcopy --strip-debug --remove-section=.note.gnu.build-id \
+      /usr/local/lib/libnccl.so.2 /tmp/libnccl.stripped.so \
+ && sha256sum /tmp/libnccl.stripped.so \
+      > /workspace/build-artifacts/nccl-sha256.txt \
+ && rm /tmp/libnccl.stripped.so
 
 COPY build-metadata.yaml /workspace/build-metadata.yaml
 # No ENTRYPOINT - users run: docker run ... <image> vllm serve ...

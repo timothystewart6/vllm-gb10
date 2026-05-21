@@ -25,6 +25,7 @@ on:
       - locks/**
       - scripts/**
       - checksums/**
+      - tests/**
       - .github/workflows/build-image.yaml
 
 permissions:

@@ -57,7 +57,7 @@ jobs:
           bash scripts/render-metadata.sh > build-metadata.yaml
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd
 
       # ── Build 1 of 2 (warm BuildKit cache) ─────────────────────────────────
       - name: Build 1 of 2 (warm cache)

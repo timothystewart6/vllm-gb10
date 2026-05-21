@@ -76,7 +76,7 @@ jobs:
 
       - name: Docker metadata
         id: meta
-        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804
+        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf
         with:
           images: ghcr.io/timothystewart6/vllm-gb10
           # Four published tags per build:

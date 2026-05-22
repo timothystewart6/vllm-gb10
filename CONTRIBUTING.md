@@ -49,7 +49,7 @@ If the issue is upstream, please file it there directly:
 ## Opening a PR
 
 - Target `main`.
-- Include the output of the smoke test (`scripts/smoke-test.sh`) if you changed
+- Include the output of the smoke test (`tests/smoke-test.sh`) if you changed
   anything in the Dockerfile or build scripts.
 - Keep commits focused - one logical change per PR.
 

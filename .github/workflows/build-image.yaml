@@ -23,7 +23,8 @@ on:
       - Dockerfile
       - versions.env
       - locks/**
-      - scripts/**
+      - scripts/render-metadata.sh
+      - scripts/build-args.sh
       - checksums/**
       - tests/**
       - .github/workflows/build-image.yaml

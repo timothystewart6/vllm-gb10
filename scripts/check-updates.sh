@@ -103,7 +103,7 @@ pypi_latest() {
 
 vllm_req() {
   # Returns the version pinned for $pkg in vLLM's requirements/cuda.txt at
-  # VLLM_REF. Matches lines like "torch==2.11.0" or "torchvision==0.26.0 # comment".
+  # VLLM_REF. Handles both "pkg==1.2.3" and "pkg == 1.2.3 # comment" formats.
   local pkg="$1"
   local ref="${VLLM_REF}"
   curl -fsSL \
@@ -112,7 +112,7 @@ vllm_req() {
 import sys, re
 pkg = sys.argv[1]
 for line in sys.stdin:
-    m = re.match(r'^' + re.escape(pkg) + r'==([^\s#]+)', line.strip())
+    m = re.match(r'^' + re.escape(pkg) + r'\s*==\s*([^\s#]+)', line.strip())
     if m:
         print(m.group(1))
         sys.exit(0)
@@ -214,17 +214,31 @@ fi
 
 log "Checking PyPI..."
 
+# NVSHMEM is not pinned in vLLM's requirements - check PyPI-latest.
 NVSHMEM_LATEST=$(pypi_latest "nvidia-nvshmem-cu13")
 report "NVSHMEM (NVSHMEM_VERSION)" "NVSHMEM_VERSION" "${NVSHMEM_VERSION}" "${NVSHMEM_LATEST}"
 
-TVM_FFI_LATEST=$(pypi_latest "tvm-ffi")
-report "TVM FFI (TVM_FFI_VERSION)" "TVM_FFI_VERSION" "${TVM_FFI_VERSION}" "${TVM_FFI_LATEST}"
+# apache-tvm-ffi, tilelang, numba are pinned in vLLM's requirements/cuda.txt.
+TVM_FFI_REQUIRED=$(vllm_req "apache-tvm-ffi")
+if [ "${TVM_FFI_REQUIRED}" = "NOT_FOUND" ]; then
+  printf 'WARN    %-30s could not parse from vLLM requirements/cuda.txt\n' "TVM FFI (TVM_FFI_VERSION)"
+else
+  report "TVM FFI (TVM_FFI_VERSION)" "TVM_FFI_VERSION" "${TVM_FFI_VERSION}" "${TVM_FFI_REQUIRED}"
+fi
 
-TILELANG_LATEST=$(pypi_latest "tilelang")
-report "TileLang (TILELANG_VERSION)" "TILELANG_VERSION" "${TILELANG_VERSION}" "${TILELANG_LATEST}"
+TILELANG_REQUIRED=$(vllm_req "tilelang")
+if [ "${TILELANG_REQUIRED}" = "NOT_FOUND" ]; then
+  printf 'WARN    %-30s could not parse from vLLM requirements/cuda.txt\n' "TileLang (TILELANG_VERSION)"
+else
+  report "TileLang (TILELANG_VERSION)" "TILELANG_VERSION" "${TILELANG_VERSION}" "${TILELANG_REQUIRED}"
+fi
 
-NUMBA_LATEST=$(pypi_latest "numba")
-report "Numba (NUMBA_VERSION)" "NUMBA_VERSION" "${NUMBA_VERSION}" "${NUMBA_LATEST}"
+NUMBA_REQUIRED=$(vllm_req "numba")
+if [ "${NUMBA_REQUIRED}" = "NOT_FOUND" ]; then
+  printf 'WARN    %-30s could not parse from vLLM requirements/cuda.txt\n' "Numba (NUMBA_VERSION)"
+else
+  report "Numba (NUMBA_VERSION)" "NUMBA_VERSION" "${NUMBA_VERSION}" "${NUMBA_REQUIRED}"
+fi
 
 # ---------------------------------------------------------------------------
 # CUDA base image - check if the pinned digest is still current for this tag

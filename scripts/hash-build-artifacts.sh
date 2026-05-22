@@ -60,7 +60,13 @@ case "$mode" in
                   | while IFS= read -r -d '' so; do
                       printf '%s  %s:symbols\n' "$(symhash_so "$so")" "${so#./}"
                     done
-                find . -type f ! -name '*.so' -print0 \
+                # Exclude *.dist-info/RECORD: it contains sha256 of every
+                # file in the wheel including .so bytes. Since .so bytes
+                # drift across builds (we gate them via symbol-equivalence
+                # above), RECORD drifts too. Excluding it prevents that
+                # drift from leaking back into the non-.so byte aggregate.
+                find . -type f ! -name '*.so' \
+                       ! -path '*/[A-Za-z0-9_.+-]*.dist-info/RECORD' -print0 \
                   | LC_ALL=C sort -z \
                   | xargs -0 sha256sum
               ) | sha256sum | awk '{print $1}'

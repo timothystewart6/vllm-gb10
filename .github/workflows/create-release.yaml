@@ -101,7 +101,7 @@ jobs:
           | `{tag_latest}` | Mutable - always the most recent green build |
           | `{tag_sha}` | Immutable, tied to this exact commit |
 
-          \`\`\`
+          \`\`\`bash
           docker pull {tag_canonical}
           \`\`\`
 
@@ -131,13 +131,13 @@ jobs:
 
           ### Inspect inside the image
 
-          \`\`\`
+          \`\`\`bash
           docker run --rm {tag_canonical} cat /workspace/build-metadata.yaml
           \`\`\`
 
           ### Quick start
 
-          \`\`\`
+          \`\`\`bash
           docker run --rm -it --gpus all --ipc=host --network host \\
             -v ~/.cache/huggingface:/root/.cache/huggingface \\
             {tag_canonical} \\

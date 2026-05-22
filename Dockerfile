@@ -28,41 +28,6 @@ ENV MAX_JOBS=${BUILD_JOBS} \
     CFLAGS="-fdebug-prefix-map=/workspace=. -fdebug-prefix-map=/opt=." \
     CXXFLAGS="-fdebug-prefix-map=/workspace=. -fdebug-prefix-map=/opt=."
 
-# nvcc uses random values while generating some symbol/variable names. Seed it
-# from the source path so repeated builds of the same pinned source tree produce
-# deterministic CUDA object/fatbin output.
-RUN mv /usr/local/cuda/bin/nvcc /usr/local/cuda/bin/nvcc-real \
- && printf '%s\n' \
-      '#!/usr/bin/env bash' \
-      'set -euo pipefail' \
-      'real_nvcc=/usr/local/cuda/bin/nvcc-real' \
-      'seed_input=' \
-      'for arg in "$@"; do' \
-      '  case "$arg" in' \
-      '    *.cu|*.cuh|*.cc|*.cpp|*.c)' \
-      '      seed_input="$arg"' \
-      '      break' \
-      '      ;;' \
-      '  esac' \
-      'done' \
-      'if [[ -z "$seed_input" ]]; then' \
-      '  previous=' \
-      '  for arg in "$@"; do' \
-      '    if [[ "$previous" == "-o" ]]; then' \
-      '      seed_input="$arg"' \
-      '      break' \
-      '    fi' \
-      '    previous="$arg"' \
-      '  done' \
-      'fi' \
-      'if [[ -n "$seed_input" ]]; then' \
-      '  seed="$(printf '\''%s'\'' "$PWD:$seed_input" | sha256sum | awk '\''{print $1}'\'')"' \
-      '  exec "$real_nvcc" "--frandom-seed=$seed" "$@"' \
-      'fi' \
-      'exec "$real_nvcc" "$@"' \
-      > /usr/local/cuda/bin/nvcc \
- && chmod +x /usr/local/cuda/bin/nvcc
-
 COPY locks/apt-sources.list /tmp/apt-sources.list
 COPY locks/apt-packages.txt /tmp/apt-packages.txt
 COPY locks/python-bootstrap.txt /tmp/python-bootstrap.txt
@@ -209,6 +174,11 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends libboost-dev libaio-dev \
  && rm -rf /var/lib/apt/lists/*
 
+# Helper that produces symbol-equivalence hashes for compiled CUDA artifacts
+# and byte hashes for pure artifacts. See scripts/hash-build-artifacts.sh for
+# the rationale (residual nvcc/ptxas nondeterminism on sm_121a).
+COPY scripts/hash-build-artifacts.sh /usr/local/bin/hash-build-artifacts.sh
+
 # Install runtime deps and the wheels built in stages 2 and 3.
 # External deps are resolved from the hashed lockfile; locally-built wheels
 # are installed by exact file path.
@@ -221,23 +191,20 @@ RUN --mount=type=bind,from=flashinfer-builder,source=/wheels,target=/fi-wheels \
       --index-strategy unsafe-best-match \
  && uv pip install --no-deps /fi-wheels/*.whl /vllm-wheels/*.whl \
  && mkdir -p /workspace/build-artifacts \
- && sha256sum /fi-wheels/*.whl /vllm-wheels/*.whl \
+ && hash-build-artifacts.sh wheels /fi-wheels /vllm-wheels \
       > /workspace/build-artifacts/wheel-sha256.txt
 
 # Point PyTorch's bundled NCCL symlink at the Spark-aware NCCL built in base.
 # Without this, torch/ray would load the wheel-bundled NCCL instead.
-# The stored hash is of the debug-stripped binary (host ELF debug sections and
-# .note.gnu.build-id removed) so that non-deterministic DWARF metadata does not
-# cause a false-fail in verify-reproducible. The installed .so is NOT stripped;
-# only the hash input is. CUDA device code (.nv_fatbin) is retained intact.
+# The stored hash is over the exported symbol table of libnccl.so.2 rather
+# than its raw bytes, so non-deterministic DWARF metadata and residual
+# nvcc/ptxas byte variance do not false-fail reproducibility while ABI
+# changes (added/removed/renamed symbols) still do.
 RUN rm -f /usr/local/lib/python3.12/dist-packages/nvidia/nccl/lib/libnccl.so.2 \
  && ln -s /usr/local/lib/libnccl.so.2 \
       /usr/local/lib/python3.12/dist-packages/nvidia/nccl/lib/libnccl.so.2 \
- && objcopy --strip-debug --remove-section=.note.gnu.build-id \
-      /usr/local/lib/libnccl.so.2 /tmp/libnccl.stripped.so \
- && sha256sum /tmp/libnccl.stripped.so \
-      > /workspace/build-artifacts/nccl-sha256.txt \
- && rm /tmp/libnccl.stripped.so
+ && hash-build-artifacts.sh nccl /usr/local/lib/libnccl.so.2 \
+      > /workspace/build-artifacts/nccl-sha256.txt
 
 COPY build-metadata.yaml /workspace/build-metadata.yaml
 # No ENTRYPOINT - users run: docker run ... <image> vllm serve ...

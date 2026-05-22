@@ -9,10 +9,15 @@
 # layer metadata, but the authoritative runtime artifacts must match.
 #
 # Authoritative artifacts (FAIL on diff):
-#   nccl-sha256.txt     sha256 of libnccl.so.2 with debug sections and build-id
-#                       stripped (so non-deterministic DWARF does not false-fail;
-#                       CUDA device code .nv_fatbin is retained and compared)
-#   wheel-sha256.txt    sha256 of every locally built vLLM/FlashInfer wheel
+#   nccl-sha256.txt     sha256 of the exported symbol table of libnccl.so.2
+#                       (`nm -D --defined-only`, sorted). Robust against
+#                       residual nvcc/ptxas byte variance on sm_121a while
+#                       still catching ABI changes.
+#   wheel-sha256.txt    Per-wheel hash. Pure wheels (flashinfer_cubin,
+#                       flashinfer_python) use raw byte sha256. Compiled
+#                       wheels (flashinfer_jit_cache, vllm) aggregate
+#                       symbol-table hashes of every .so plus byte hashes
+#                       of all non-.so files.
 #   build-metadata.yaml all version pins plus repo SHA and build timestamp
 #   pip-freeze.txt      pip freeze output from the runner image
 #   apt-versions.txt    dpkg-query installed package list
@@ -196,7 +201,7 @@ jobs:
             echo "  - apt install missing a =<version> pin in locks/apt-packages.txt"
             echo "  - pip dep floating transitively (audit pip-freeze diff above)"
             echo "  - uv build embedding a wall-clock timestamp (check SOURCE_DATE_EPOCH)"
-            echo "  - nvcc output not deterministic (check /usr/local/cuda/bin/nvcc wrapper)"
+            echo "  - real ABI change in compiled wheel/.so (symbol added/removed/renamed)"
             exit 1
           fi
 

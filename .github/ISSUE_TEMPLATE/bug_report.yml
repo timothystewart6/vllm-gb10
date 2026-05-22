@@ -8,6 +8,12 @@ body:
         Before filing, check that you are pulling the latest tag and that your
         DGX Spark firmware is current.
 
+        This repo builds and ships vLLM - it does not patch upstream behavior.
+        If the issue reproduces with the official NGC image or with a plain
+        `pip install vllm`, please file it at
+        [vllm-project/vllm](https://github.com/vllm-project/vllm/issues) instead.
+        Open here only if the issue is specific to this image or the GB10 build.
+
   - type: input
     id: image-tag
     attributes:

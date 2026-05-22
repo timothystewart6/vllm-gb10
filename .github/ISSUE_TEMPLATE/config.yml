@@ -3,3 +3,6 @@ contact_links:
   - name: Security vulnerability
     url: https://github.com/timothystewart6/vllm-gb10/security/advisories/new
     about: Report a vulnerability privately - do not open a public issue
+  - name: vLLM bug (not GB10-specific)
+    url: https://github.com/vllm-project/vllm/issues
+    about: If the issue reproduces outside this image, file it upstream

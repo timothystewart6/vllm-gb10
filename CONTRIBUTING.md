@@ -28,12 +28,25 @@ You do not need to SSH into the Spark or run anything locally.
 
 ## What is and is not in scope
 
+This repo builds and ships vLLM. It does not patch or modify upstream component
+behavior. If something is broken in vLLM itself, NCCL, FlashInfer, or PyTorch,
+the fix belongs in that project's repo - not here.
+
 | In scope | Out of scope |
 |---|---|
 | Fixing build failures on GB10 | Porting to other GPU architectures |
 | Bumping pinned component versions | Adding new Python packages to the image |
 | CI workflow improvements | Changing the base OS |
 | Reproducibility fixes | Runtime configuration / serving scripts |
+| GB10-specific workarounds with no upstream path | Patching upstream component behavior |
+
+If you are not sure whether an issue is GB10-specific or upstream, open an
+issue here and we can help route it. If it is clearly upstream, please file it
+there directly:
+
+- vLLM bugs: [vllm-project/vllm](https://github.com/vllm-project/vllm/issues)
+- NCCL bugs: [NVIDIA/nccl](https://github.com/NVIDIA/nccl/issues)
+- FlashInfer bugs: [flashinfer-ai/flashinfer](https://github.com/flashinfer-ai/flashinfer/issues)
 
 ## Opening a PR
 

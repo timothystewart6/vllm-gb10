@@ -20,18 +20,39 @@
 #   Numba        - PyPI (numba)
 #
 # PREREQUISITES
-#   curl, python3, jq
+#   curl, python3
 #
 # USAGE
-#   scripts/check-updates.sh
+#   scripts/check-updates.sh            # check only, never writes anything
+#   scripts/check-updates.sh --update   # write updated _REF/_VERSION lines to
+#                                       # versions.env, then open a PR to let
+#                                       # bump.sh resolve _COMMIT SHAs
 #
-# The script is read-only. It never modifies versions.env.
-# Run scripts/bump.sh after manually updating _REF lines to apply changes.
+# --update does NOT touch _COMMIT fields. Those are resolved by bump.sh running
+# on the Spark. The intended flow after --update is:
+#   git checkout -b deps/bump-$(date +%Y-%m-%d)
+#   scripts/check-updates.sh --update
+#   git add versions.env
+#   git commit -m "chore(deps): bump versions"
+#   git push && gh pr create
+#
+# WARNING: PyTorch/Triton/TorchVision/TorchAudio versions must stay in sync
+# with what vLLM requires. When VLLM_REF changes, check
+# requirements/build/cuda.txt in the vLLM repo before bumping those.
+# --update will write the PyPI latest but print a warning.
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSIONS="${REPO_ROOT}/versions.env"
+
+DO_UPDATE=0
+for arg in "$@"; do
+  case "${arg}" in
+    --update) DO_UPDATE=1 ;;
+    *) printf 'Unknown argument: %s\n' "${arg}" >&2; exit 1 ;;
+  esac
+done
 
 log()  { printf '[check-updates] %s\n' "$*" >&2; }
 need() { command -v "$1" &>/dev/null || { log "Required tool '$1' not found."; exit 1; }; }
@@ -47,6 +68,19 @@ OUT="UPDATE "
 
 # Tracks whether any updates were found
 UPDATES=0
+
+# ---------------------------------------------------------------------------
+# sed -i is not portable between macOS and Linux. Use a temp-file swap.
+# ---------------------------------------------------------------------------
+update_env() {
+  local key="$1"
+  local val="$2"
+  local tmp
+  tmp="$(mktemp)"
+  sed "s|^${key}=.*|${key}=${val}|" "${VERSIONS}" > "${tmp}"
+  mv "${tmp}" "${VERSIONS}"
+  log "  updated ${key}=${val}"
+}
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -69,13 +103,17 @@ pypi_latest() {
 
 report() {
   local label="$1"
-  local current="$2"
-  local latest="$3"
+  local key="$2"
+  local current="$3"
+  local latest="$4"
   if [ "${current}" = "${latest}" ]; then
-    printf '%s %-30s current=%-20s\n' "${OK}"  "${label}" "${current}"
+    printf '%s %-30s current=%-20s\n' "${OK}" "${label}" "${current}"
   else
     printf '%s %-30s current=%-20s latest=%s\n' "${OUT}" "${label}" "${current}" "${latest}"
     UPDATES=$((UPDATES + 1))
+    if [ "${DO_UPDATE}" -eq 1 ]; then
+      update_env "${key}" "${latest}"
+    fi
   fi
 }
 
@@ -86,16 +124,16 @@ report() {
 log "Checking GitHub releases..."
 
 VLLM_LATEST=$(gh_latest_tag "vllm-project/vllm")
-report "vLLM (VLLM_REF)" "${VLLM_REF}" "${VLLM_LATEST}"
+report "vLLM (VLLM_REF)" "VLLM_REF" "${VLLM_REF}" "${VLLM_LATEST}"
 
 NCCL_LATEST=$(gh_latest_tag "NVIDIA/nccl")
-report "NCCL (NCCL_REF)" "${NCCL_REF}" "${NCCL_LATEST}"
+report "NCCL (NCCL_REF)" "NCCL_REF" "${NCCL_REF}" "${NCCL_LATEST}"
 
 FLASHINFER_LATEST=$(gh_latest_tag "flashinfer-ai/flashinfer")
-report "FlashInfer (FLASHINFER_REF)" "${FLASHINFER_REF}" "${FLASHINFER_LATEST}"
+report "FlashInfer (FLASHINFER_REF)" "FLASHINFER_REF" "${FLASHINFER_REF}" "${FLASHINFER_LATEST}"
 
 UV_LATEST=$(gh_latest_tag "astral-sh/uv")
-report "uv (UV_VERSION)" "${UV_VERSION}" "${UV_LATEST}"
+report "uv (UV_VERSION)" "UV_VERSION" "${UV_VERSION}" "${UV_LATEST}"
 
 # ---------------------------------------------------------------------------
 # PyPI components
@@ -104,28 +142,28 @@ report "uv (UV_VERSION)" "${UV_VERSION}" "${UV_LATEST}"
 log "Checking PyPI..."
 
 TORCH_LATEST=$(pypi_latest "torch")
-report "PyTorch (TORCH_VERSION)" "${TORCH_VERSION}" "${TORCH_LATEST}"
+report "PyTorch (TORCH_VERSION)" "TORCH_VERSION" "${TORCH_VERSION}" "${TORCH_LATEST}"
 
 TORCHVISION_LATEST=$(pypi_latest "torchvision")
-report "TorchVision (TORCHVISION_VERSION)" "${TORCHVISION_VERSION}" "${TORCHVISION_LATEST}"
+report "TorchVision (TORCHVISION_VERSION)" "TORCHVISION_VERSION" "${TORCHVISION_VERSION}" "${TORCHVISION_LATEST}"
 
 TORCHAUDIO_LATEST=$(pypi_latest "torchaudio")
-report "TorchAudio (TORCHAUDIO_VERSION)" "${TORCHAUDIO_VERSION}" "${TORCHAUDIO_LATEST}"
+report "TorchAudio (TORCHAUDIO_VERSION)" "TORCHAUDIO_VERSION" "${TORCHAUDIO_VERSION}" "${TORCHAUDIO_LATEST}"
 
 TRITON_LATEST=$(pypi_latest "triton")
-report "Triton (TRITON_VERSION)" "${TRITON_VERSION}" "${TRITON_LATEST}"
+report "Triton (TRITON_VERSION)" "TRITON_VERSION" "${TRITON_VERSION}" "${TRITON_LATEST}"
 
 NVSHMEM_LATEST=$(pypi_latest "nvidia-nvshmem-cu13")
-report "NVSHMEM (NVSHMEM_VERSION)" "${NVSHMEM_VERSION}" "${NVSHMEM_LATEST}"
+report "NVSHMEM (NVSHMEM_VERSION)" "NVSHMEM_VERSION" "${NVSHMEM_VERSION}" "${NVSHMEM_LATEST}"
 
 TVM_FFI_LATEST=$(pypi_latest "tvm-ffi")
-report "TVM FFI (TVM_FFI_VERSION)" "${TVM_FFI_VERSION}" "${TVM_FFI_LATEST}"
+report "TVM FFI (TVM_FFI_VERSION)" "TVM_FFI_VERSION" "${TVM_FFI_VERSION}" "${TVM_FFI_LATEST}"
 
 TILELANG_LATEST=$(pypi_latest "tilelang")
-report "TileLang (TILELANG_VERSION)" "${TILELANG_VERSION}" "${TILELANG_LATEST}"
+report "TileLang (TILELANG_VERSION)" "TILELANG_VERSION" "${TILELANG_VERSION}" "${TILELANG_LATEST}"
 
 NUMBA_LATEST=$(pypi_latest "numba")
-report "Numba (NUMBA_VERSION)" "${NUMBA_VERSION}" "${NUMBA_LATEST}"
+report "Numba (NUMBA_VERSION)" "NUMBA_VERSION" "${NUMBA_VERSION}" "${NUMBA_LATEST}"
 
 # ---------------------------------------------------------------------------
 # CUDA base image - check if the pinned digest is still current for this tag
@@ -154,10 +192,13 @@ if [ "${CUDA_CURRENT_DIGEST}" = "${CUDA_BASE_DIGEST}" ]; then
 elif [ "${CUDA_CURRENT_DIGEST}" = "NOT_FOUND" ]; then
   printf '%s %-30s could not fetch arm64 digest\n' "WARN   " "CUDA base (${CUDA_TAG})"
 else
-  printf '%s %-30s digest changed - run bump.sh to update\n' "${OUT}" "CUDA base (${CUDA_TAG})"
+  printf '%s %-30s digest changed\n' "${OUT}" "CUDA base (${CUDA_TAG})"
   printf '         current:  %s\n' "${CUDA_BASE_DIGEST}"
   printf '         upstream: %s\n' "${CUDA_CURRENT_DIGEST}"
   UPDATES=$((UPDATES + 1))
+  if [ "${DO_UPDATE}" -eq 1 ]; then
+    update_env "CUDA_BASE_DIGEST" "${CUDA_CURRENT_DIGEST}"
+  fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -168,11 +209,24 @@ echo ""
 if [ "${UPDATES}" -eq 0 ]; then
   echo "All components are current."
 else
-  printf '%d component(s) have updates available.\n' "${UPDATES}"
-  echo "To upgrade: edit the relevant _REF or _VERSION line in versions.env, then open a PR."
-  echo "CI will run bump.sh on the Spark and commit the resolved SHAs and lockfiles."
-  echo ""
-  echo "Note: PyTorch/Triton/TorchVision/TorchAudio must stay in sync with what vLLM"
-  echo "requires at VLLM_REF. Check requirements/build/cuda.txt in the vLLM repo before"
-  echo "bumping those independently."
+  if [ "${DO_UPDATE}" -eq 1 ]; then
+    printf '%d component(s) updated in versions.env.\n' "${UPDATES}"
+    echo ""
+    echo "Next steps:"
+    echo "  1. git diff versions.env          # review changes"
+    echo "  2. git checkout -b deps/bump-\$(date +%Y-%m-%d)"
+    echo "  3. git add versions.env && git commit -m 'chore(deps): bump versions'"
+    echo "  4. git push && gh pr create"
+    echo "  CI will run bump.sh on the Spark to resolve _COMMIT SHAs and lockfiles."
+    echo ""
+    echo "WARNING: if VLLM_REF changed, verify PyTorch/Triton/TorchVision/TorchAudio"
+    echo "against requirements/build/cuda.txt in the vLLM repo at the new tag before merging."
+  else
+    printf '%d component(s) have updates available.\n' "${UPDATES}"
+    echo "Run with --update to write changes to versions.env."
+    echo ""
+    echo "Note: PyTorch/Triton/TorchVision/TorchAudio must stay in sync with what vLLM"
+    echo "requires at VLLM_REF. Check requirements/build/cuda.txt in the vLLM repo before"
+    echo "bumping those independently."
+  fi
 fi

@@ -40,9 +40,7 @@ the fix belongs in that project's repo - not here.
 | Reproducibility fixes | Runtime configuration / serving scripts |
 | GB10-specific workarounds with no upstream path | Patching upstream component behavior |
 
-If you are not sure whether an issue is GB10-specific or upstream, open an
-issue here and we can help route it. If it is clearly upstream, please file it
-there directly:
+If the issue is upstream, please file it there directly:
 
 - vLLM bugs: [vllm-project/vllm](https://github.com/vllm-project/vllm/issues)
 - NCCL bugs: [NVIDIA/nccl](https://github.com/NVIDIA/nccl/issues)

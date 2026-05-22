@@ -120,21 +120,23 @@ print('NOT_FOUND')
 " "${pkg}"
 }
 
-torch_triton_pin() {
-  # Returns the triton version that torch==TORCH_VERSION pins as a dependency.
+torch_dep_pin() {
+  # Returns the version of $pkg that torch==TORCH_VERSION pins as a dependency.
   local torch_ver="$1"
+  local pkg="$2"
   curl -fsSL "https://pypi.org/pypi/torch/${torch_ver}/json" \
     | python3 -c "
 import json, sys, re
 data = json.load(sys.stdin)
 deps = data.get('info', {}).get('requires_dist', []) or []
+pkg = sys.argv[1]
 for dep in deps:
-    m = re.match(r'^triton==([^\s,;]+)', dep.strip())
+    m = re.match(r'^' + re.escape(pkg) + r'==([^\s,;]+)', dep.strip())
     if m:
         print(m.group(1))
         sys.exit(0)
 print('NOT_FOUND')
-"
+" "${pkg}"
 }
 
 report() {
@@ -200,12 +202,20 @@ else
   report "TorchAudio (TORCHAUDIO_VERSION)" "TORCHAUDIO_VERSION" "${TORCHAUDIO_VERSION}" "${TORCHAUDIO_REQUIRED}"
 fi
 
-# Triton is a transitive dep of torch - read the pin from torch's PyPI metadata.
-TRITON_REQUIRED=$(torch_triton_pin "${TORCH_REQUIRED:-${TORCH_VERSION}}")
+# Triton and NVSHMEM are pinned by torch - read from torch's PyPI metadata.
+TORCH_EFFECTIVE="${TORCH_REQUIRED:-${TORCH_VERSION}}"
+TRITON_REQUIRED=$(torch_dep_pin "${TORCH_EFFECTIVE}" "triton")
 if [ "${TRITON_REQUIRED}" = "NOT_FOUND" ]; then
   printf 'WARN    %-30s could not parse from torch PyPI metadata\n' "Triton (TRITON_VERSION)"
 else
   report "Triton (TRITON_VERSION)" "TRITON_VERSION" "${TRITON_VERSION}" "${TRITON_REQUIRED}"
+fi
+
+NVSHMEM_REQUIRED=$(torch_dep_pin "${TORCH_EFFECTIVE}" "nvidia-nvshmem-cu13")
+if [ "${NVSHMEM_REQUIRED}" = "NOT_FOUND" ]; then
+  printf 'WARN    %-30s could not parse from torch PyPI metadata\n' "NVSHMEM (NVSHMEM_VERSION)"
+else
+  report "NVSHMEM (NVSHMEM_VERSION)" "NVSHMEM_VERSION" "${NVSHMEM_VERSION}" "${NVSHMEM_REQUIRED}"
 fi
 
 # ---------------------------------------------------------------------------
@@ -213,10 +223,6 @@ fi
 # ---------------------------------------------------------------------------
 
 log "Checking PyPI..."
-
-# NVSHMEM is not pinned in vLLM's requirements - check PyPI-latest.
-NVSHMEM_LATEST=$(pypi_latest "nvidia-nvshmem-cu13")
-report "NVSHMEM (NVSHMEM_VERSION)" "NVSHMEM_VERSION" "${NVSHMEM_VERSION}" "${NVSHMEM_LATEST}"
 
 # apache-tvm-ffi, tilelang, numba are pinned in vLLM's requirements/cuda.txt.
 TVM_FFI_REQUIRED=$(vllm_req "apache-tvm-ffi")

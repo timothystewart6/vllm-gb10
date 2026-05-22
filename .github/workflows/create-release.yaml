@@ -128,21 +128,6 @@ jobs:
           | **Target arch** | {arch_list} | - |
           | **GB10_BUILD** | {gb10_build} | - |
           | **Repo SHA** | {short_sha} | [{short_sha}](https://github.com/timothystewart6/vllm-gb10/commit/{full_sha}) |
-
-          ### Inspect inside the image
-
-          \`\`\`bash
-          docker run --rm {tag_canonical} cat /workspace/build-metadata.yaml
-          \`\`\`
-
-          ### Quick start
-
-          \`\`\`bash
-          docker run --rm -it --gpus all --ipc=host --network host \\
-            -v ~/.cache/huggingface:/root/.cache/huggingface \\
-            {tag_canonical} \\
-            vllm serve <model> --host 0.0.0.0 --port 8000
-          \`\`\`
           """
 
           # Strip leading indentation from the heredoc

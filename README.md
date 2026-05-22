@@ -64,29 +64,19 @@ bumps. There is intentionally no bare `v0.20.1` tag - it would be mutable.
 
 ## Bumping versions
 
-**PR flow (no terminal required after the initial edit):**
+1. Edit one or more `_REF` lines in `versions.env` on a branch
+2. Open a pull request - the `run-bump.yaml` workflow picks it up, runs
+   `scripts/bump.sh` on the DGX Spark runner, and commits the resolved
+   `_COMMIT` SHAs, updated `GB10_BUILD`, and regenerated lockfiles back to
+   your branch
+3. Review the diff that CI committed, then merge
+4. A green build on `main` publishes updated image tags to GHCR and creates
+   a GitHub Release automatically
 
-1. Edit one or more `_REF` lines in `versions.env` on any branch
-2. Open a pull request - CI runs `scripts/bump.sh` on the Spark, then commits
-   the resolved `_COMMIT` SHAs, updated `GB10_BUILD`, and regenerated lockfiles
-   back to your branch automatically
-3. Review the diff, merge
-4. A green build publishes updated image tags to GHCR, then creates a GitHub
-   Release automatically
+You do not need to SSH into the Spark or run anything locally.
 
-**Manual flow (run everything yourself):**
-
-```bash
-# On the DGX Spark (Linux aarch64) - must not run on macOS or x86:
-bash scripts/bump.sh   # resolves new SHAs, regenerates lockfiles
-git add versions.env locks/
-git commit -m "chore(deps): bump ..."
-git push
-```
-
-CI triggers on changes to `versions.env`, `Dockerfile`, `locks/`, `scripts/`,
-or `checksums/`. A green build publishes updated image tags and creates a
-GitHub Release automatically.
+CI also triggers on changes to `Dockerfile`, `locks/`, `scripts/`, and
+`checksums/`.
 
 ## Contributing
 

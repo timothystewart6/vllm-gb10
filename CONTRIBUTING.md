@@ -16,11 +16,13 @@ aarch64 DGX Spark** (it compiles and resolves platform-specific dependencies).
 
 ### Bumping a component
 
-1. Edit the relevant `_REF` line in `versions.env` (e.g. `VLLM_REF=v0.21.0`).
-2. SSH into the DGX Spark and run `scripts/bump.sh` from the repo root.
-   `bump.sh` updates `_COMMIT`, increments `GB10_BUILD` (or resets to `0` on a
-   new `VLLM_REF`), and regenerates all lockfiles.
-3. Open a PR with the `versions.env` and lockfile changes.
+1. Edit the relevant `_REF` line in `versions.env` (e.g. `VLLM_REF=v0.21.0`) on a branch.
+2. Open a PR. The `run-bump.yaml` workflow detects the change to `versions.env`, runs
+   `scripts/bump.sh` on the DGX Spark runner, and commits the resolved `_COMMIT` SHAs,
+   updated `GB10_BUILD`, and regenerated lockfiles back to your branch automatically.
+3. Review the diff that CI committed, then merge.
+
+You do not need to SSH into the Spark or run anything locally.
 
 **Do not edit lockfiles by hand.** They are generated outputs.
 

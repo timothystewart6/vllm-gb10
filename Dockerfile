@@ -28,6 +28,41 @@ ENV MAX_JOBS=${BUILD_JOBS} \
     CFLAGS="-fdebug-prefix-map=/workspace=. -fdebug-prefix-map=/opt=." \
     CXXFLAGS="-fdebug-prefix-map=/workspace=. -fdebug-prefix-map=/opt=."
 
+# nvcc uses random values while generating some symbol/variable names. Seed it
+# from the source path so repeated builds of the same pinned source tree produce
+# deterministic CUDA object/fatbin output.
+RUN mv /usr/local/cuda/bin/nvcc /usr/local/cuda/bin/nvcc-real \
+ && printf '%s\n' \
+      '#!/usr/bin/env bash' \
+      'set -euo pipefail' \
+      'real_nvcc=/usr/local/cuda/bin/nvcc-real' \
+      'seed_input=' \
+      'for arg in "$@"; do' \
+      '  case "$arg" in' \
+      '    *.cu|*.cuh|*.cc|*.cpp|*.c)' \
+      '      seed_input="$arg"' \
+      '      break' \
+      '      ;;' \
+      '  esac' \
+      'done' \
+      'if [[ -z "$seed_input" ]]; then' \
+      '  previous=' \
+      '  for arg in "$@"; do' \
+      '    if [[ "$previous" == "-o" ]]; then' \
+      '      seed_input="$arg"' \
+      '      break' \
+      '    fi' \
+      '    previous="$arg"' \
+      '  done' \
+      'fi' \
+      'if [[ -n "$seed_input" ]]; then' \
+      '  seed="$(printf '\''%s'\'' "$PWD:$seed_input" | sha256sum | awk '\''{print $1}'\'')"' \
+      '  exec "$real_nvcc" "--frandom-seed=$seed" "$@"' \
+      'fi' \
+      'exec "$real_nvcc" "$@"' \
+      > /usr/local/cuda/bin/nvcc \
+ && chmod +x /usr/local/cuda/bin/nvcc
+
 COPY locks/apt-sources.list /tmp/apt-sources.list
 COPY locks/apt-packages.txt /tmp/apt-packages.txt
 COPY locks/python-bootstrap.txt /tmp/python-bootstrap.txt

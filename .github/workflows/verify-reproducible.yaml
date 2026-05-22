@@ -1,32 +1,24 @@
 # .github/workflows/verify-reproducible.yaml
 #
-# Builds the same commit twice and compares the five authoritative artifacts.
+# Builds the same commit twice and compares the authoritative artifacts.
 # Manual trigger only - run before going public and after structural changes.
 #
 # Build 1 uses the warm BuildKit layer cache.
 # Build 2 uses no-cache to rebuild every layer from scratch, which is the
-# meaningful reproducibility test: the NCCL .deb packaging embeds build
-# timestamps, so the .deb bytes differ between runs, but the installed
-# libnccl.so.2 bytes must be identical. See SPEC section 7.
+# meaningful reproducibility test: the final image digest can differ due to
+# layer metadata, but the authoritative runtime artifacts must match.
 #
 # Authoritative artifacts (FAIL on diff):
 #   nccl-sha256.txt     sha256 of libnccl.so.2 with debug sections and build-id
 #                       stripped (so non-deterministic DWARF does not false-fail;
 #                       CUDA device code .nv_fatbin is retained and compared)
-#   wheel-sha256.txt    sha256 of pure (non-compiled) wheels only:
-#                         flashinfer_cubin  - pre-built CUDA binary, no C++ wrapper
-#                         flashinfer_python - pure Python
-#                       flashinfer_jit_cache and vllm wheels contain compiled C++
-#                       CUDA extensions; sm_121a nvcc output may be non-deterministic
-#                       and is logged as INFO, not a gate.
+#   wheel-sha256.txt    sha256 of every locally built vLLM/FlashInfer wheel
 #   build-metadata.yaml all version pins plus repo SHA and build timestamp
 #   pip-freeze.txt      pip freeze output from the runner image
 #   apt-versions.txt    dpkg-query installed package list
 #
 # Non-authoritative (REPORT only, never a gate):
-#   image digest - may differ due to NCCL .deb timestamp and layer mtimes
-#   flashinfer_jit_cache wheel - compiled C++ CUDA extension, sm_121a may vary
-#   vllm wheel - compiled C++ CUDA extension, sm_121a may vary
+#   image digest - may differ due to layer mtimes/order
 #
 # Actions are pinned by SHA per the SPEC. Update via Dependabot (Phase 5).
 #
@@ -65,9 +57,16 @@ jobs:
 
       - name: Generate build-metadata.yaml
         # Generated once on the host, identical for both builds.
+        run: bash scripts/render-metadata.sh > build-metadata.yaml
+
+      - name: Generate Docker build args
+        id: build-args
         run: |
-          SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }} \
-          bash scripts/render-metadata.sh > build-metadata.yaml
+          {
+            echo 'args<<BUILD_ARGS_EOF'
+            scripts/build-args.sh | xargs -n2 | awk '{print $2}'
+            echo 'BUILD_ARGS_EOF'
+          } >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd
@@ -86,36 +85,7 @@ jobs:
           provenance: false
           sbom: false
           tags: vllm-gb10:verify-build1
-          build-args: |
-            CUDA_BASE_IMAGE=${{ env.CUDA_BASE_IMAGE }}
-            CUDA_BASE_DIGEST=${{ env.CUDA_BASE_DIGEST }}
-            GB10_BUILD=${{ env.GB10_BUILD }}
-            UV_VERSION=${{ env.UV_VERSION }}
-            TORCH_VERSION=${{ env.TORCH_VERSION }}
-            TORCHVISION_VERSION=${{ env.TORCHVISION_VERSION }}
-            TORCHAUDIO_VERSION=${{ env.TORCHAUDIO_VERSION }}
-            TRITON_VERSION=${{ env.TRITON_VERSION }}
-            PYTORCH_INDEX_URL=${{ env.PYTORCH_INDEX_URL }}
-            PYPI_INDEX_URL=${{ env.PYPI_INDEX_URL }}
-            NVSHMEM_VERSION=${{ env.NVSHMEM_VERSION }}
-            TVM_FFI_VERSION=${{ env.TVM_FFI_VERSION }}
-            TILELANG_VERSION=${{ env.TILELANG_VERSION }}
-            NUMBA_VERSION=${{ env.NUMBA_VERSION }}
-            NCCL_REPO=${{ env.NCCL_REPO }}
-            NCCL_REF=${{ env.NCCL_REF }}
-            NCCL_COMMIT=${{ env.NCCL_COMMIT }}
-            VLLM_REPO=${{ env.VLLM_REPO }}
-            VLLM_REF=${{ env.VLLM_REF }}
-            VLLM_COMMIT=${{ env.VLLM_COMMIT }}
-            FLASHINFER_REPO=${{ env.FLASHINFER_REPO }}
-            FLASHINFER_REF=${{ env.FLASHINFER_REF }}
-            FLASHINFER_COMMIT=${{ env.FLASHINFER_COMMIT }}
-            RAY_VERSION=${{ env.RAY_VERSION }}
-            FASTSAFETENSORS_VERSION=${{ env.FASTSAFETENSORS_VERSION }}
-            INSTANTTENSOR_VERSION=${{ env.INSTANTTENSOR_VERSION }}
-            TORCH_CUDA_ARCH_LIST=${{ env.TORCH_CUDA_ARCH_LIST }}
-            FLASHINFER_CUDA_ARCH_LIST=${{ env.FLASHINFER_CUDA_ARCH_LIST }}
-            SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }}
+          build-args: ${{ steps.build-args.outputs.args }}
 
       - name: Extract artifacts from build 1
         run: |
@@ -158,36 +128,7 @@ jobs:
           # 1 without reusing any cached layers, the build is reproducible.
           no-cache: true
           tags: vllm-gb10:verify-build2
-          build-args: |
-            CUDA_BASE_IMAGE=${{ env.CUDA_BASE_IMAGE }}
-            CUDA_BASE_DIGEST=${{ env.CUDA_BASE_DIGEST }}
-            GB10_BUILD=${{ env.GB10_BUILD }}
-            UV_VERSION=${{ env.UV_VERSION }}
-            TORCH_VERSION=${{ env.TORCH_VERSION }}
-            TORCHVISION_VERSION=${{ env.TORCHVISION_VERSION }}
-            TORCHAUDIO_VERSION=${{ env.TORCHAUDIO_VERSION }}
-            TRITON_VERSION=${{ env.TRITON_VERSION }}
-            PYTORCH_INDEX_URL=${{ env.PYTORCH_INDEX_URL }}
-            PYPI_INDEX_URL=${{ env.PYPI_INDEX_URL }}
-            NVSHMEM_VERSION=${{ env.NVSHMEM_VERSION }}
-            TVM_FFI_VERSION=${{ env.TVM_FFI_VERSION }}
-            TILELANG_VERSION=${{ env.TILELANG_VERSION }}
-            NUMBA_VERSION=${{ env.NUMBA_VERSION }}
-            NCCL_REPO=${{ env.NCCL_REPO }}
-            NCCL_REF=${{ env.NCCL_REF }}
-            NCCL_COMMIT=${{ env.NCCL_COMMIT }}
-            VLLM_REPO=${{ env.VLLM_REPO }}
-            VLLM_REF=${{ env.VLLM_REF }}
-            VLLM_COMMIT=${{ env.VLLM_COMMIT }}
-            FLASHINFER_REPO=${{ env.FLASHINFER_REPO }}
-            FLASHINFER_REF=${{ env.FLASHINFER_REF }}
-            FLASHINFER_COMMIT=${{ env.FLASHINFER_COMMIT }}
-            RAY_VERSION=${{ env.RAY_VERSION }}
-            FASTSAFETENSORS_VERSION=${{ env.FASTSAFETENSORS_VERSION }}
-            INSTANTTENSOR_VERSION=${{ env.INSTANTTENSOR_VERSION }}
-            TORCH_CUDA_ARCH_LIST=${{ env.TORCH_CUDA_ARCH_LIST }}
-            FLASHINFER_CUDA_ARCH_LIST=${{ env.FLASHINFER_CUDA_ARCH_LIST }}
-            SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }}
+          build-args: ${{ steps.build-args.outputs.args }}
 
       - name: Extract artifacts from build 2
         run: |
@@ -220,7 +161,7 @@ jobs:
           FAILED=0
 
           # --- Fully authoritative: must match exactly ---
-          for artifact in nccl-sha256.txt build-metadata.yaml pip-freeze.txt apt-versions.txt; do
+          for artifact in nccl-sha256.txt wheel-sha256.txt build-metadata.yaml pip-freeze.txt apt-versions.txt; do
             if diff -u \
                 "/tmp/verify/build1/${artifact}" \
                 "/tmp/verify/build2/${artifact}" \
@@ -234,39 +175,6 @@ jobs:
             fi
           done
 
-          # --- Wheel SHA256: split authoritative vs informational ---
-          # Pure (non-compiled) wheels must be bit-for-bit identical.
-          # Compiled C++ CUDA extensions (flashinfer_jit_cache, vllm) may differ
-          # due to non-deterministic nvcc output for sm_121a; those are INFO-only.
-          grep -E 'flashinfer_cubin|flashinfer_python' \
-              /tmp/verify/build1/wheel-sha256.txt > /tmp/verify/build1/wheel-pure.txt 2>/dev/null || true
-          grep -E 'flashinfer_cubin|flashinfer_python' \
-              /tmp/verify/build2/wheel-sha256.txt > /tmp/verify/build2/wheel-pure.txt 2>/dev/null || true
-          if diff -u \
-              /tmp/verify/build1/wheel-pure.txt \
-              /tmp/verify/build2/wheel-pure.txt \
-              > /tmp/verify/diff-wheel-pure.txt 2>&1
-          then
-            echo "PASS: wheel-sha256.txt (pure wheels: flashinfer_cubin, flashinfer_python)"
-          else
-            echo "FAIL: wheel-sha256.txt (pure wheels) differs between builds:"
-            cat /tmp/verify/diff-wheel-pure.txt
-            FAILED=$((FAILED + 1))
-          fi
-
-          echo ""
-
-          # --- Informational: compiled C++ CUDA extension wheels ---
-          for pattern in flashinfer_jit_cache vllm; do
-            b1=$(grep "${pattern}" /tmp/verify/build1/wheel-sha256.txt | awk '{print $1}' || true)
-            b2=$(grep "${pattern}" /tmp/verify/build2/wheel-sha256.txt | awk '{print $1}' || true)
-            if [ "${b1}" = "${b2}" ] && [ -n "${b1}" ]; then
-              echo "INFO: ${pattern} wheel is bit-for-bit reproducible this run"
-            else
-              echo "INFO: ${pattern} wheel differs (sm_121a nvcc output may be non-deterministic - not a gate)"
-            fi
-          done
-
           echo ""
 
           # Image digest comparison - non-authoritative, report only.
@@ -275,7 +183,7 @@ jobs:
           if [ "$BUILD1_ID" = "$BUILD2_ID" ]; then
             echo "INFO: image digests match (${BUILD1_ID})"
           else
-            echo "INFO: image digests differ (expected - NCCL .deb embeds timestamps)"
+            echo "INFO: image digests differ (expected - layer mtimes/order may differ)"
             echo "  build 1: ${BUILD1_ID}"
             echo "  build 2: ${BUILD2_ID}"
           fi
@@ -288,6 +196,7 @@ jobs:
             echo "  - apt install missing a =<version> pin in locks/apt-packages.txt"
             echo "  - pip dep floating transitively (audit pip-freeze diff above)"
             echo "  - uv build embedding a wall-clock timestamp (check SOURCE_DATE_EPOCH)"
+            echo "  - nvcc output not deterministic (check /usr/local/cuda/bin/nvcc wrapper)"
             exit 1
           fi
 

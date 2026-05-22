@@ -50,6 +50,7 @@ jobs:
 
           tag               = os.environ["GITHUB_REF_NAME"]
           short_sha         = os.environ["GITHUB_SHA"][:7]
+          full_sha          = os.environ["GITHUB_SHA"]
           cuda_base_image   = os.environ["CUDA_BASE_IMAGE"]
           cuda_base_digest  = os.environ["CUDA_BASE_DIGEST"]
           gb10_build        = os.environ["GB10_BUILD"]
@@ -74,15 +75,34 @@ jobs:
           instant_version   = os.environ["INSTANTTENSOR_VERSION"]
           arch_list         = os.environ["TORCH_CUDA_ARCH_LIST"]
 
-          # GHCR image pull command
-          image = f"ghcr.io/timothystewart6/vllm-gb10:{tag}"
+          # Derive short version strings for the component-shorthand tag
+          # e.g. "nvidia/cuda:13.2.0-devel-ubuntu24.04" -> "cu13.2"
+          cuda_ver = cuda_base_image.split(":")[1].split("-")[0]  # "13.2.0"
+          cuda_short = "cu" + ".".join(cuda_ver.split(".")[:2])   # "cu13.2"
+          # e.g. "2.11.0" -> "torch2.11"
+          torch_short = "torch" + ".".join(torch_version.split(".")[:2])
+
+          registry = "ghcr.io/timothystewart6/vllm-gb10"
+          tag_canonical  = f"{registry}:{vllm_ref}-gb10.{gb10_build}"
+          tag_component  = f"{registry}:{vllm_ref}-{cuda_short}-{torch_short}-gb10.{gb10_build}"
+          tag_latest     = f"{registry}:latest"
+          tag_sha        = f"{registry}:sha-{short_sha}"
 
           body = f"""## {tag}
 
           > Reproducible vLLM image for NVIDIA DGX Spark (GB10 / sm_121a)
 
+          ### Image tags
+
+          | Tag | Notes |
+          |---|---|
+          | `{tag_canonical}` | Canonical, immutable |
+          | `{tag_component}` | Same image - CUDA and PyTorch versions visible at a glance |
+          | `{tag_latest}` | Mutable - always the most recent green build |
+          | `{tag_sha}` | Immutable, tied to this exact commit |
+
           \`\`\`
-          docker pull {image}
+          docker pull {tag_canonical}
           \`\`\`
 
           ### Component versions
@@ -107,12 +127,12 @@ jobs:
           | **instanttensor** | {instant_version} | - |
           | **Target arch** | {arch_list} | - |
           | **GB10_BUILD** | {gb10_build} | - |
-          | **Repo SHA** | {short_sha} | [{short_sha}](https://github.com/timothystewart6/vllm-gb10/commit/{os.environ["GITHUB_SHA"]}) |
+          | **Repo SHA** | {short_sha} | [{short_sha}](https://github.com/timothystewart6/vllm-gb10/commit/{full_sha}) |
 
           ### Inspect inside the image
 
           \`\`\`
-          docker run --rm {image} cat /workspace/build-metadata.yaml
+          docker run --rm {tag_canonical} cat /workspace/build-metadata.yaml
           \`\`\`
 
           ### Quick start
@@ -120,7 +140,7 @@ jobs:
           \`\`\`
           docker run --rm -it --gpus all --ipc=host --network host \\
             -v ~/.cache/huggingface:/root/.cache/huggingface \\
-            {image} \\
+            {tag_canonical} \\
             vllm serve <model> --host 0.0.0.0 --port 8000
           \`\`\`
           """

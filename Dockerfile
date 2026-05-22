@@ -240,5 +240,13 @@ RUN rm -f /usr/local/lib/python3.12/dist-packages/nvidia/nccl/lib/libnccl.so.2 \
  && rm /tmp/libnccl.stripped.so
 
 COPY build-metadata.yaml /workspace/build-metadata.yaml
+
+# Preflight wrapper for `vllm serve` that validates --max-model-len against
+# the model's max_position_embeddings before launch. Prevents a silent CUDA
+# device-side assert crash on first inference. See issue #7.
+# Invoke as: vllm-serve-safe <model> --max-model-len N [other flags...]
+COPY scripts/vllm-serve-safe.sh /usr/local/bin/vllm-serve-safe
+RUN chmod +x /usr/local/bin/vllm-serve-safe
+
 # No ENTRYPOINT - users run: docker run ... <image> vllm serve ...
 CMD ["bash"]

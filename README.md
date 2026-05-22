@@ -88,6 +88,60 @@ CI triggers on changes to `versions.env`, `Dockerfile`, `locks/`, `scripts/`,
 or `checksums/`. A green build publishes updated image tags and creates a
 GitHub Release automatically.
 
+## `--max-model-len` and `max_position_embeddings`
+
+vLLM does **not** hard-cap `--max-model-len` at the model's `max_position_embeddings`. It logs a warning at startup and loads anyway. The first inference request then triggers a CUDA device-side assert that kills the engine — even with `VLLM_ALLOW_LONG_MAX_MODEL_LEN=1`. On the GB10, where a 60+ GB model takes 13–15 minutes to load over NFS, this produces a painful crash loop.
+
+See [issue #7](https://github.com/timothystewart6/vllm-gb10/issues/7) for the full trace and root cause.
+
+### Known-safe values
+
+| Model | `max_position_embeddings` |
+|-------|--------------------------|
+| `Qwen/Qwen3-32B` | 40,960 |
+| `Qwen/Qwen3-14B` | 40,960 |
+| `Qwen/Qwen3-8B` | 40,960 |
+| `Qwen/Qwen2.5-32B-Instruct` | 32,768 |
+| `meta-llama/Llama-3.3-70B-Instruct` | 131,072 |
+| `meta-llama/Llama-3.1-8B-Instruct` | 131,072 |
+| `mistralai/Mistral-Small-Instruct-2409` | 32,768 |
+| `google/gemma-3-27b-it` | 131,072 |
+| `microsoft/Phi-4` | 16,384 |
+| `deepseek-ai/DeepSeek-V3` | 163,840 |
+
+Check any model without downloading weights:
+
+```bash
+python3 -c "
+from huggingface_hub import hf_hub_download
+import json
+cfg = json.load(open(hf_hub_download('Qwen/Qwen3-32B', 'config.json')))
+print(cfg['max_position_embeddings'])
+"
+```
+
+### Preflight wrapper
+
+This image ships `vllm-serve-safe` — a thin wrapper around `vllm serve` that validates `--max-model-len` before launch:
+
+```bash
+# Default: refuse to start if --max-model-len exceeds the model's limit
+docker run --gpus all \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  ghcr.io/timothystewart6/vllm-gb10:latest \
+  vllm-serve-safe Qwen/Qwen3-32B --max-model-len 65536
+# [vllm-serve-safe] REFUSING TO START. max_position_embeddings=40960 requested=65536
+
+# Or auto-clamp to the model's actual maximum:
+docker run --gpus all -e VLLM_GB10_AUTOCLAMP=1 \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  ghcr.io/timothystewart6/vllm-gb10:latest \
+  vllm-serve-safe Qwen/Qwen3-32B --max-model-len 65536
+# [vllm-serve-safe] clamping --max-model-len 65536 -> 40960
+```
+
+All other flags pass through unchanged. `vllm serve` still works as before — `vllm-serve-safe` is strictly opt-in.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Security issues: [SECURITY.md](SECURITY.md).

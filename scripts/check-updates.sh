@@ -101,6 +101,42 @@ pypi_latest() {
     | python3 -c "import json,sys; print(json.load(sys.stdin)['info']['version'])"
 }
 
+vllm_req() {
+  # Returns the version pinned for $pkg in vLLM's requirements/cuda.txt at
+  # VLLM_REF. Matches lines like "torch==2.11.0" or "torchvision==0.26.0 # comment".
+  local pkg="$1"
+  local ref="${VLLM_REF}"
+  curl -fsSL \
+    "https://raw.githubusercontent.com/vllm-project/vllm/${ref}/requirements/cuda.txt" \
+    | python3 -c "
+import sys, re
+pkg = sys.argv[1]
+for line in sys.stdin:
+    m = re.match(r'^' + re.escape(pkg) + r'==([^\s#]+)', line.strip())
+    if m:
+        print(m.group(1))
+        sys.exit(0)
+print('NOT_FOUND')
+" "${pkg}"
+}
+
+torch_triton_pin() {
+  # Returns the triton version that torch==TORCH_VERSION pins as a dependency.
+  local torch_ver="$1"
+  curl -fsSL "https://pypi.org/pypi/torch/${torch_ver}/json" \
+    | python3 -c "
+import json, sys, re
+data = json.load(sys.stdin)
+deps = data.get('info', {}).get('requires_dist', []) or []
+for dep in deps:
+    m = re.match(r'^triton==([^\s,;]+)', dep.strip())
+    if m:
+        print(m.group(1))
+        sys.exit(0)
+print('NOT_FOUND')
+"
+}
+
 report() {
   local label="$1"
   local key="$2"
@@ -136,22 +172,47 @@ UV_LATEST=$(gh_latest_tag "astral-sh/uv")
 report "uv (UV_VERSION)" "UV_VERSION" "${UV_VERSION}" "${UV_LATEST}"
 
 # ---------------------------------------------------------------------------
-# PyPI components
+# PyTorch stack - sourced from vLLM's requirements/cuda.txt at VLLM_REF,
+# NOT from PyPI-latest. These must stay in sync with what vLLM requires.
+# ---------------------------------------------------------------------------
+
+log "Checking PyTorch stack against vLLM ${VLLM_REF} requirements..."
+
+TORCH_REQUIRED=$(vllm_req "torch")
+TORCHVISION_REQUIRED=$(vllm_req "torchvision")
+TORCHAUDIO_REQUIRED=$(vllm_req "torchaudio")
+
+if [ "${TORCH_REQUIRED}" = "NOT_FOUND" ]; then
+  printf 'WARN    %-30s could not parse from vLLM requirements/cuda.txt\n' "PyTorch (TORCH_VERSION)"
+else
+  report "PyTorch (TORCH_VERSION)" "TORCH_VERSION" "${TORCH_VERSION}" "${TORCH_REQUIRED}"
+fi
+
+if [ "${TORCHVISION_REQUIRED}" = "NOT_FOUND" ]; then
+  printf 'WARN    %-30s could not parse from vLLM requirements/cuda.txt\n' "TorchVision (TORCHVISION_VERSION)"
+else
+  report "TorchVision (TORCHVISION_VERSION)" "TORCHVISION_VERSION" "${TORCHVISION_VERSION}" "${TORCHVISION_REQUIRED}"
+fi
+
+if [ "${TORCHAUDIO_REQUIRED}" = "NOT_FOUND" ]; then
+  printf 'WARN    %-30s could not parse from vLLM requirements/cuda.txt\n' "TorchAudio (TORCHAUDIO_VERSION)"
+else
+  report "TorchAudio (TORCHAUDIO_VERSION)" "TORCHAUDIO_VERSION" "${TORCHAUDIO_VERSION}" "${TORCHAUDIO_REQUIRED}"
+fi
+
+# Triton is a transitive dep of torch - read the pin from torch's PyPI metadata.
+TRITON_REQUIRED=$(torch_triton_pin "${TORCH_REQUIRED:-${TORCH_VERSION}}")
+if [ "${TRITON_REQUIRED}" = "NOT_FOUND" ]; then
+  printf 'WARN    %-30s could not parse from torch PyPI metadata\n' "Triton (TRITON_VERSION)"
+else
+  report "Triton (TRITON_VERSION)" "TRITON_VERSION" "${TRITON_VERSION}" "${TRITON_REQUIRED}"
+fi
+
+# ---------------------------------------------------------------------------
+# Other PyPI components
 # ---------------------------------------------------------------------------
 
 log "Checking PyPI..."
-
-TORCH_LATEST=$(pypi_latest "torch")
-report "PyTorch (TORCH_VERSION)" "TORCH_VERSION" "${TORCH_VERSION}" "${TORCH_LATEST}"
-
-TORCHVISION_LATEST=$(pypi_latest "torchvision")
-report "TorchVision (TORCHVISION_VERSION)" "TORCHVISION_VERSION" "${TORCHVISION_VERSION}" "${TORCHVISION_LATEST}"
-
-TORCHAUDIO_LATEST=$(pypi_latest "torchaudio")
-report "TorchAudio (TORCHAUDIO_VERSION)" "TORCHAUDIO_VERSION" "${TORCHAUDIO_VERSION}" "${TORCHAUDIO_LATEST}"
-
-TRITON_LATEST=$(pypi_latest "triton")
-report "Triton (TRITON_VERSION)" "TRITON_VERSION" "${TRITON_VERSION}" "${TRITON_LATEST}"
 
 NVSHMEM_LATEST=$(pypi_latest "nvidia-nvshmem-cu13")
 report "NVSHMEM (NVSHMEM_VERSION)" "NVSHMEM_VERSION" "${NVSHMEM_VERSION}" "${NVSHMEM_LATEST}"

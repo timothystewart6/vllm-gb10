@@ -15,8 +15,9 @@
 # Working/scratch folder (gitignored)
 zIgnore/
 
-# Scripts are not COPYed into the image
+# Scripts are not COPYed into the image, except the build-time hash helper
 scripts/
+!scripts/hash-build-artifacts.sh
 
 # Docs and CI config are not needed in the build context
 docs/

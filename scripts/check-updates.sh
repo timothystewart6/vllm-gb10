@@ -212,11 +212,24 @@ report "TorchAudio (TORCHAUDIO_VERSION)" "TORCHAUDIO_VERSION" "${TORCHAUDIO_VERS
 # Triton is transitively pinned by torch (e.g. torch 2.11.0 requires triton 3.6.0).
 # vLLM doesn't pin it directly, so we leave it at current and let bump.sh's
 # resolver enforce the torch-coupled version - never auto-bump from PyPI here.
-TRITON_LATEST="${TRITON_VERSION}"
-report "Triton (TRITON_VERSION)" "TRITON_VERSION" "${TRITON_VERSION}" "${TRITON_LATEST}"
+TRITON_LATEST_PYPI=$(pypi_latest "triton")
+if [ "${TRITON_VERSION}" != "${TRITON_LATEST_PYPI}" ]; then
+  printf '%s %-30s current=%-20s pypi=%s (locked by torch - not auto-bumped)\n' \
+    "INFO   " "Triton (TRITON_VERSION)" "${TRITON_VERSION}" "${TRITON_LATEST_PYPI}"
+else
+  printf '%s %-30s current=%-20s\n' "${OK}" "Triton (TRITON_VERSION)" "${TRITON_VERSION}"
+fi
 
-NVSHMEM_LATEST=$(pypi_latest "nvidia-nvshmem-cu13")
-report "NVSHMEM (NVSHMEM_VERSION)" "NVSHMEM_VERSION" "${NVSHMEM_VERSION}" "${NVSHMEM_LATEST}"
+# NVSHMEM is transitively pinned by torch's cu130 wheel
+# (torch==2.11.0+cu130 depends on nvidia-nvshmem-cu13==3.4.5). Report newer
+# upstream versions but never auto-bump - the resolver will reject them.
+NVSHMEM_LATEST_PYPI=$(pypi_latest "nvidia-nvshmem-cu13")
+if [ "${NVSHMEM_VERSION}" != "${NVSHMEM_LATEST_PYPI}" ]; then
+  printf '%s %-30s current=%-20s pypi=%s (locked by torch - not auto-bumped)\n' \
+    "INFO   " "NVSHMEM (NVSHMEM_VERSION)" "${NVSHMEM_VERSION}" "${NVSHMEM_LATEST_PYPI}"
+else
+  printf '%s %-30s current=%-20s\n' "${OK}" "NVSHMEM (NVSHMEM_VERSION)" "${NVSHMEM_VERSION}"
+fi
 
 # PyPI package is 'apache-tvm-ffi' (not 'tvm-ffi'). vLLM pins it explicitly.
 TVM_FFI_LATEST=$(vllm_or_pypi "apache-tvm-ffi")

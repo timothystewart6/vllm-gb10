@@ -101,21 +101,20 @@ jobs:
             type=raw,value=latest
             type=sha,prefix=sha-,format=short
 
-      - name: Build image (push=false, iterate until green)
+      - name: Build and push image to GHCR
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf
         with:
           context: .
           target: runner
           platforms: linux/arm64
           push: true
-          load: true
-          # provenance/sbom must remain false while load=true is set.
-          # With provenance=true, buildx exports an OCI manifest-list and streams
-          # it back to the Docker daemon; for images this size the BuildKit gRPC
-          # session times out before the transfer completes (context deadline
-          # exceeded). provenance=false forces plain Docker image format, avoiding
-          # the timeout. The pushed image is a plain Docker manifest; attestations
-          # can be added in a later phase once load=true is dropped from this job.
+          # load: false because with load+push BuildKit serializes the OCI
+          # tarball twice (once to the local docker daemon, once to GHCR).
+          # For multi-GB images this doubles I/O and previously stalled at
+          # "#33 sending tarball". The smoke test below pulls from GHCR.
+          load: false
+          # provenance/sbom kept false for now to keep the pushed image as a
+          # plain Docker manifest. Attestations can be enabled in a later phase.
           provenance: false
           sbom: false
           tags: ${{ steps.meta.outputs.tags }}
@@ -150,6 +149,14 @@ jobs:
             TORCH_CUDA_ARCH_LIST=${{ env.TORCH_CUDA_ARCH_LIST }}
             FLASHINFER_CUDA_ARCH_LIST=${{ env.FLASHINFER_CUDA_ARCH_LIST }}
             SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }}
+
+      - name: Pull image for local steps
+        # The build step pushed to GHCR with load=false to avoid double-export.
+        # Pull the canonical tag once so subsequent local steps (smoke test,
+        # artifact extraction, Docker Hub mirror) can use it from the local daemon.
+        run: |
+          IMAGE="ghcr.io/timothystewart6/vllm-gb10:${{ env.VLLM_REF }}-gb10.${{ env.GB10_BUILD }}"
+          docker pull "${IMAGE}"
 
       - name: Smoke test
         # Runs tests/smoke-test.sh inside the locally-loaded image.
@@ -198,9 +205,10 @@ jobs:
           git push origin "$TAG" || true
 
       - name: Mirror to Docker Hub
-        # Re-tags the locally-loaded image and pushes the same four tags to
-        # Docker Hub. The image is already in the local daemon from build-push-action
-        # (load: true), so no re-pull is needed.
+        # Re-tags the locally-pulled image and pushes the same four tags to
+        # Docker Hub. Only the canonical tag was pulled (see "Pull image for
+        # local steps"); the other three tags refer to the same digest on
+        # GHCR, so we just re-tag locally from the canonical image.
         run: |
           SRC="ghcr.io/timothystewart6/vllm-gb10"
           DST="timothystewart6/vllm-gb10"
@@ -208,6 +216,6 @@ jobs:
           SHORTHAND="${VLLM_REF}-${CUDA_SHORT}-${TORCH_SHORT}-gb10.${GB10_BUILD}"
           SHA_TAG="sha-$(git rev-parse --short HEAD)"
           for TAG in "${CANONICAL}" "${SHORTHAND}" "latest" "${SHA_TAG}"; do
-            docker tag "${SRC}:${TAG}" "${DST}:${TAG}"
+            docker tag "${SRC}:${CANONICAL}" "${DST}:${TAG}"
             docker push "${DST}:${TAG}"
           done

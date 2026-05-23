@@ -6,7 +6,7 @@
 #
 # Trigger: any PR (from this repo, not forks) that touches versions.env.
 #
-# actions/checkout  v4.2.2 => 11bd71901bbe5b1630ceea73d27597364c9af683
+# actions/checkout  v6.0.2 => de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
 name: Run bump.sh
 
@@ -32,7 +32,7 @@ jobs:
 
     steps:
       - name: Checkout PR branch
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           # Check out the actual PR branch, not the synthetic merge commit,
           # so we can commit and push back to it.

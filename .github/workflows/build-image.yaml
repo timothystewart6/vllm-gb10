@@ -6,10 +6,10 @@
 # Actions are pinned by SHA per the SPEC. Update SHAs via Dependabot
 # (added in Phase 5) - do NOT track floating tags.
 #
-# actions/checkout             v4.2.2  => 11bd71901bbe5b1630ceea73d27597364c9af683
-# docker/setup-buildx-action   v4.0.0  => 4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd
-# docker/login-action          v4.1.0  => 4907a6ddec9925e35a0a9e82d7399ccc52663121
-# docker/metadata-action       v6.0.0  => 030e881283bb7a6894de51c315a6bfe6a94e05cf
+# actions/checkout             v6.0.2  => de0fac2e4500dabe0009e67214ff5f5447ce83dd
+# docker/setup-buildx-action   v4.1.0  => d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5
+# docker/login-action          v4.2.0  => 650006c6eb7dba73a995cc03b0b2d7f5ca915bee
+# docker/metadata-action       v6.1.0  => 80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9
 # docker/build-push-action     v7.2.0  => f9f3042f7e2789586610d6e8b85c8f03e5195baf
 # actions/upload-artifact      v7.0.1  => 043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
 
@@ -43,7 +43,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Source versions.env into GITHUB_ENV
         # Pass every non-comment, non-blank line directly.
@@ -61,17 +61,17 @@ jobs:
           bash scripts/render-metadata.sh > build-metadata.yaml
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5
 
       - name: Log in to GHCR
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Log in to Docker Hub
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee
         with:
           username: timothystewart6
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -87,7 +87,7 @@ jobs:
 
       - name: Docker metadata
         id: meta
-        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf
+        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9
         with:
           images: ghcr.io/timothystewart6/vllm-gb10
           # Four published tags per build:

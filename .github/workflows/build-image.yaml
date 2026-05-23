@@ -6,7 +6,7 @@
 # Actions are pinned by SHA per the SPEC. Update SHAs via Dependabot
 # (added in Phase 5) - do NOT track floating tags.
 #
-# actions/checkout             v4.2.2  => 11bd71901bbe5b1630ceea73d27597364c9af683
+# actions/checkout             v6.0.2  => de0fac2e4500dabe0009e67214ff5f5447ce83dd
 # docker/setup-buildx-action   v4.0.0  => 4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd
 # docker/login-action          v4.1.0  => 4907a6ddec9925e35a0a9e82d7399ccc52663121
 # docker/metadata-action       v6.0.0  => 030e881283bb7a6894de51c315a6bfe6a94e05cf
@@ -43,7 +43,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Source versions.env into GITHUB_ENV
         # Pass every non-comment, non-blank line directly.

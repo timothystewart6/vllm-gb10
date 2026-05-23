@@ -27,7 +27,7 @@
 #
 # Actions are pinned by SHA per the SPEC. Update via Dependabot (Phase 5).
 #
-# actions/checkout             v4.2.2  => 11bd71901bbe5b1630ceea73d27597364c9af683
+# actions/checkout             v6.0.2  => de0fac2e4500dabe0009e67214ff5f5447ce83dd
 # docker/setup-buildx-action   v4.0.0  => 4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd
 # docker/build-push-action     v7.2.0  => f9f3042f7e2789586610d6e8b85c8f03e5195baf
 # actions/upload-artifact      v7.0.1  => 043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -51,7 +51,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Source versions.env into GITHUB_ENV
         run: |

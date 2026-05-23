@@ -117,6 +117,13 @@ jobs:
           # plain Docker manifest. Attestations can be enabled in a later phase.
           provenance: false
           sbom: false
+          # Registry-based BuildKit cache pushed to a dedicated ':buildcache'
+          # tag on GHCR. Survives runner restarts and buildx builder rotation,
+          # so re-running a failed job (e.g. transient push denial) reuses all
+          # layers and finishes in minutes instead of an hour.
+          # mode=max stores intermediate layers too (not just the final image).
+          cache-from: type=registry,ref=ghcr.io/timothystewart6/vllm-gb10:buildcache
+          cache-to: type=registry,ref=ghcr.io/timothystewart6/vllm-gb10:buildcache,mode=max,image-manifest=true,oci-mediatypes=true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |

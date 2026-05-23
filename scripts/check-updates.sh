@@ -101,6 +101,43 @@ pypi_latest() {
     | python3 -c "import json,sys; print(json.load(sys.stdin)['info']['version'])"
 }
 
+# ---------------------------------------------------------------------------
+# vLLM pins lookup
+# Many of the runtime/build deps must exactly match what vLLM declares at the
+# pinned tag (torch, torchvision, torchaudio, apache-tvm-ffi, tilelang, numba,
+# flashinfer-python). Querying PyPI latest for these produces conflicts when
+# vLLM has not caught up. We fetch vLLM's requirements files once and prefer
+# those pins over PyPI 'latest'.
+# ---------------------------------------------------------------------------
+VLLM_REQS_RAW=""
+load_vllm_reqs() {
+  local tag="$1"
+  local base="https://raw.githubusercontent.com/vllm-project/vllm/refs/tags/${tag}"
+  VLLM_REQS_RAW="$(
+    {
+      curl -fsSL "${base}/requirements/cuda.txt"       2>/dev/null || true
+      printf '\n'
+      curl -fsSL "${base}/requirements/build/cuda.txt" 2>/dev/null || true
+    }
+  )"
+}
+
+vllm_pin() {
+  # Print the version pinned by vLLM for ${pkg} (first '==' line), or nothing.
+  local pkg="$1"
+  printf '%s\n' "${VLLM_REQS_RAW}" \
+    | python3 -c "
+import re, sys
+pkg = '''$pkg'''
+pat = re.compile(r'^\s*' + re.escape(pkg) + r'\s*==\s*([^\s#;]+)')
+for line in sys.stdin:
+    m = pat.match(line)
+    if m:
+        print(m.group(1))
+        break
+"
+}
+
 report() {
   local label="$1"
   local key="$2"
@@ -126,10 +163,22 @@ log "Checking GitHub releases..."
 VLLM_LATEST=$(gh_latest_tag "vllm-project/vllm")
 report "vLLM (VLLM_REF)" "VLLM_REF" "${VLLM_REF}" "${VLLM_LATEST}"
 
+# Load vLLM's pinned dep versions at the *target* tag so dependent components
+# below can be aligned to it (rather than blindly tracking PyPI latest).
+log "Fetching vLLM ${VLLM_LATEST} requirements for cross-checks..."
+load_vllm_reqs "${VLLM_LATEST}"
+
 NCCL_LATEST=$(gh_latest_tag "NVIDIA/nccl")
 report "NCCL (NCCL_REF)" "NCCL_REF" "${NCCL_REF}" "${NCCL_LATEST}"
 
-FLASHINFER_LATEST=$(gh_latest_tag "flashinfer-ai/flashinfer")
+# FlashInfer ref is driven by vLLM's flashinfer-python pin; fall back to GH latest
+# only when vLLM doesn't pin it (which would be unexpected).
+FLASHINFER_PIN=$(vllm_pin "flashinfer-python")
+if [[ -n "${FLASHINFER_PIN}" ]]; then
+  FLASHINFER_LATEST="v${FLASHINFER_PIN}"
+else
+  FLASHINFER_LATEST=$(gh_latest_tag "flashinfer-ai/flashinfer")
+fi
 report "FlashInfer (FLASHINFER_REF)" "FLASHINFER_REF" "${FLASHINFER_REF}" "${FLASHINFER_LATEST}"
 
 UV_LATEST=$(gh_latest_tag "astral-sh/uv")
@@ -141,28 +190,42 @@ report "uv (UV_VERSION)" "UV_VERSION" "${UV_VERSION}" "${UV_LATEST}"
 
 log "Checking PyPI..."
 
-TORCH_LATEST=$(pypi_latest "torch")
+# vllm_or_pypi: prefer vLLM's pin; fall back to PyPI 'latest' if vLLM has none.
+# Components vLLM pins explicitly (torch/torchvision/torchaudio/apache-tvm-ffi/
+# tilelang/numba) CANNOT be bumped independently or pip will fail to resolve.
+vllm_or_pypi() {
+  local pkg="$1"
+  local v
+  v=$(vllm_pin "${pkg}")
+  if [[ -n "${v}" ]]; then printf '%s' "${v}"; else pypi_latest "${pkg}"; fi
+}
+
+TORCH_LATEST=$(vllm_or_pypi "torch")
 report "PyTorch (TORCH_VERSION)" "TORCH_VERSION" "${TORCH_VERSION}" "${TORCH_LATEST}"
 
-TORCHVISION_LATEST=$(pypi_latest "torchvision")
+TORCHVISION_LATEST=$(vllm_or_pypi "torchvision")
 report "TorchVision (TORCHVISION_VERSION)" "TORCHVISION_VERSION" "${TORCHVISION_VERSION}" "${TORCHVISION_LATEST}"
 
-TORCHAUDIO_LATEST=$(pypi_latest "torchaudio")
+TORCHAUDIO_LATEST=$(vllm_or_pypi "torchaudio")
 report "TorchAudio (TORCHAUDIO_VERSION)" "TORCHAUDIO_VERSION" "${TORCHAUDIO_VERSION}" "${TORCHAUDIO_LATEST}"
 
-TRITON_LATEST=$(pypi_latest "triton")
+# Triton is transitively pinned by torch (e.g. torch 2.11.0 requires triton 3.6.0).
+# vLLM doesn't pin it directly, so we leave it at current and let bump.sh's
+# resolver enforce the torch-coupled version - never auto-bump from PyPI here.
+TRITON_LATEST="${TRITON_VERSION}"
 report "Triton (TRITON_VERSION)" "TRITON_VERSION" "${TRITON_VERSION}" "${TRITON_LATEST}"
 
 NVSHMEM_LATEST=$(pypi_latest "nvidia-nvshmem-cu13")
 report "NVSHMEM (NVSHMEM_VERSION)" "NVSHMEM_VERSION" "${NVSHMEM_VERSION}" "${NVSHMEM_LATEST}"
 
-TVM_FFI_LATEST=$(pypi_latest "tvm-ffi")
+# PyPI package is 'apache-tvm-ffi' (not 'tvm-ffi'). vLLM pins it explicitly.
+TVM_FFI_LATEST=$(vllm_or_pypi "apache-tvm-ffi")
 report "TVM FFI (TVM_FFI_VERSION)" "TVM_FFI_VERSION" "${TVM_FFI_VERSION}" "${TVM_FFI_LATEST}"
 
-TILELANG_LATEST=$(pypi_latest "tilelang")
+TILELANG_LATEST=$(vllm_or_pypi "tilelang")
 report "TileLang (TILELANG_VERSION)" "TILELANG_VERSION" "${TILELANG_VERSION}" "${TILELANG_LATEST}"
 
-NUMBA_LATEST=$(pypi_latest "numba")
+NUMBA_LATEST=$(vllm_or_pypi "numba")
 report "Numba (NUMBA_VERSION)" "NUMBA_VERSION" "${NUMBA_VERSION}" "${NUMBA_LATEST}"
 
 # ---------------------------------------------------------------------------

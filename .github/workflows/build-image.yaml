@@ -12,6 +12,15 @@
 # docker/metadata-action       v6.1.0  => 80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9
 # docker/build-push-action     v7.2.0  => f9f3042f7e2789586610d6e8b85c8f03e5195baf
 # actions/upload-artifact      v7.0.1  => 043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+#
+# Job layout (split so re-runs of cheap stages don't require a 1-hour rebuild):
+#
+#   build    -> compile + push image to GHCR (the expensive job; cached to
+#               ghcr.io/.../:buildcache so re-runs are near-instant cache hits)
+#   verify   -> needs: build. Pull image, smoke test, extract artifacts.
+#   release  -> needs: verify. Push git release tag, mirror image to Docker Hub.
+#
+# Re-run "verify" or "release" from the Actions UI to retry without rebuilding.
 
 name: Build vllm-gb10 image
 
@@ -38,8 +47,16 @@ permissions:
   packages: write
 
 jobs:
-  build-and-test:
+  build:
     runs-on: [self-hosted, linux, ARM64, dgx-spark]
+    outputs:
+      vllm_ref: ${{ steps.vars.outputs.vllm_ref }}
+      gb10_build: ${{ steps.vars.outputs.gb10_build }}
+      cuda_short: ${{ steps.vars.outputs.cuda_short }}
+      torch_short: ${{ steps.vars.outputs.torch_short }}
+      canonical_tag: ${{ steps.vars.outputs.canonical_tag }}
+      shorthand_tag: ${{ steps.vars.outputs.shorthand_tag }}
+      sha_tag: ${{ steps.vars.outputs.sha_tag }}
 
     steps:
       - name: Checkout
@@ -70,18 +87,30 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Log in to Docker Hub
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee
-        with:
-          username: timothystewart6
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Compute tag shorthand components
-        # Derive cu<major.minor> from CUDA_BASE_IMAGE and torch<major.minor>
-        # from TORCH_VERSION for the human-readable shorthand tag.
+      - name: Compute tag variables
+        id: vars
+        # Derive cu<major.minor> from CUDA_BASE_IMAGE, torch<major.minor>
+        # from TORCH_VERSION, and emit all four target tag strings as
+        # step outputs so downstream jobs can reuse them without
+        # re-sourcing versions.env.
         run: |
           CUDA_SHORT="cu$(echo "$CUDA_BASE_IMAGE" | sed 's/.*cuda:\([0-9]*\.[0-9]*\)\.[0-9]*.*/\1/')"
           TORCH_SHORT="torch$(echo "$TORCH_VERSION" | cut -d. -f1-2)"
+          SHA_TAG="sha-$(git rev-parse --short HEAD)"
+          CANONICAL="${VLLM_REF}-gb10.${GB10_BUILD}"
+          SHORTHAND="${VLLM_REF}-${CUDA_SHORT}-${TORCH_SHORT}-gb10.${GB10_BUILD}"
+
+          {
+            echo "vllm_ref=${VLLM_REF}"
+            echo "gb10_build=${GB10_BUILD}"
+            echo "cuda_short=${CUDA_SHORT}"
+            echo "torch_short=${TORCH_SHORT}"
+            echo "canonical_tag=${CANONICAL}"
+            echo "shorthand_tag=${SHORTHAND}"
+            echo "sha_tag=${SHA_TAG}"
+          } >> "$GITHUB_OUTPUT"
+
+          # Also export for the metadata-action step in this job.
           echo "CUDA_SHORT=${CUDA_SHORT}" >> "$GITHUB_ENV"
           echo "TORCH_SHORT=${TORCH_SHORT}" >> "$GITHUB_ENV"
 
@@ -111,7 +140,7 @@ jobs:
           # load: false because with load+push BuildKit serializes the OCI
           # tarball twice (once to the local docker daemon, once to GHCR).
           # For multi-GB images this doubles I/O and previously stalled at
-          # "#33 sending tarball". The smoke test below pulls from GHCR.
+          # "#33 sending tarball". Downstream jobs pull from GHCR.
           load: false
           # provenance/sbom kept false for now to keep the pushed image as a
           # plain Docker manifest. Attestations can be enabled in a later phase.
@@ -157,41 +186,53 @@ jobs:
             FLASHINFER_CUDA_ARCH_LIST=${{ env.FLASHINFER_CUDA_ARCH_LIST }}
             SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }}
 
-      - name: Pull image for local steps
-        # The build step pushed to GHCR with load=false to avoid double-export.
-        # Pull the canonical tag once so subsequent local steps (smoke test,
-        # artifact extraction, Docker Hub mirror) can use it from the local daemon.
-        run: |
-          IMAGE="ghcr.io/timothystewart6/vllm-gb10:${{ env.VLLM_REF }}-gb10.${{ env.GB10_BUILD }}"
-          docker pull "${IMAGE}"
+  verify:
+    needs: build
+    runs-on: [self-hosted, linux, ARM64, dgx-spark]
+    env:
+      CANONICAL_IMAGE: ghcr.io/timothystewart6/vllm-gb10:${{ needs.build.outputs.canonical_tag }}
+
+    steps:
+      - name: Checkout
+        # Needed for tests/smoke-test.sh source.
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Log in to GHCR
+        # Required to pull the freshly-pushed image (may be private).
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull image
+        run: docker pull "${CANONICAL_IMAGE}"
 
       - name: Smoke test
-        # Runs tests/smoke-test.sh inside the locally-loaded image.
+        # Runs tests/smoke-test.sh inside the pulled image.
         # The runner IS a DGX Spark so --gpus all works here.
         # Multiple docker containers can share GPU access; the running vllm
         # service does not prevent the smoke test from seeing the GPU.
         run: |
-          IMAGE="ghcr.io/timothystewart6/vllm-gb10:${{ env.VLLM_REF }}-gb10.${{ env.GB10_BUILD }}"
           docker run --rm --gpus all \
             -v "${{ github.workspace }}/tests/smoke-test.sh:/tmp/smoke-test.sh:ro" \
-            "${IMAGE}" bash /tmp/smoke-test.sh
+            "${CANONICAL_IMAGE}" bash /tmp/smoke-test.sh
 
       - name: Extract build artifacts from image
         # Extract the authoritative artifact set for the verify-reproducible
         # workflow to compare. pip freeze and apt versions are runtime reads;
         # the others were written during the build into /workspace/build-artifacts/.
         run: |
-          IMAGE="ghcr.io/timothystewart6/vllm-gb10:${{ env.VLLM_REF }}-gb10.${{ env.GB10_BUILD }}"
           mkdir -p /tmp/build-artifacts
-          docker run --rm "${IMAGE}" cat /workspace/build-artifacts/wheel-sha256.txt \
+          docker run --rm "${CANONICAL_IMAGE}" cat /workspace/build-artifacts/wheel-sha256.txt \
             > /tmp/build-artifacts/wheel-sha256.txt
-          docker run --rm "${IMAGE}" cat /workspace/build-artifacts/nccl-sha256.txt \
+          docker run --rm "${CANONICAL_IMAGE}" cat /workspace/build-artifacts/nccl-sha256.txt \
             > /tmp/build-artifacts/nccl-sha256.txt
-          docker run --rm "${IMAGE}" cat /workspace/build-metadata.yaml \
+          docker run --rm "${CANONICAL_IMAGE}" cat /workspace/build-metadata.yaml \
             > /tmp/build-artifacts/build-metadata.yaml
-          docker run --rm "${IMAGE}" python3 -m pip freeze \
+          docker run --rm "${CANONICAL_IMAGE}" python3 -m pip freeze \
             > /tmp/build-artifacts/pip-freeze.txt
-          docker run --rm "${IMAGE}" \
+          docker run --rm "${CANONICAL_IMAGE}" \
             bash -c "dpkg-query -W -f='\${Package}=\${Version}\n' | sort" \
             > /tmp/build-artifacts/apt-versions.txt
 
@@ -201,6 +242,40 @@ jobs:
           name: build-artifacts-${{ github.sha }}
           path: /tmp/build-artifacts/
           if-no-files-found: error
+
+  release:
+    needs: [build, verify]
+    runs-on: [self-hosted, linux, ARM64, dgx-spark]
+    env:
+      VLLM_REF: ${{ needs.build.outputs.vllm_ref }}
+      GB10_BUILD: ${{ needs.build.outputs.gb10_build }}
+      CANONICAL: ${{ needs.build.outputs.canonical_tag }}
+      SHORTHAND: ${{ needs.build.outputs.shorthand_tag }}
+      SHA_TAG: ${{ needs.build.outputs.sha_tag }}
+
+    steps:
+      - name: Checkout
+        # Needed for `git tag` / `git push` of the release tag.
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Log in to GHCR
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee
+        with:
+          username: timothystewart6
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Pull image
+        # Ensures the image is in the local daemon even if this job lands
+        # on a different runner than `verify` (defensive; today there is
+        # only one dgx-spark runner so it would still be cached).
+        run: docker pull "ghcr.io/timothystewart6/vllm-gb10:${CANONICAL}"
 
       - name: Push release tag
         # Tags the commit that produced this green build so create-release.yaml
@@ -212,16 +287,12 @@ jobs:
           git push origin "$TAG" || true
 
       - name: Mirror to Docker Hub
-        # Re-tags the locally-pulled image and pushes the same four tags to
-        # Docker Hub. Only the canonical tag was pulled (see "Pull image for
-        # local steps"); the other three tags refer to the same digest on
-        # GHCR, so we just re-tag locally from the canonical image.
+        # Re-tag the pulled canonical image with all four target names and
+        # push to Docker Hub. All four tags share the same digest on GHCR,
+        # so a single pull is enough.
         run: |
           SRC="ghcr.io/timothystewart6/vllm-gb10"
           DST="timothystewart6/vllm-gb10"
-          CANONICAL="${VLLM_REF}-gb10.${GB10_BUILD}"
-          SHORTHAND="${VLLM_REF}-${CUDA_SHORT}-${TORCH_SHORT}-gb10.${GB10_BUILD}"
-          SHA_TAG="sha-$(git rev-parse --short HEAD)"
           for TAG in "${CANONICAL}" "${SHORTHAND}" "latest" "${SHA_TAG}"; do
             docker tag "${SRC}:${CANONICAL}" "${DST}:${TAG}"
             docker push "${DST}:${TAG}"

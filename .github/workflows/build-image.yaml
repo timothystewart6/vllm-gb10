@@ -277,14 +277,35 @@ jobs:
         # only one dgx-spark runner so it would still be cached).
         run: docker pull "ghcr.io/timothystewart6/vllm-gb10:${CANONICAL}"
 
-      - name: Push release tag
-        # Tags the commit that produced this green build so create-release.yaml
-        # fires automatically. Skipped on workflow_dispatch re-runs of old commits
-        # (tag already exists) - the || true swallows the non-zero exit.
+      - name: Push release tag and create GitHub Release
+        # Pushing a tag with GITHUB_TOKEN does NOT trigger other workflows
+        # (GitHub anti-recursion). So instead of relying on create-release.yaml
+        # to fire on tag-push, we push the tag AND create the release inline
+        # here using the same GITHUB_TOKEN. Release notes come from the
+        # shared script so create-release.yaml (manual fallback) stays in sync.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${VLLM_REF}-gb10.${GB10_BUILD}"
-          git tag "$TAG" || true
-          git push origin "$TAG" || true
+
+          # Push the tag (idempotent on re-runs).
+          if git rev-parse "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "Tag ${TAG} already exists locally."
+          else
+            git tag "${TAG}"
+          fi
+          git push origin "${TAG}" || echo "Tag push skipped (likely already on remote)."
+
+          # Create the release if it doesn't exist yet.
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "Release ${TAG} already exists - skipping."
+          else
+            TAG="${TAG}" GITHUB_SHA="${GITHUB_SHA}" \
+              bash scripts/generate-release-notes.sh > /tmp/release-notes.md
+            gh release create "${TAG}" \
+              --title "vllm-gb10 ${TAG}" \
+              --notes-file /tmp/release-notes.md
+          fi
 
       - name: Mirror to Docker Hub
         # Re-tag the pulled canonical image with all four target names and

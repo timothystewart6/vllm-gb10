@@ -12,6 +12,7 @@
 # docker/metadata-action       v6.1.0  => 80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9
 # docker/build-push-action     v7.2.0  => f9f3042f7e2789586610d6e8b85c8f03e5195baf
 # actions/upload-artifact      v7.0.1  => 043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+# softprops/action-gh-release  v2.6.2  => 3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
 #
 # Job layout (split so re-runs of cheap stages don't require a 1-hour rebuild):
 #
@@ -277,18 +278,14 @@ jobs:
         # only one dgx-spark runner so it would still be cached).
         run: docker pull "ghcr.io/timothystewart6/vllm-gb10:${CANONICAL}"
 
-      - name: Push release tag and create GitHub Release
+      - name: Push release tag
         # Pushing a tag with GITHUB_TOKEN does NOT trigger other workflows
-        # (GitHub anti-recursion). So instead of relying on create-release.yaml
-        # to fire on tag-push, we push the tag AND create the release inline
-        # here using the same GITHUB_TOKEN. Release notes come from the
-        # shared script so create-release.yaml (manual fallback) stays in sync.
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # (GitHub anti-recursion), so create-release.yaml won't fire here.
+        # We push the tag now and create the release in the next step using
+        # softprops/action-gh-release. Idempotent on re-runs.
         run: |
+          set -euo pipefail
           TAG="${VLLM_REF}-gb10.${GB10_BUILD}"
-
-          # Push the tag (idempotent on re-runs).
           if git rev-parse "refs/tags/${TAG}" >/dev/null 2>&1; then
             echo "Tag ${TAG} already exists locally."
           else
@@ -296,16 +293,22 @@ jobs:
           fi
           git push origin "${TAG}" || echo "Tag push skipped (likely already on remote)."
 
-          # Create the release if it doesn't exist yet.
-          if gh release view "${TAG}" >/dev/null 2>&1; then
-            echo "Release ${TAG} already exists - skipping."
-          else
-            TAG="${TAG}" GITHUB_SHA="${GITHUB_SHA}" \
-              bash scripts/generate-release-notes.sh > /tmp/release-notes.md
-            gh release create "${TAG}" \
-              --title "vllm-gb10 ${TAG}" \
-              --notes-file /tmp/release-notes.md
-          fi
+      - name: Generate release notes
+        # Release notes are produced by a shared script so create-release.yaml
+        # (manual fallback) stays in sync with the inline release here.
+        env:
+          TAG: ${{ needs.build.outputs.canonical_tag }}
+        run: bash scripts/generate-release-notes.sh > /tmp/release-notes.md
+
+      - name: Create GitHub Release
+        # action-gh-release is the de facto standard. It is idempotent: if a
+        # release for the tag already exists, it updates it in place rather
+        # than failing - so re-running this job is safe.
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
+        with:
+          tag_name: ${{ needs.build.outputs.canonical_tag }}
+          name: vllm-gb10 ${{ needs.build.outputs.canonical_tag }}
+          body_path: /tmp/release-notes.md
 
       - name: Mirror to Docker Hub
         # Re-tag the pulled canonical image with all four target names and

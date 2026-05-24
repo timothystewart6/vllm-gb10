@@ -10,7 +10,8 @@
 #   2. git tag v0.20.1-gb10.0 && git push origin v0.20.1-gb10.0
 #   3. This workflow fires, creates the release with the component table.
 #
-# actions/checkout v6.0.2 => de0fac2e4500dabe0009e67214ff5f5447ce83dd
+# actions/checkout             v6.0.2  => de0fac2e4500dabe0009e67214ff5f5447ce83dd
+# softprops/action-gh-release  v2.6.2  => 3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
 
 name: Create release on tag
 
@@ -37,9 +38,11 @@ jobs:
           bash scripts/generate-release-notes.sh > /tmp/release-notes.md
 
       - name: Create GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release create "${{ github.ref_name }}" \
-            --title "vllm-gb10 ${{ github.ref_name }}" \
-            --notes-file /tmp/release-notes.md
+        # action-gh-release is idempotent: if the release for this tag
+        # already exists (e.g. created inline by build-image.yaml), it
+        # updates it in place rather than failing.
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: vllm-gb10 ${{ github.ref_name }}
+          body_path: /tmp/release-notes.md

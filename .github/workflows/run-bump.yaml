@@ -27,6 +27,11 @@ permissions:
 
 jobs:
   bump:
+    # Skip if the push was made by the bot itself to avoid an infinite loop
+    # (bot commits back resolved SHAs -> would re-trigger this workflow).
+    # Do NOT use [skip ci] in the commit message: it bleeds into squash merge
+    # commits on main and suppresses build-image.yaml.
+    if: github.actor != 'github-actions[bot]'
     runs-on: [self-hosted, linux, ARM64, dgx-spark]
     timeout-minutes: 30
 
@@ -50,6 +55,6 @@ jobs:
           if git diff --staged --quiet; then
             echo "Nothing changed - bump.sh was a no-op (all pins already current)."
           else
-            git commit -m "chore(bump): resolve SHAs and regenerate lockfiles [skip ci]"
+            git commit -m "chore(bump): resolve SHAs and regenerate lockfiles"
             git push origin HEAD:${{ github.head_ref }}
           fi

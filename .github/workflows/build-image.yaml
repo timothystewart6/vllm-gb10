@@ -38,9 +38,8 @@ on:
       - checksums/**
       - tests/**
 
-concurrency:
-  group: dgx-spark
-  cancel-in-progress: false
+# No workflow-level concurrency limit: each self-hosted runner handles exactly
+# one job at a time (GitHub enforces this), so two Sparks can build in parallel.
 
 permissions:
   contents: write

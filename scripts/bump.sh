@@ -60,11 +60,24 @@ OLD_NCCL_COMMIT="${NCCL_COMMIT:-UNSET}"
 OLD_VLLM_COMMIT="${VLLM_COMMIT:-UNSET}"
 OLD_FLASHINFER_COMMIT="${FLASHINFER_COMMIT:-UNSET}"
 OLD_CUDA_BASE_DIGEST="${CUDA_BASE_DIGEST:-UNSET}"
-OLD_RAY_VERSION="${RAY_VERSION}"
-OLD_UV_VERSION="${UV_VERSION}"
-OLD_TORCH_VERSION="${TORCH_VERSION}"
-OLD_TORCHVISION_VERSION="${TORCHVISION_VERSION}"
 OLD_GB10_BUILD="${GB10_BUILD:-0}"
+
+# For manually-set _VERSION fields (UV_VERSION, TORCH_VERSION, etc.), the PR
+# branch already has the new value in versions.env before bump.sh runs - so
+# reading from the branch gives OLD == NEW and no change is detected. Instead
+# we read those fields from origin/main (the merge target) so that any version
+# bump introduced by the PR is correctly detected and GB10_BUILD is incremented.
+# _COMMIT fields need no special treatment: they are only ever written by this
+# script, so the branch copy already matches main before this run.
+_MAIN_VERSIONS="$(git show origin/main:versions.env 2>/dev/null \
+  || git show HEAD~1:versions.env 2>/dev/null \
+  || cat "${VERSIONS}")"
+_main_get() { printf '%s\n' "${_MAIN_VERSIONS}" | grep "^$1=" | head -1 | cut -d= -f2-; }
+
+OLD_RAY_VERSION="${RAY_VERSION}"  # auto-resolved fresh from PyPI; branch value == main
+OLD_UV_VERSION="$(_main_get UV_VERSION)"
+OLD_TORCH_VERSION="$(_main_get TORCH_VERSION)"
+OLD_TORCHVISION_VERSION="$(_main_get TORCHVISION_VERSION)"
 
 # ---------------------------------------------------------------------------
 # 3. Resolve git commit SHAs via ls-remote (no auth needed for public repos)

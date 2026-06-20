@@ -1,6 +1,6 @@
 # vllm-gb10
 
-[![Build](https://github.com/timothystewart6/vllm-gb10/actions/workflows/build-image.yaml/badge.svg)](https://github.com/timothystewart6/vllm-gb10/actions/workflows/build-image.yaml)
+[![Build](https://github.com/timothystewart6/vllm-gb10/actions/workflows/build-image.yaml/badge.svg?branch=main)](https://github.com/timothystewart6/vllm-gb10/actions/workflows/build-image.yaml)
 [![Latest release](https://img.shields.io/github/v/release/timothystewart6/vllm-gb10)](https://github.com/timothystewart6/vllm-gb10/releases/latest)
 [![GHCR](https://img.shields.io/badge/ghcr.io-vllm--gb10-blue)](https://github.com/timothystewart6/vllm-gb10/pkgs/container/vllm-gb10)
 

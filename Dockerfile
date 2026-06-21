@@ -113,8 +113,15 @@ RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
     --mount=type=cache,id=ccache,target=/root/.ccache \
     if [ -z "${SOURCE_DATE_EPOCH}" ]; then unset SOURCE_DATE_EPOCH; fi \
  && uv build --no-build-isolation --wheel . --out-dir=/wheels -v \
- && cd flashinfer-cubin && uv build --no-build-isolation --wheel . --out-dir=/wheels -v \
- && cd ../flashinfer-jit-cache && uv build --no-build-isolation --wheel . --out-dir=/wheels -v
+ && cd flashinfer-cubin \
+ && for _try in 1 2 3; do \
+        uv build --no-build-isolation --wheel . --out-dir=/wheels -v && break; \
+        [ "${_try}" -lt 3 ] \
+            && { echo "flashinfer-cubin: attempt ${_try}/3 failed (cubin CDN), retrying in 60s..."; sleep 60; } \
+            || { echo "flashinfer-cubin: all 3 attempts failed"; exit 1; }; \
+    done \
+ && cd ../flashinfer-jit-cache \
+ && uv build --no-build-isolation --wheel . --out-dir=/wheels -v
 
 ############################################################
 # STAGE 3: vllm-builder - build vLLM wheel

@@ -214,5 +214,12 @@ RUN rm -f /usr/local/lib/python3.12/dist-packages/nvidia/nccl/lib/libnccl.so.2 \
       > /workspace/build-artifacts/nccl-sha256.txt
 
 COPY build-metadata.yaml /workspace/build-metadata.yaml
-# No ENTRYPOINT - users run: docker run ... <image> vllm serve ...
+# Clear the ENTRYPOINT inherited from the NVIDIA base image.
+# nvidia_entrypoint.sh is a 0-byte placeholder in the base image that only
+# gets populated by the nvidia-container-runtime in legacy mode. CDI mode
+# (default in nvidia-container-toolkit >= 1.17) never populates it, causing
+# "exec format error" on any host with CDI enabled. Clearing it here makes
+# the image portable regardless of host runtime configuration.
+# Users run: docker run ... <image> vllm serve ...
+ENTRYPOINT []
 CMD ["bash"]

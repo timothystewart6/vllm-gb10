@@ -1,0 +1,127 @@
+# Head node compose for MiniMax-M2.7-AWQ two-node Ray cluster.
+#
+# Run on NODE 1 only. NODE 2 runs docker-compose.worker.yaml.
+#
+# Setup:
+#   1. Copy .env.example to .env and fill in your IPs and HF token.
+#   2. On NODE 2: docker compose -f docker-compose.worker.yaml up -d
+#   3. On NODE 1: docker compose -f docker-compose.head.yaml up -d
+#      (start worker first so it is ready before head launches vllm)
+#
+# Model: cyankiwi/MiniMax-M2.7-AWQ-4bit (~229B params, AWQ 4-bit)
+# Served at: http://NODE1_IP:8000/v1
+# Served model name: MiniMax-M2.7-AWQ-4bit
+#
+# Flags match the Spark Arena high-context agentic profile recipe:
+#   https://spark-arena.com/api/recipes/0e8561e4-eea6-44f5-b800-8984a26bbbc2/raw
+
+services:
+  vllm-ray-head:
+    image: ghcr.io/timothystewart6/vllm-gb10:latest
+    container_name: vllm-ray-head
+    restart: unless-stopped
+    network_mode: host
+    ipc: host
+    shm_size: '10.24gb'
+    # privileged is required on GB10 to reach full throughput (~40+ t/s).
+    # Without it, generation drops to ~24 t/s. Tested 2026-04-29.
+    privileged: true
+    cap_add:
+      - SYS_PTRACE
+    devices:
+      - /dev/infiniband:/dev/infiniband
+    ulimits:
+      memlock: -1
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+      - ~/.cache/vllm:/root/.cache/vllm
+    env_file:
+      - .env
+    environment:
+      - HF_TOKEN=${HF_TOKEN}
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN}
+      - VLLM_HOST_IP=${HEAD_IP}
+      - UCX_NET_DEVICES=${QSFP_IFACE}
+      - NCCL_SOCKET_IFNAME=${QSFP_IFACE}
+      - OMPI_MCA_btl_tcp_if_include=${QSFP_IFACE}
+      - GLOO_SOCKET_IFNAME=${QSFP_IFACE}
+      - TP_SOCKET_IFNAME=${QSFP_IFACE}
+      - RAY_memory_monitor_refresh_ms=0
+      - RAY_num_prestart_python_workers=0
+      - RAY_object_store_memory=1073741824
+      - RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO=0
+      - MASTER_ADDR=${HEAD_IP}
+      - MN_IF_NAME=${QSFP_IFACE}
+      - SAFETENSORS_FAST_GPU=1
+      - VLLM_ATTENTION_BACKEND=FLASHINFER
+      # NCCL RoCE v2 configuration for CX-7 inter-node link.
+      #
+      # NCCL_IB_DISABLE=0  enables RoCE transport over the CX-7 NIC.
+      #                     Setting it to 1 drops NCCL back to TCP and cuts
+      #                     throughput by ~4x (~10 t/s vs ~43 t/s at C4).
+      #
+      # NCCL_NET_GDR_LEVEL=0  disables GPUDirect RDMA (GDR/GDRCopy). GDR is
+      #                        NOT supported on the GB10 unified-memory SoC -
+      #                        the GPU and CPU share the same DRAM so there is
+      #                        no PCIe peer path for GDR. Without this flag
+      #                        NCCL may attempt GDR and hard-lock the SoC.
+      #                        CPU-side RoCE (controlled by NCCL_IB_DISABLE)
+      #                        is separate and is safe.
+      #   Ref: https://forums.developer.nvidia.com/t/dgx-spark-gpudirect-rdma/348787
+      #
+      # NCCL_IB_HCA  pins NCCL to the active CX-7 port only.
+      #              Verify your active port with: ibdev2netdev
+      #
+      # NCCL_IB_GID_INDEX=3  selects the RoCE v2 GID (IPv4-mapped IPv6).
+      #              Verify with: show_gids | grep -i roce_v2
+      - NCCL_IB_DISABLE=0
+      - NCCL_NET_GDR_LEVEL=0
+      - NCCL_IB_HCA=${IB_HCA}
+      - NCCL_IB_GID_INDEX=3
+      - NCCL_ALGO=Ring
+      - NCCL_MIN_NCHANNELS=4
+      - OMP_NUM_THREADS=4
+    entrypoint: ["/bin/bash", "-c"]
+    # Ray head node starts first, then waits 60 s for the worker to connect
+    # before vllm starts allocating its placement group. Reducing this sleep
+    # risks vllm falling back to single-GPU mode silently if the worker is
+    # not yet joined.
+    command:
+      - >-
+        ray start
+          --head
+          --node-ip-address=${HEAD_IP}
+          --port=6379
+          --object-store-memory 1073741824
+          --num-cpus 2
+          --include-dashboard=false
+          --disable-usage-stats
+        && sleep 60
+        && vllm serve cyankiwi/MiniMax-M2.7-AWQ-4bit
+          --host 0.0.0.0
+          --port 8000
+          --trust-remote-code
+          --tensor-parallel-size 2
+          --distributed-executor-backend ray
+          --gpu-memory-utilization 0.75
+          --load-format fastsafetensors
+          --max-model-len 196608
+          --kv-cache-dtype fp8_e4m3
+          --max-num-batched-tokens 8192
+          --enable-auto-tool-choice
+          --tool-call-parser minimax_m2
+          --reasoning-parser minimax_m2
+          --served-model-name MiniMax-M2.7-AWQ-4bit
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 60
+      start_period: 1800s

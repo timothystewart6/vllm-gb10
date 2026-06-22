@@ -1,0 +1,77 @@
+# Worker node compose for MiniMax-M2.7-AWQ two-node Ray cluster.
+#
+# Run on NODE 2 only. NODE 1 runs docker-compose.head.yaml.
+#
+# Setup:
+#   1. Copy .env.example to .env and fill in your IPs and HF token.
+#   2. On NODE 2: docker compose -f docker-compose.worker.yaml up -d  (start first)
+#   3. On NODE 1: docker compose -f docker-compose.head.yaml up -d
+#
+# The worker only joins the Ray cluster. All vllm flags live on the head.
+
+services:
+  vllm-ray-worker:
+    image: ghcr.io/timothystewart6/vllm-gb10:latest
+    container_name: vllm-ray-worker
+    restart: unless-stopped
+    network_mode: host
+    ipc: host
+    shm_size: '10.24gb'
+    # privileged is required on GB10 to reach full throughput (~40+ t/s).
+    # Without it, generation drops to ~24 t/s. Tested 2026-04-29.
+    privileged: true
+    ulimits:
+      memlock: -1
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+      - ~/.cache/vllm:/root/.cache/vllm
+    env_file:
+      - .env
+    environment:
+      - HF_TOKEN=${HF_TOKEN}
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN}
+      - VLLM_HOST_IP=${WORKER_IP}
+      - UCX_NET_DEVICES=${QSFP_IFACE}
+      - NCCL_SOCKET_IFNAME=${QSFP_IFACE}
+      - OMPI_MCA_btl_tcp_if_include=${QSFP_IFACE}
+      - GLOO_SOCKET_IFNAME=${QSFP_IFACE}
+      - TP_SOCKET_IFNAME=${QSFP_IFACE}
+      - RAY_memory_monitor_refresh_ms=0
+      - RAY_num_prestart_python_workers=0
+      - RAY_object_store_memory=1073741824
+      - RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO=0
+      - MASTER_ADDR=${HEAD_IP}
+      - MN_IF_NAME=${QSFP_IFACE}
+      - SAFETENSORS_FAST_GPU=1
+      - VLLM_ATTENTION_BACKEND=FLASHINFER
+      # See docker-compose.head.yaml for full NCCL RoCE rationale.
+      - NCCL_IB_DISABLE=0
+      - NCCL_NET_GDR_LEVEL=0
+      - NCCL_IB_HCA=${IB_HCA}
+      - NCCL_IB_GID_INDEX=3
+      - NCCL_ALGO=Ring
+      - NCCL_MIN_NCHANNELS=4
+      - OMP_NUM_THREADS=4
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - >-
+        ray start
+          --address=${HEAD_IP}:6379
+          --node-ip-address=${WORKER_IP}
+          --object-store-memory 1073741824
+          --num-cpus 2
+          --disable-usage-stats
+          --block
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "ray", "status"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 60s

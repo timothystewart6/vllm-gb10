@@ -124,6 +124,48 @@ RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
  && uv build --no-build-isolation --wheel . --out-dir=/wheels -v
 
 ############################################################
+# STAGE 2b: rust-builder - build vLLM Rust frontend (parallel)
+# Produces: vllm/vllm-rs binary + vllm/_rust_*.so PyO3 modules
+# These are arch-independent (CPU-only, no GPU code).
+############################################################
+FROM base AS rust-builder
+ARG VLLM_REPO
+ARG VLLM_REF
+ARG VLLM_COMMIT
+
+# Install protoc (required by the Rust gRPC build).
+ARG PROTOC_VERSION=34.2
+RUN ARCH="$(uname -m)" \
+ && case "${ARCH}" in \
+      aarch64|arm64) URL_ARCH="aarch_64" ;; \
+      x86_64|amd64)  URL_ARCH="x86_64" ;; \
+      *) echo "Unsupported arch: ${ARCH}" >&2; exit 1 ;; \
+    esac \
+ && curl -fsSL -o /tmp/protoc.zip \
+      "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-${URL_ARCH}.zip" \
+ && unzip -q -o /tmp/protoc.zip -d /usr/local \
+ && rm /tmp/protoc.zip
+
+# Install Rust toolchain (version pinned in rust-toolchain.toml inside the repo).
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+      | sh -s -- -y --default-toolchain none
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+RUN git clone --recursive ${VLLM_REPO} /workspace/vllm \
+ && cd /workspace/vllm \
+ && git checkout ${VLLM_REF} \
+ && [ "$(git rev-parse HEAD)" = "${VLLM_COMMIT}" ] \
+ && git submodule update --init --recursive
+
+WORKDIR /workspace/vllm
+
+# Cap cargo parallelism to avoid exhausting open-file limits.
+ENV CARGO_BUILD_JOBS=4
+RUN --mount=type=cache,target=/root/.cargo/registry \
+    --mount=type=cache,target=/root/.cargo/git \
+    bash build_rust.sh
+
+############################################################
 # STAGE 3: vllm-builder - build vLLM wheel
 ############################################################
 FROM base AS vllm-builder
@@ -136,6 +178,12 @@ RUN git clone --recursive ${VLLM_REPO} /workspace/vllm \
  && git checkout ${VLLM_REF} \
  && [ "$(git rev-parse HEAD)" = "${VLLM_COMMIT}" ] \
  && git submodule update --init --recursive
+
+# Drop pre-built Rust artifacts into the source tree. setup.py detects them
+# and ships them as-is, skipping the local Rust build.
+# vllm-rs is the axum HTTP server binary; _rust_tool_parser is a PyO3 module.
+COPY --from=rust-builder /workspace/vllm/vllm/vllm-rs vllm/vllm-rs
+COPY --from=rust-builder /workspace/vllm/vllm/_rust_tool_parser.abi3.so vllm/
 
 WORKDIR /workspace/vllm
 RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \

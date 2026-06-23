@@ -331,6 +331,8 @@ nvidia-nvshmem-cu13==${NVSHMEM_VERSION}
 apache-tvm-ffi==${TVM_FFI_VERSION}
 tilelang==${TILELANG_VERSION}
 numba==${NUMBA_VERSION}
+bitsandbytes==${BITSANDBYTES_VERSION}
+accelerate==${ACCELERATE_VERSION}
 REQS
 
 uv pip compile \

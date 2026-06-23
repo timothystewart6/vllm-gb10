@@ -159,10 +159,6 @@ RUN git clone --recursive ${VLLM_REPO} /workspace/vllm \
 
 WORKDIR /workspace/vllm
 
-# Install Python build deps for setuptools-rust, then build Rust artifacts.
-RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
-    uv pip install "setuptools>=77.0.3,<81.0.0" "setuptools-rust>=1.9.0" wheel
-
 # Cap cargo parallelism to avoid exhausting open-file limits.
 ENV CARGO_BUILD_JOBS=4
 RUN --mount=type=cache,target=/root/.cargo/registry \

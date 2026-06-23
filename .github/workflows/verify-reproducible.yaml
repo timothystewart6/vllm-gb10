@@ -57,8 +57,10 @@ jobs:
         run: |
           grep -v '^\s*#' versions.env | grep -v '^\s*$' >> "$GITHUB_ENV"
 
-      - name: Set SOURCE_DATE_EPOCH from last commit
-        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+      - name: Set SOURCE_DATE_EPOCH from last build-affecting commit
+        # Must use the same formula as build-image.yaml so the two builds
+        # in this workflow produce identical SOURCE_DATE_EPOCH values.
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct -- versions.env locks/)" >> "$GITHUB_ENV"
 
       - name: Generate build-metadata.yaml
         # Generated once on the host, identical for both builds.

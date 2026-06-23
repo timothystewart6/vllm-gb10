@@ -68,8 +68,13 @@ jobs:
         run: |
           grep -v '^\s*#' versions.env | grep -v '^\s*$' >> "$GITHUB_ENV"
 
-      - name: Set SOURCE_DATE_EPOCH from last commit
-        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+      - name: Set SOURCE_DATE_EPOCH from last build-affecting commit
+        # Key to the last commit that touched versions.env or locks/ so that
+        # unrelated commits (docs, Dockerfile fixes, scripts) do not bust the
+        # expensive builder stage layer caches (flashinfer, vllm, rust).
+        # verify-reproducible.yaml uses the same formula so both builds in the
+        # reproducibility check produce identical SOURCE_DATE_EPOCH values.
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct -- versions.env locks/)" >> "$GITHUB_ENV"
 
       - name: Generate build-metadata.yaml
         run: |

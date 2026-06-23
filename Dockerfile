@@ -15,7 +15,10 @@ ARG UV_VERSION
 ARG PYTORCH_INDEX_URL
 ARG PYPI_INDEX_URL
 ARG TORCH_CUDA_ARCH_LIST=12.1a
-ARG SOURCE_DATE_EPOCH
+# NOTE: SOURCE_DATE_EPOCH is intentionally NOT declared here.
+# Placing it in apt-base would bust the layer cache for ALL downstream stages
+# (torch-base, base/NCCL, flashinfer-builder, vllm-builder) on every commit.
+# It is declared only in the three builder stages that actually use it.
 
 ENV MAX_JOBS=${BUILD_JOBS} \
     CMAKE_BUILD_PARALLEL_LEVEL=${BUILD_JOBS} \
@@ -23,7 +26,6 @@ ENV MAX_JOBS=${BUILD_JOBS} \
     PIP_BREAK_SYSTEM_PACKAGES=1 \
     UV_SYSTEM_PYTHON=1 UV_BREAK_SYSTEM_PACKAGES=1 UV_LINK_MODE=copy \
     TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST} \
-    SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH} \
     TRITON_PTXAS_PATH=/usr/local/cuda/bin/ptxas \
     CFLAGS="-fdebug-prefix-map=/workspace=. -fdebug-prefix-map=/opt=." \
     CXXFLAGS="-fdebug-prefix-map=/workspace=. -fdebug-prefix-map=/opt=."
@@ -100,6 +102,7 @@ ARG FLASHINFER_REPO
 ARG FLASHINFER_REF
 ARG FLASHINFER_COMMIT
 ARG FLASHINFER_CUDA_ARCH_LIST=12.1a
+ARG SOURCE_DATE_EPOCH
 ENV FLASHINFER_CUDA_ARCH_LIST=${FLASHINFER_CUDA_ARCH_LIST}
 
 RUN git clone --recursive ${FLASHINFER_REPO} /workspace/flashinfer \
@@ -132,6 +135,7 @@ FROM base AS rust-builder
 ARG VLLM_REPO
 ARG VLLM_REF
 ARG VLLM_COMMIT
+ARG SOURCE_DATE_EPOCH
 
 # Install protoc (required by the Rust gRPC build).
 ARG PROTOC_VERSION=34.2
@@ -172,6 +176,7 @@ FROM base AS vllm-builder
 ARG VLLM_REPO
 ARG VLLM_REF
 ARG VLLM_COMMIT
+ARG SOURCE_DATE_EPOCH
 
 RUN git clone --recursive ${VLLM_REPO} /workspace/vllm \
  && cd /workspace/vllm \

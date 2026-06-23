@@ -156,7 +156,7 @@ printed "DeepGEMM will not compile: unsupported CUDA architecture" and created a
 | How upstream ships it | `tools/install_gdrcopy.sh` installs prebuilt `.deb` packages in the runner stage |
 | sm_121a compatible? | Architecture-independent (kernel driver + userspace lib). **Requires host kernel module `gdrdrv`.** |
 | Impact of absence | Slightly higher latency on multi-node tensor parallel communication. Ray/NCCL still work without it. |
-| Action needed? | **Low-medium priority.** Would help 2-node cluster perf. Requires: (1) `gdrdrv` kernel module on the Spark host, (2) install the `.deb` in our runner stage. Check if DGX Spark ships `gdrdrv`. |
+| Action needed? | **Not actionable.** DGX Spark does NOT ship `gdrdrv` kernel module (verified 2026-06-22: no module, no `/dev/gdrdrv`, no packages installed). Cannot use without kernel support. |
 
 ---
 
@@ -252,8 +252,9 @@ printed "DeepGEMM will not compile: unsupported CUDA architecture" and created a
 **Tested 2026-06-22** on `asus-gx10-1.local.techtronic.us` (DGX Spark):
 
 - [x] `has_deep_gemm()` returns `False` - CONFIRMED. DeepGEMM not compiled for sm_121a.
-- [ ] `import vllm.third_party.deep_gemm` - Expected to raise ImportError.
-- [ ] TileLang JIT kernel compile on sm_121a - Still needs verification.
+- [x] `import vllm.third_party.deep_gemm` raises `ModuleNotFoundError` - CONFIRMED.
+- [x] TileLang JIT kernel compile on sm_121a - CONFIRMED. Matmul kernel compiles and executes correctly (max diff 0.016 vs torch, expected for FP16).
+- [x] GDRCopy not available - CONFIRMED. No `gdrdrv` kernel module, no `/dev/gdrdrv`, no packages on DGX Spark host.
 - [ ] CI build logs for "DeepGEMM will not compile" message - Still needs check.
 
 **Conclusion:** DeepGEMM absence is confirmed. DeepSeek V4 is unsupported

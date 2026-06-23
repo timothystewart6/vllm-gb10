@@ -62,6 +62,13 @@ OLD_FLASHINFER_COMMIT="${FLASHINFER_COMMIT:-UNSET}"
 OLD_CUDA_BASE_DIGEST="${CUDA_BASE_DIGEST:-UNSET}"
 OLD_GB10_BUILD="${GB10_BUILD:-0}"
 
+# Snapshot the Dockerfile hash from origin/main (or the previous commit)
+# so that Dockerfile-only PRs also increment GB10_BUILD.
+OLD_DOCKERFILE_HASH="$(git show origin/main:Dockerfile 2>/dev/null | sha256sum | awk '{print $1}' \
+  || git show HEAD~1:Dockerfile 2>/dev/null | sha256sum | awk '{print $1}' \
+  || echo 'UNSET')"
+DOCKERFILE_HASH="$(sha256sum "${REPO_ROOT}/Dockerfile" | awk '{print $1}')"
+
 # For manually-set _VERSION fields (UV_VERSION, TORCH_VERSION, etc.), the PR
 # branch already has the new value in versions.env before bump.sh runs - so
 # reading from the branch gives OLD == NEW and no change is detected. Instead
@@ -168,7 +175,8 @@ elif [[ "${NCCL_COMMIT}"         != "${OLD_NCCL_COMMIT}"         ||
         "${RAY_VERSION}"         != "${OLD_RAY_VERSION}"         ||
         "${UV_VERSION}"          != "${OLD_UV_VERSION}"          ||
         "${TORCH_VERSION}"       != "${OLD_TORCH_VERSION}"       ||
-        "${TORCHVISION_VERSION}" != "${OLD_TORCHVISION_VERSION}" ]]; then
+        "${TORCHVISION_VERSION}" != "${OLD_TORCHVISION_VERSION}" ||
+        "${DOCKERFILE_HASH}"     != "${OLD_DOCKERFILE_HASH}"     ]]; then
   GB10_BUILD=$(( OLD_GB10_BUILD + 1 ))
   log "Non-vLLM input changed -> GB10_BUILD incremented to ${GB10_BUILD}"
 else

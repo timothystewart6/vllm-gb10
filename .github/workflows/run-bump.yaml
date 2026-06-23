@@ -15,6 +15,7 @@ on:
     types: [opened, synchronize, reopened]
     paths:
       - versions.env
+      - Dockerfile
 
 # Only run one bump at a time per PR branch - cancel in-flight runs if a new
 # commit lands before the previous bump finishes.

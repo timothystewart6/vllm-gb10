@@ -302,7 +302,7 @@ jobs:
         # action-gh-release is the de facto standard. It is idempotent: if a
         # release for the tag already exists, it updates it in place rather
         # than failing - so re-running this job is safe.
-        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b
         with:
           tag_name: ${{ needs.build.outputs.canonical_tag }}
           name: vllm-gb10 ${{ needs.build.outputs.canonical_tag }}

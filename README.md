@@ -42,10 +42,25 @@ Each release page lists the exact versions of every component. Key stack:
 | vLLM | git commit SHA |
 | PyTorch / TorchVision / TorchAudio / Triton | exact version |
 | NCCL | git commit SHA (built from source) |
-| FlashInfer | git commit SHA |
+| FlashInfer | git commit SHA (built from source) |
+| vllm-rs Rust frontend | built from source (axum HTTP server + PyO3 tool-parser module) |
+| bitsandbytes, accelerate | exact version (4-bit/8-bit quantization and HuggingFace model loading) |
 | Ray, uv, and other runtime deps | lockfile hash |
 
 All pins live in [`versions.env`](versions.env). All lockfiles live in [`locks/`](locks/).
+
+## Known limitations
+
+The following upstream features are **not available** on GB10 (sm_121a) at current versions:
+
+| Feature | Reason | Status |
+|---|---|---|
+| **DeepSeek V4** (`DeepseekV4ForCausalLM`) | Hardcoded SM100 requirements in the model code - both the attention backend (`FLASHMLA_SPARSE_DSV4`) and MoE kernels reject `major != 10` | Not fixable without upstream changes |
+| **DeepGEMM** (FP8 block-dense GEMM) | cmake skips sm_121a - only supports `9.0a`, `10.0a`/`10.0f`. `has_deep_gemm()` returns `False`. | Not fixable without upstream changes |
+| **DeepEP / EP kernels** | Expert-parallel NVSHMEM kernels hardcode `9.0a`/`10.0a` arch list | Not fixable without upstream changes |
+| **GDRCopy** | Requires `gdrdrv` kernel module - not present on DGX Spark hosts | Host kernel limitation |
+
+MLA models (DeepSeek V3/R1, MiniMax) work correctly on GB10 using the `TRITON_MLA` backend, which supports all compute capabilities.
 
 ## Image tags
 
@@ -53,14 +68,14 @@ Each build publishes four tags:
 
 | Tag | Notes |
 |---|---|
-| `v0.20.1-gb10.0` | Canonical, immutable. vLLM version + stack revision. |
-| `v0.20.1-cu13.2-torch2.11-gb10.0` | Same image - adds CUDA and PyTorch versions for quick scanning. |
+| `v0.23.1rc0-gb10.0` | Canonical, immutable. vLLM version + stack revision. |
+| `v0.23.1rc0-cu13.2-torch2.11-gb10.0` | Same image - adds CUDA and PyTorch versions for quick scanning. |
 | `latest` | Mutable - always points at the most recent green build of `main`. |
 | `sha-<short_sha>` | Immutable, tied to the exact Git commit that produced it. |
 
 `gb10.<N>` increments when any non-vLLM input changes (CUDA, PyTorch, NCCL,
 FlashInfer, etc.) on the same vLLM version. It resets to `0` when `VLLM_REF`
-bumps. There is intentionally no bare `v0.20.1` tag - it would be mutable.
+bumps. There is intentionally no bare `v0.23.1rc0` tag - it would be mutable.
 
 ## Bumping versions
 

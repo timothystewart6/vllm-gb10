@@ -45,6 +45,13 @@ jobs:
           ref: ${{ github.head_ref }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Bootstrap uv
+        # bump.sh requires uv on the host to regenerate lockfiles.
+        # Install from the hashed lockfile so the version is pinned.
+        run: |
+          python3 -m pip install --quiet --require-hashes --no-deps \
+            -r locks/python-bootstrap.txt
+
       - name: Run bump.sh
         run: bash scripts/bump.sh
 

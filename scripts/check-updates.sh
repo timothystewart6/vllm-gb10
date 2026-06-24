@@ -161,7 +161,23 @@ report() {
 log "Checking GitHub releases..."
 
 VLLM_LATEST=$(gh_latest_tag "vllm-project/vllm")
-report "vLLM (VLLM_REF)" "VLLM_REF" "${VLLM_REF}" "${VLLM_LATEST}"
+# Use semver comparison so that a pinned pre-release (e.g. v0.23.1rc0) that is
+# newer than the latest stable (e.g. v0.23.0) is reported as INFO, not UPDATE.
+# Only flag UPDATE when the stable release is genuinely ahead of our pin.
+VLLM_CMP=$(python3 -c "
+from packaging.version import Version
+cur = Version('${VLLM_REF}'.lstrip('v'))
+lat = Version('${VLLM_LATEST}'.lstrip('v'))
+print('ahead' if cur >= lat else 'behind')
+" 2>/dev/null || echo 'unknown')
+if [ "${VLLM_CMP}" = "behind" ]; then
+  report "vLLM (VLLM_REF)" "VLLM_REF" "${VLLM_REF}" "${VLLM_LATEST}"
+elif [ "${VLLM_CMP}" = "ahead" ] && [ "${VLLM_REF}" != "${VLLM_LATEST}" ]; then
+  printf 'INFO    %-30s current=%-20s stable=%s (pinned to newer pre-release)\n' \
+    "vLLM (VLLM_REF)" "${VLLM_REF}" "${VLLM_LATEST}"
+else
+  printf '%s %-30s current=%-20s\n' "${OK}" "vLLM (VLLM_REF)" "${VLLM_REF}"
+fi
 
 # Load vLLM's pinned dep versions at the *target* tag so dependent components
 # below can be aligned to it (rather than blindly tracking PyPI latest).

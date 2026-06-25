@@ -42,9 +42,9 @@ COPY locks/python-build.txt /tmp/python-build.txt
 # then bootstrap uv from the hashed lockfile.
 RUN rm -f /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources \
  && cp /tmp/apt-sources.list /etc/apt/sources.list \
- && apt-get update \
+ && apt-get -o Acquire::Retries=5 update \
  && grep -vE '^\s*(#|$)' /tmp/apt-packages.txt \
-      | xargs apt-get install -y --no-install-recommends \
+      | xargs apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/* \
  && python3 -m pip install --no-cache-dir --require-hashes --no-deps \
       -r /tmp/python-bootstrap.txt \
@@ -230,8 +230,8 @@ ENV TIKTOKEN_ENCODINGS_BASE=/workspace/tiktoken_encodings
 # instanttensor==0.1.0 requires libboost headers to compile from sdist.
 # Installed here (not in apt-base) so only the runner stage is invalidated
 # when this dep changes, preserving expensive upstream build caches.
-RUN apt-get update \
- && apt-get install -y --no-install-recommends libboost-dev libaio-dev \
+RUN apt-get -o Acquire::Retries=5 update \
+ && apt-get -o Acquire::Retries=5 install -y --no-install-recommends libboost-dev libaio-dev \
  && rm -rf /var/lib/apt/lists/*
 
 # Helper that produces symbol-equivalence hashes for compiled CUDA artifacts

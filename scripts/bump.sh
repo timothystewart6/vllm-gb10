@@ -69,6 +69,13 @@ OLD_DOCKERFILE_HASH="$(git show origin/main:Dockerfile 2>/dev/null | sha256sum |
   || echo 'UNSET')"
 DOCKERFILE_HASH="$(sha256sum "${REPO_ROOT}/Dockerfile" | awk '{print $1}')"
 
+# Snapshot apt-sources.list hash - changing the Ubuntu snapshot date changes
+# the resolved apt package versions and therefore the built image.
+OLD_APT_SOURCES_HASH="$(git show origin/main:locks/apt-sources.list 2>/dev/null | sha256sum | awk '{print $1}' \
+  || git show HEAD~1:locks/apt-sources.list 2>/dev/null | sha256sum | awk '{print $1}' \
+  || echo 'UNSET')"
+APT_SOURCES_HASH="$(sha256sum "${REPO_ROOT}/locks/apt-sources.list" | awk '{print $1}')"
+
 # For manually-set _VERSION fields (UV_VERSION, TORCH_VERSION, etc.), the PR
 # branch already has the new value in versions.env before bump.sh runs - so
 # reading from the branch gives OLD == NEW and no change is detected. Instead
@@ -176,7 +183,8 @@ elif [[ "${NCCL_COMMIT}"         != "${OLD_NCCL_COMMIT}"         ||
         "${UV_VERSION}"          != "${OLD_UV_VERSION}"          ||
         "${TORCH_VERSION}"       != "${OLD_TORCH_VERSION}"       ||
         "${TORCHVISION_VERSION}" != "${OLD_TORCHVISION_VERSION}" ||
-        "${DOCKERFILE_HASH}"     != "${OLD_DOCKERFILE_HASH}"     ]]; then
+        "${DOCKERFILE_HASH}"     != "${OLD_DOCKERFILE_HASH}"     ||
+        "${APT_SOURCES_HASH}"    != "${OLD_APT_SOURCES_HASH}"    ]]; then
   GB10_BUILD=$(( OLD_GB10_BUILD + 1 ))
   log "Non-vLLM input changed -> GB10_BUILD incremented to ${GB10_BUILD}"
 else

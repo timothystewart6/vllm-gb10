@@ -17,10 +17,10 @@
 
 # --- NCCL InfiniBand and NUMA support ---
 build-essential=12.10ubuntu1
-ca-certificates=20240203
+ca-certificates=20260601~24.04.1
 ccache=4.9.1-1
 cmake=3.28.3-1build7
-curl=8.5.0-2ubuntu10.8
+curl=8.5.0-2ubuntu10.9
 debhelper=13.14.1ubuntu5
 dh-make=2.202304
 fakeroot=1.33-1

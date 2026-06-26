@@ -18,15 +18,20 @@
 #   TVM FFI      - PyPI (tvm-ffi)
 #   TileLang     - PyPI (tilelang)
 #   Numba        - PyPI (numba)
+#   apt snapshot - age of the Ubuntu snapshot in locks/apt-sources.list
 #
 # PREREQUISITES
 #   curl, python3
 #
 # USAGE
-#   scripts/check-updates.sh            # check only, never writes anything
-#   scripts/check-updates.sh --update   # write updated _REF/_VERSION lines to
-#                                       # versions.env, then open a PR to let
-#                                       # bump.sh resolve _COMMIT SHAs
+#   scripts/check-updates.sh                  # check only, never writes anything
+#   scripts/check-updates.sh --update         # write updated _REF/_VERSION lines to
+#                                             # versions.env, then open a PR to let
+#                                             # bump.sh resolve _COMMIT SHAs
+#   scripts/check-updates.sh --bump-apt-snapshot
+#                                             # advance locks/apt-sources.list to
+#                                             # today's date; then open a dedicated
+#                                             # PR so bump.sh re-resolves apt-packages.txt
 #
 # --update does NOT touch _COMMIT fields. Those are resolved by bump.sh running
 # on the Spark. The intended flow after --update is:
@@ -35,6 +40,18 @@
 #   git add versions.env
 #   git commit -m "chore(deps): bump versions"
 #   git push && gh pr create
+#
+# --bump-apt-snapshot is intentionally NOT wired into CI. Advancing the apt
+# snapshot busts the apt-base Docker layer cache and triggers a full rebuild
+# (NCCL + FlashInfer + vLLM from source). This should be a deliberate,
+# infrequent decision - typically driven by security updates in noble-security.
+# The intended flow after --bump-apt-snapshot is:
+#   git checkout -b chore/apt-snapshot-$(date +%Y-%m-%d)
+#   scripts/check-updates.sh --bump-apt-snapshot
+#   git add locks/apt-sources.list
+#   git commit -m "chore(apt): advance Ubuntu snapshot to $(date +%Y-%m-%d)"
+#   git push && gh pr create
+#   CI will run bump.sh on the Spark to regenerate locks/apt-packages.txt.
 #
 # WARNING: PyTorch/Triton/TorchVision/TorchAudio versions must stay in sync
 # with what vLLM requires. When VLLM_REF changes, check
@@ -47,9 +64,11 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSIONS="${REPO_ROOT}/versions.env"
 
 DO_UPDATE=0
+DO_BUMP_APT=0
 for arg in "$@"; do
   case "${arg}" in
-    --update) DO_UPDATE=1 ;;
+    --update)            DO_UPDATE=1 ;;
+    --bump-apt-snapshot) DO_BUMP_APT=1 ;;
     *) printf 'Unknown argument: %s\n' "${arg}" >&2; exit 1 ;;
   esac
 done
@@ -80,6 +99,25 @@ update_env() {
   sed "s|^${key}=.*|${key}=${val}|" "${VERSIONS}" > "${tmp}"
   mv "${tmp}" "${VERSIONS}"
   log "  updated ${key}=${val}"
+}
+
+# ---------------------------------------------------------------------------
+# Advance the snapshot timestamp in locks/apt-sources.list to today's date.
+# Updates both the human-readable comment and the three deb URLs.
+# ---------------------------------------------------------------------------
+update_apt_snapshot() {
+  local new_stamp="$1"   # e.g. 20260626T000000Z
+  local new_display
+  new_display="${new_stamp:0:4}-${new_stamp:4:2}-${new_stamp:6:2}"
+  local sources="${REPO_ROOT}/locks/apt-sources.list"
+  local tmp
+  tmp="$(mktemp)"
+  sed \
+    -e "s|/[0-9]\{8\}T[0-9]\{6\}Z/|/${new_stamp}/|g" \
+    -e "s|# Snapshot date: .*|# Snapshot date: ${new_display}T00:00:00Z|" \
+    "${sources}" > "${tmp}"
+  mv "${tmp}" "${sources}"
+  log "  updated apt-sources.list snapshot -> ${new_display}T00:00:00Z"
 }
 
 # ---------------------------------------------------------------------------
@@ -294,6 +332,47 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# apt snapshot age - locks/apt-sources.list
+# Flag stale snapshots so noble-security patches don't go unnoticed.
+# Threshold: INFO >= 30 days, UPDATE >= 60 days.
+# Use --bump-apt-snapshot (locally, never in CI) to advance the date.
+# ---------------------------------------------------------------------------
+
+APT_SOURCES="${REPO_ROOT}/locks/apt-sources.list"
+APT_SNAPSHOT_STAMP=$(grep -m1 '^deb .*snapshot.ubuntu.com' "${APT_SOURCES}" \
+  | python3 -c "import re,sys; m=re.search(r'/(\d{8}T\d{6}Z)/', sys.stdin.read()); print(m.group(1) if m else '')" 2>/dev/null || true)
+
+if [[ -z "${APT_SNAPSHOT_STAMP}" ]]; then
+  printf 'WARN    %-30s could not parse snapshot date\n' "apt snapshot"
+else
+  APT_SNAPSHOT_AGE=$(python3 -c "
+from datetime import datetime, timezone
+snap = datetime.strptime('${APT_SNAPSHOT_STAMP}', '%Y%m%dT%H%M%SZ').replace(tzinfo=timezone.utc)
+print((datetime.now(timezone.utc) - snap).days)
+")
+  APT_SNAPSHOT_DISPLAY="${APT_SNAPSHOT_STAMP:0:4}-${APT_SNAPSHOT_STAMP:4:2}-${APT_SNAPSHOT_STAMP:6:2}"
+  TODAY_STAMP=$(date -u +"%Y%m%dT000000Z")
+
+  if [[ "${APT_SNAPSHOT_AGE}" -ge 60 ]]; then
+    printf '%s %-30s age=%d days (snapshot=%s) - security updates may be missing\n' \
+      "${OUT}" "apt snapshot" "${APT_SNAPSHOT_AGE}" "${APT_SNAPSHOT_DISPLAY}"
+    UPDATES=$((UPDATES + 1))
+    if [[ "${DO_BUMP_APT}" -eq 1 ]]; then
+      update_apt_snapshot "${TODAY_STAMP}"
+    fi
+  elif [[ "${APT_SNAPSHOT_AGE}" -ge 30 ]]; then
+    printf 'INFO    %-30s age=%d days (snapshot=%s) - consider refreshing soon\n' \
+      "" "apt snapshot" "${APT_SNAPSHOT_AGE}" "${APT_SNAPSHOT_DISPLAY}"
+    if [[ "${DO_BUMP_APT}" -eq 1 ]]; then
+      update_apt_snapshot "${TODAY_STAMP}"
+    fi
+  else
+    printf '%s %-30s age=%d days (snapshot=%s)\n' \
+      "${OK}" "apt snapshot" "${APT_SNAPSHOT_AGE}" "${APT_SNAPSHOT_DISPLAY}"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 
@@ -313,9 +392,27 @@ else
     echo ""
     echo "WARNING: if VLLM_REF changed, verify PyTorch/Triton/TorchVision/TorchAudio"
     echo "against requirements/build/cuda.txt in the vLLM repo at the new tag before merging."
+  elif [ "${DO_BUMP_APT}" -eq 1 ]; then
+    echo "locks/apt-sources.list snapshot advanced to today."
+    echo ""
+    echo "Next steps:"
+    echo "  1. git diff locks/apt-sources.list"
+    echo "  2. git checkout -b chore/apt-snapshot-\$(date +%Y-%m-%d)"
+    echo "  3. git add locks/apt-sources.list"
+    echo "  4. git commit -m 'chore(apt): advance Ubuntu snapshot to \$(date +%Y-%m-%d)'"
+    echo "  5. git push && gh pr create"
+    echo "  CI will run bump.sh on the Spark to regenerate locks/apt-packages.txt."
+    echo ""
+    echo "NOTE: this PR will bust the apt-base Docker layer cache and trigger a full"
+    echo "rebuild (NCCL + FlashInfer + vLLM from source). That is expected and intentional."
   else
     printf '%d component(s) have updates available.\n' "${UPDATES}"
     echo "Run with --update to write changes to versions.env."
+    if [[ "${APT_SNAPSHOT_AGE:-0}" -ge 60 ]]; then
+      echo "Run with --bump-apt-snapshot to advance locks/apt-sources.list to today."
+      echo "  NOTE: this busts the apt-base Docker layer cache (full rebuild). Open a"
+      echo "  dedicated PR so the cache bust is intentional and isolated."
+    fi
     echo ""
     echo "Note: PyTorch/Triton/TorchVision/TorchAudio must stay in sync with what vLLM"
     echo "requires at VLLM_REF. Check requirements/build/cuda.txt in the vLLM repo before"

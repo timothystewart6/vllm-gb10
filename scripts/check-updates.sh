@@ -339,7 +339,7 @@ fi
 # ---------------------------------------------------------------------------
 
 APT_SOURCES="${REPO_ROOT}/locks/apt-sources.list"
-APT_SNAPSHOT_STAMP=$(grep -m1 'snapshot.ubuntu.com' "${APT_SOURCES}" \
+APT_SNAPSHOT_STAMP=$(grep -m1 '^deb .*snapshot.ubuntu.com' "${APT_SOURCES}" \
   | python3 -c "import re,sys; m=re.search(r'/(\d{8}T\d{6}Z)/', sys.stdin.read()); print(m.group(1) if m else '')" 2>/dev/null || true)
 
 if [[ -z "${APT_SNAPSHOT_STAMP}" ]]; then

@@ -72,6 +72,7 @@ jobs:
           {
             echo 'args<<BUILD_ARGS_EOF'
             scripts/build-args.sh | xargs -n2 | awk '{print $2}'
+            echo "BUILD_JOBS=$(nproc)"
             echo 'BUILD_ARGS_EOF'
           } >> "$GITHUB_OUTPUT"
 

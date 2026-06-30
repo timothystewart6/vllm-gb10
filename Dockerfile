@@ -10,19 +10,19 @@ ARG CUDA_BASE_DIGEST
 # Base image is pinned by digest, not just tag - Docker tags are mutable.
 FROM ${CUDA_BASE_IMAGE}@${CUDA_BASE_DIGEST} AS apt-base
 
-ARG BUILD_JOBS=8
 ARG UV_VERSION
 ARG PYTORCH_INDEX_URL
 ARG PYPI_INDEX_URL
 ARG TORCH_CUDA_ARCH_LIST=12.1a
-# NOTE: SOURCE_DATE_EPOCH is intentionally NOT declared here.
-# Placing it in apt-base would bust the layer cache for ALL downstream stages
-# (torch-base, base/NCCL, flashinfer-builder, vllm-builder) on every commit.
-# It is declared only in the three builder stages that actually use it.
+# NOTE: SOURCE_DATE_EPOCH and BUILD_JOBS are intentionally NOT declared here.
+# Placing them in apt-base would bust the layer cache for ALL downstream stages
+# (torch-base, base/NCCL, flashinfer-builder, vllm-builder) on every change.
+# SOURCE_DATE_EPOCH is declared only in the three builder stages that use it.
+# BUILD_JOBS is declared only in flashinfer-builder and vllm-builder so that
+# tuning parallelism on a new runner does not evict the expensive apt/torch/
+# NCCL cache layers.
 
-ENV MAX_JOBS=${BUILD_JOBS} \
-    CMAKE_BUILD_PARALLEL_LEVEL=${BUILD_JOBS} \
-    DEBIAN_FRONTEND=noninteractive \
+ENV DEBIAN_FRONTEND=noninteractive \
     PIP_BREAK_SYSTEM_PACKAGES=1 \
     UV_SYSTEM_PYTHON=1 UV_BREAK_SYSTEM_PACKAGES=1 UV_LINK_MODE=copy \
     TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST} \
@@ -103,6 +103,7 @@ ARG FLASHINFER_REF
 ARG FLASHINFER_COMMIT
 ARG FLASHINFER_CUDA_ARCH_LIST=12.1a
 ARG SOURCE_DATE_EPOCH
+ARG BUILD_JOBS
 ENV FLASHINFER_CUDA_ARCH_LIST=${FLASHINFER_CUDA_ARCH_LIST}
 
 RUN git clone --recursive ${FLASHINFER_REPO} /workspace/flashinfer \
@@ -114,7 +115,9 @@ RUN git clone --recursive ${FLASHINFER_REPO} /workspace/flashinfer \
 WORKDIR /workspace/flashinfer
 RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
     --mount=type=cache,id=ccache,target=/root/.ccache \
-    if [ -z "${SOURCE_DATE_EPOCH}" ]; then unset SOURCE_DATE_EPOCH; fi \
+    _j="${BUILD_JOBS:-$(nproc)}" \
+ && export MAX_JOBS="${_j}" CMAKE_BUILD_PARALLEL_LEVEL="${_j}" \
+ && if [ -z "${SOURCE_DATE_EPOCH}" ]; then unset SOURCE_DATE_EPOCH; fi \
  && uv build --no-build-isolation --wheel . --out-dir=/wheels -v \
  && cd flashinfer-cubin \
  && for _try in 1 2 3; do \
@@ -177,6 +180,7 @@ ARG VLLM_REPO
 ARG VLLM_REF
 ARG VLLM_COMMIT
 ARG SOURCE_DATE_EPOCH
+ARG BUILD_JOBS
 
 RUN git clone --recursive ${VLLM_REPO} /workspace/vllm \
  && cd /workspace/vllm \
@@ -193,7 +197,9 @@ COPY --from=rust-builder /workspace/vllm/vllm/_rust_tool_parser.abi3.so vllm/
 WORKDIR /workspace/vllm
 RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
     --mount=type=cache,id=ccache,target=/root/.ccache \
-    if [ -z "${SOURCE_DATE_EPOCH}" ]; then unset SOURCE_DATE_EPOCH; fi \
+    _j="${BUILD_JOBS:-$(nproc)}" \
+ && export MAX_JOBS="${_j}" CMAKE_BUILD_PARALLEL_LEVEL="${_j}" \
+ && if [ -z "${SOURCE_DATE_EPOCH}" ]; then unset SOURCE_DATE_EPOCH; fi \
  && python3 use_existing_torch.py \
  && uv build --no-build-isolation --wheel . --out-dir=/wheels -v
 

@@ -68,14 +68,14 @@ Each build publishes four tags:
 
 | Tag | Notes |
 |---|---|
-| `v0.23.1rc0-gb10.0` | Canonical, immutable. vLLM version + stack revision. |
-| `v0.23.1rc0-cu13.2-torch2.11-gb10.0` | Same image - adds CUDA and PyTorch versions for quick scanning. |
+| `v0.24.0-gb10.0` | Canonical, immutable. vLLM version + stack revision. |
+| `v0.24.0-cu13.2-torch2.11-gb10.0` | Same image - adds CUDA and PyTorch versions for quick scanning. |
 | `latest` | Mutable - always points at the most recent green build of `main`. |
 | `sha-<short_sha>` | Immutable, tied to the exact Git commit that produced it. |
 
 `gb10.<N>` increments when any non-vLLM input changes (CUDA, PyTorch, NCCL,
 FlashInfer, etc.) on the same vLLM version. It resets to `0` when `VLLM_REF`
-bumps. There is intentionally no bare `v0.23.1rc0` tag - it would be mutable.
+bumps. There is intentionally no bare `v0.24.0` tag - it would be mutable.
 
 ## Bumping versions
 

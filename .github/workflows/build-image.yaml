@@ -76,6 +76,9 @@ jobs:
         # reproducibility check produce identical SOURCE_DATE_EPOCH values.
         run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct -- versions.env locks/)" >> "$GITHUB_ENV"
 
+      - name: Detect available CPU cores
+        run: echo "BUILD_JOBS=$(nproc)" >> "$GITHUB_ENV"
+
       - name: Generate build-metadata.yaml
         run: |
           SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }} \
@@ -162,6 +165,7 @@ jobs:
           build-args: |
             CUDA_BASE_IMAGE=${{ env.CUDA_BASE_IMAGE }}
             CUDA_BASE_DIGEST=${{ env.CUDA_BASE_DIGEST }}
+            BUILD_JOBS=${{ env.BUILD_JOBS }}
             GB10_BUILD=${{ env.GB10_BUILD }}
             UV_VERSION=${{ env.UV_VERSION }}
             TORCH_VERSION=${{ env.TORCH_VERSION }}

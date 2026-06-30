@@ -51,16 +51,7 @@ All pins live in [`versions.env`](versions.env). All lockfiles live in [`locks/`
 
 ## Known limitations
 
-The following upstream features are **not available** on GB10 (sm_121a) at current versions:
-
-| Feature | Reason | Status |
-|---|---|---|
-| **DeepSeek V4** (`DeepseekV4ForCausalLM`) | Hardcoded SM100 (`major == 10`) checks in both the attention backend (`FLASHMLA_SPARSE_DSV4`) and the MoE kernels hard-reject sm_121a. Setting `VLLM_TRITON_MLA_SPARSE=0` does not help - the MoE kernels have their own `major == 10` gate. AWQ and NVFP4 quantized variants are the practical options on GB10 for now. | Not fixable without upstream model code changes ([#26](https://github.com/timothystewart6/vllm-gb10/issues/26)) |
-| **DeepGEMM** (FP8 block-dense GEMM) | cmake skips sm_121a - only supports `9.0a`, `10.0a`/`10.0f`. `has_deep_gemm()` returns `False`. | Not fixable without upstream changes ([#27](https://github.com/timothystewart6/vllm-gb10/issues/27)) |
-| **DeepEP / EP kernels** | Expert-parallel NVSHMEM kernels hardcode `9.0a`/`10.0a` arch list | Not fixable without upstream changes ([#28](https://github.com/timothystewart6/vllm-gb10/issues/28)) |
-| **GDRCopy** | Requires `gdrdrv` kernel module - not present on DGX Spark hosts | Host kernel limitation |
-
-MLA models (DeepSeek V3/R1, MiniMax) work correctly on GB10 using the `TRITON_MLA` backend, which supports all compute capabilities.
+See the [issues tab](https://github.com/timothystewart6/vllm-gb10/issues) for tracked upstream compatibility gaps.
 
 ## Image tags
 

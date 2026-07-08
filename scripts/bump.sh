@@ -366,8 +366,10 @@ log "  Done -> ${LOCKS}/python-runtime.txt"
 
 # ---------------------------------------------------------------------------
 # 10. Generate locks/apt-packages.txt (versioned entries)
-# Resolves exact apt package versions by running apt-cache madison inside a
-# container using the pinned CUDA base image and the pinned apt snapshot.
+# Resolves exact apt package versions by running apt-cache madison inside the
+# pinned CUDA base image against the pinned apt snapshot. Override NVIDIA's
+# default entrypoint - the runner can execute /bin/bash in this image, but its
+# nvidia_entrypoint.sh fails with exec format errors on the GX10 host.
 # Requires Docker with linux/arm64 support (native on Spark; emulated on x86).
 # ---------------------------------------------------------------------------
 log "Generating locks/apt-packages.txt versioned entries..."
@@ -380,15 +382,16 @@ if [[ -z "$(printf '%s' "${PKG_NAMES}" | tr -d '[:space:]')" ]]; then
   log "  WARNING: apt-packages.txt has no package names - skipping apt resolution."
 else
   APT_VERSIONED=$(docker run --rm --platform linux/arm64 \
+    --entrypoint /bin/bash \
+    -v "${LOCKS}/apt-sources.list:/tmp/apt-sources.list:ro" \
+    -v "${LOCKS}/apt-packages.txt:/tmp/apt-packages.txt:ro" \
     "${CUDA_BASE_IMAGE}@${CUDA_BASE_DIGEST}" \
-    bash -c "
+    -ceu '
       rm -f /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources 2>/dev/null
-      cat > /etc/apt/sources.list <<'SOURCES'
-$(cat "${LOCKS}/apt-sources.list" | grep -v '^#' | grep -v '^$')
-SOURCES
-      apt-get update -qq 2>/dev/null
-      apt-cache madison ${PKG_NAMES} 2>/dev/null
-    " 2>/dev/null \
+      awk "NF && \$1 !~ /^#/" /tmp/apt-sources.list > /etc/apt/sources.list
+      apt-get -o Acquire::Retries=5 update -qq
+      grep -vE "^\s*(#|$)" /tmp/apt-packages.txt | sed "s/=.*//" | xargs apt-cache madison
+    ' \
   | python3 -c "
 import sys
 seen = {}

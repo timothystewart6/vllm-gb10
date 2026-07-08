@@ -120,11 +120,12 @@ RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
  && if [ -z "${SOURCE_DATE_EPOCH}" ]; then unset SOURCE_DATE_EPOCH; fi \
  && uv build --no-build-isolation --wheel . --out-dir=/wheels -v \
  && cd flashinfer-cubin \
- && for _try in 1 2 3; do \
+ && for _try in 1 2 3 4 5 6 7 8 9 10; do \
         uv build --no-build-isolation --wheel . --out-dir=/wheels -v && break; \
-        [ "${_try}" -lt 3 ] \
-            && { echo "flashinfer-cubin: attempt ${_try}/3 failed (cubin CDN), retrying in 60s..."; sleep 60; } \
-            || { echo "flashinfer-cubin: all 3 attempts failed"; exit 1; }; \
+        _wait=$(( _try * 30 )); \
+        [ "${_try}" -lt 10 ] \
+            && { echo "flashinfer-cubin: attempt ${_try}/10 failed (cubin CDN), retrying in ${_wait}s..."; sleep "${_wait}"; } \
+            || { echo "flashinfer-cubin: all 10 attempts failed"; exit 1; }; \
     done \
  && cd ../flashinfer-jit-cache \
  && uv build --no-build-isolation --wheel . --out-dir=/wheels -v

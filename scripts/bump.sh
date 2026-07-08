@@ -410,6 +410,9 @@ for pkg, ver in sorted(seen.items()):
     mv "${LOCKS}/apt-packages.txt.new" "${LOCKS}/apt-packages.txt"
     log "  Done -> ${LOCKS}/apt-packages.txt"
   else
+    if [[ "${APT_SOURCES_HASH}" != "${OLD_APT_SOURCES_HASH}" ]]; then
+      die "apt-cache madison returned no output after locks/apt-sources.list changed; refusing to keep stale locks/apt-packages.txt"
+    fi
     log "  WARNING: apt-cache madison returned no output."
     log "  apt-packages.txt was NOT updated. Check Docker platform support for linux/arm64."
   fi

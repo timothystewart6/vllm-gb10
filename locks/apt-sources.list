@@ -1,6 +1,6 @@
 # Pinned apt repositories for reproducible builds.
 # snapshot.ubuntu.com provides immutable, point-in-time mirrors of Ubuntu repos.
-# Snapshot date: 2026-07-07T00:00:00Z
+# Snapshot date: 2026-07-13T00:00:00Z
 #
 # The Dockerfile replaces /etc/apt/sources.list with this file and removes
 # all /etc/apt/sources.list.d/ entries before running apt-get update, so

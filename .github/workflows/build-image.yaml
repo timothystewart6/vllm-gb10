@@ -58,6 +58,10 @@ jobs:
       sha_tag: ${{ steps.vars.outputs.sha_tag }}
 
     steps:
+      - name: Stop Docker
+        run: sudo systemctl stop docker
+        continue-on-error: true
+
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
@@ -193,6 +197,11 @@ jobs:
             TORCH_CUDA_ARCH_LIST=${{ env.TORCH_CUDA_ARCH_LIST }}
             FLASHINFER_CUDA_ARCH_LIST=${{ env.FLASHINFER_CUDA_ARCH_LIST }}
             SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }}
+
+      - name: Start Docker
+        if: always()
+        run: sudo systemctl start docker
+        continue-on-error: true
 
   verify:
     needs: build

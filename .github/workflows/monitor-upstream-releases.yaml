@@ -1,8 +1,8 @@
-name: Monitor Upstream vLLM Releases
+name: Monitor Upstream Releases
 
 on:
   schedule:
-    # Check daily at 06:00 UTC for new vLLM releases
+    # Check daily at 06:00 UTC for new dependency releases
     - cron: '0 6 * * *'
   workflow_dispatch:
 
@@ -10,35 +10,30 @@ permissions:
   contents: read
 
 jobs:
-  check-vllm:
+  check-deps:
     runs-on: ubuntu-latest
     outputs:
       has-update: ${{ steps.check.outputs.has-update }}
-      current-version: ${{ steps.check.outputs.current-version }}
-      latest-version: ${{ steps.check.outputs.latest-version }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
-      - name: Check for vLLM updates
+      - name: Check for dependency updates
         id: check
         run: |
-          current=$(grep '^VLLM_REF=' versions.env | cut -d= -f2)
-          echo "current-version=$current" >> $GITHUB_OUTPUT
+          scripts/check-updates.sh > /tmp/check-updates.log 2>&1 || true
+          cat /tmp/check-updates.log
           
-          latest=$(curl -s https://api.github.com/repos/vllm-project/vllm/releases/latest | grep '"tag_name"' | head -1 | cut -d'"' -f4)
-          echo "latest-version=$latest" >> $GITHUB_OUTPUT
-          
-          if [ "$current" != "$latest" ]; then
+          if grep -q "Update available" /tmp/check-updates.log; then
             echo "has-update=true" >> $GITHUB_OUTPUT
           else
             echo "has-update=false" >> $GITHUB_OUTPUT
           fi
 
   create-pr:
-    needs: check-vllm
-    if: needs.check-vllm.outputs.has-update == 'true'
+    needs: check-deps
+    if: needs.check-deps.outputs.has-update == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -49,17 +44,34 @@ jobs:
       - name: Update versions
         run: scripts/check-updates.sh --update
 
+      - name: Check for changes
+        id: changes
+        run: |
+          if git diff --exit-code versions.env > /dev/null 2>&1; then
+            echo "has-changes=false" >> $GITHUB_OUTPUT
+          else
+            echo "has-changes=true" >> $GITHUB_OUTPUT
+          fi
+
       - name: Create Pull Request
+        if: steps.changes.outputs.has-changes == 'true'
         uses: peter-evans/create-pull-request@v5
         with:
-          commit-message: 'chore(deps): bump vLLM to ${{ needs.check-vllm.outputs.latest-version }}'
-          title: 'chore(deps): bump vLLM to ${{ needs.check-vllm.outputs.latest-version }}'
+          commit-message: 'chore(deps): bump upstream dependencies'
+          title: 'chore(deps): bump upstream dependencies'
           body: |
-            Automated upstream release monitor detected a new vLLM release.
+            Automated upstream release monitor detected new dependency releases.
             
-            **Changes:**
-            - vLLM: `${{ needs.check-vllm.outputs.current-version }}` -> `${{ needs.check-vllm.outputs.latest-version }}`
+            **Checked:**
+            - uv (astral-sh/uv)
+            - vLLM (vllm-project/vllm)
+            - NCCL (NVIDIA/nccl)
+            - FlashInfer (flashinfer-ai/flashinfer)
+            - CUDA base image (nvidia/cuda)
+            - PyTorch ecosystem (torch, torchvision, torchaudio, triton)
+            - CUDA companion packages (nvidia-nvshmem-cu13, tvm-ffi, tilelang, numba)
+            - Ubuntu snapshot (locks/apt-sources.list)
             
             This PR will trigger `bump.sh` on the Spark to resolve COMMIT SHAs and regenerate lockfiles.
-          branch: deps/vllm-${{ needs.check-vllm.outputs.latest-version }}
+          branch: deps/bump-${{ github.run_number }}
           delete-branch: true

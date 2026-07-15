@@ -58,9 +58,8 @@ jobs:
       sha_tag: ${{ steps.vars.outputs.sha_tag }}
 
     steps:
-      - name: Stop Docker
-        run: sudo systemctl stop docker.service docker.socket
-        continue-on-error: true
+      - name: Stop vLLM containers
+        run: docker stop vllm-ray-head vllm-ray-worker 2>/dev/null || true
 
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
@@ -198,10 +197,9 @@ jobs:
             FLASHINFER_CUDA_ARCH_LIST=${{ env.FLASHINFER_CUDA_ARCH_LIST }}
             SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }}
 
-      - name: Start Docker
+      - name: Start vLLM containers
         if: always()
-        run: sudo systemctl start docker.socket docker.service
-        continue-on-error: true
+        run: docker start vllm-ray-head vllm-ray-worker 2>/dev/null || true
 
   verify:
     needs: build

@@ -59,7 +59,17 @@ FROM apt-base AS torch-base
 
 # PyTorch stack and build deps - exact versions and hashes from the lockfile.
 RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
-    uv pip install --require-hashes -r /tmp/python-build.txt \
+    _retry() { \
+        local _n=0 _max=5 _delay=30; \
+        until "$@"; do \
+            _n=$(( _n + 1 )); \
+            [ "${_n}" -ge "${_max}" ] && { echo "All ${_max} attempts failed"; exit 1; }; \
+            _delay=$(( _delay * 2 )); \
+            echo "Attempt ${_n}/${_max} failed, retrying in ${_delay}s..."; \
+            sleep "${_delay}"; \
+        done; \
+    } \
+ && _retry uv pip install --require-hashes -r /tmp/python-build.txt \
       --index-url ${PYPI_INDEX_URL} \
       --extra-index-url ${PYTORCH_INDEX_URL} \
       --index-strategy unsafe-best-match
@@ -252,7 +262,17 @@ COPY scripts/hash-build-artifacts.sh /usr/local/bin/hash-build-artifacts.sh
 RUN --mount=type=bind,from=flashinfer-builder,source=/wheels,target=/fi-wheels \
     --mount=type=bind,from=vllm-builder,source=/wheels,target=/vllm-wheels \
     --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
-    uv pip install --require-hashes -r /tmp/python-runtime.txt \
+    _retry() { \
+        local _n=0 _max=5 _delay=30; \
+        until "$@"; do \
+            _n=$(( _n + 1 )); \
+            [ "${_n}" -ge "${_max}" ] && { echo "All ${_max} attempts failed"; exit 1; }; \
+            _delay=$(( _delay * 2 )); \
+            echo "Attempt ${_n}/${_max} failed, retrying in ${_delay}s..."; \
+            sleep "${_delay}"; \
+        done; \
+    } \
+ && _retry uv pip install --require-hashes -r /tmp/python-runtime.txt \
       --index-url ${PYPI_INDEX_URL} \
       --extra-index-url ${PYTORCH_INDEX_URL} \
       --index-strategy unsafe-best-match \

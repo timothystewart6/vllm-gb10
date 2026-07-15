@@ -1,0 +1,85 @@
+name: Monitor Upstream Releases
+
+# Monitors upstream dependencies for new releases and automatically creates PRs
+# when updates are available. This workflow runs check-updates.sh which compares
+# pinned versions in versions.env against the latest upstream releases.
+#
+# Detected dependencies: uv, vLLM, NCCL, FlashInfer, CUDA, PyTorch stack,
+# CUDA companion packages, and Ubuntu snapshot date.
+
+on:
+  schedule:
+    # Check twice daily at 06:00 and 18:00 UTC for new dependency releases
+    - cron: '0 6,18 * * *'
+  # Allow manual trigger for testing or immediate checks
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-deps:
+    runs-on: ubuntu-latest
+    outputs:
+      has-update: ${{ steps.check.outputs.has-update }}
+    steps:
+      - uses: actions/checkout@e8d4307400f9427dba7cb98e488d6ab85f1cec5f
+        with:
+          fetch-depth: 1
+
+      - name: Check for dependency updates
+        id: check
+        run: |
+          scripts/check-updates.sh > /tmp/check-updates.log 2>&1 || true
+          cat /tmp/check-updates.log
+          
+          if grep -q "Update available" /tmp/check-updates.log; then
+            echo "has-update=true" >> $GITHUB_OUTPUT
+          else
+            echo "has-update=false" >> $GITHUB_OUTPUT
+          fi
+
+  create-pr:
+    needs: check-deps
+    if: needs.check-deps.outputs.has-update == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@e8d4307400f9427dba7cb98e488d6ab85f1cec5f
+
+      - name: Update versions
+        run: scripts/check-updates.sh --update
+
+      - name: Check for changes
+        id: changes
+        run: |
+          if git diff --exit-code versions.env > /dev/null 2>&1; then
+            echo "has-changes=false" >> $GITHUB_OUTPUT
+          else
+            echo "has-changes=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Pull Request
+        if: steps.changes.outputs.has-changes == 'true'
+        uses: peter-evans/create-pull-request@653ba8b281fa5e1ee78ec20dda96cf9a79102c04
+        with:
+          commit-message: 'chore(deps): bump upstream dependencies'
+          title: 'chore(deps): bump upstream dependencies'
+          body: |
+            Automated upstream release monitor detected new dependency releases.
+            
+            **Checked:**
+            - uv (astral-sh/uv)
+            - vLLM (vllm-project/vllm)
+            - NCCL (NVIDIA/nccl)
+            - FlashInfer (flashinfer-ai/flashinfer)
+            - CUDA base image (nvidia/cuda)
+            - PyTorch ecosystem (torch, torchvision, torchaudio, triton)
+            - CUDA companion packages (nvidia-nvshmem-cu13, tvm-ffi, tilelang, numba)
+            - Ubuntu snapshot (locks/apt-sources.list)
+            
+            This PR will trigger `bump.sh` on the Spark to resolve COMMIT SHAs and regenerate lockfiles.
+          branch: deps/bump-${{ github.run_number }}
+          delete-branch: true

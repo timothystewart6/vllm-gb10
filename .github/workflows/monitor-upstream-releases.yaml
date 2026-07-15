@@ -15,7 +15,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
 
 jobs:
   check-deps:
@@ -33,7 +34,7 @@ jobs:
           scripts/check-updates.sh > /tmp/check-updates.log 2>&1 || true
           cat /tmp/check-updates.log
           
-          if grep -q "Update available" /tmp/check-updates.log; then
+          if grep -q "have updates available" /tmp/check-updates.log; then
             echo "has-update=true" >> $GITHUB_OUTPUT
           else
             echo "has-update=false" >> $GITHUB_OUTPUT

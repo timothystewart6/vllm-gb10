@@ -63,23 +63,10 @@ jobs:
 
       - name: Create Pull Request
         if: steps.changes.outputs.has-changes == 'true'
-        uses: peter-evans/create-pull-request@653ba8b281fa5e1ee78ec20dda96cf9a79102c04
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1
         with:
           commit-message: 'chore(deps): bump upstream dependencies'
           title: 'chore(deps): bump upstream dependencies'
-          body: |
-            Automated upstream release monitor detected new dependency releases.
-            
-            **Checked:**
-            - uv (astral-sh/uv)
-            - vLLM (vllm-project/vllm)
-            - NCCL (NVIDIA/nccl)
-            - FlashInfer (flashinfer-ai/flashinfer)
-            - CUDA base image (nvidia/cuda)
-            - PyTorch ecosystem (torch, torchvision, torchaudio, triton)
-            - CUDA companion packages (nvidia-nvshmem-cu13, tvm-ffi, tilelang, numba)
-            - Ubuntu snapshot (locks/apt-sources.list)
-            
-            This PR will trigger `bump.sh` on the Spark to resolve COMMIT SHAs and regenerate lockfiles.
+          body: 'Automated upstream release monitor detected new dependency releases. This PR will trigger bump.sh on the Spark to resolve COMMIT SHAs and regenerate lockfiles.'
           branch: deps/bump-${{ github.run_number }}
           delete-branch: true

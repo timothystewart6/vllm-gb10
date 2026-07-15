@@ -1,0 +1,65 @@
+name: Monitor Upstream vLLM Releases
+
+on:
+  schedule:
+    # Check daily at 06:00 UTC for new vLLM releases
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-vllm:
+    runs-on: ubuntu-latest
+    outputs:
+      has-update: ${{ steps.check.outputs.has-update }}
+      current-version: ${{ steps.check.outputs.current-version }}
+      latest-version: ${{ steps.check.outputs.latest-version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Check for vLLM updates
+        id: check
+        run: |
+          current=$(grep '^VLLM_REF=' versions.env | cut -d= -f2)
+          echo "current-version=$current" >> $GITHUB_OUTPUT
+          
+          latest=$(curl -s https://api.github.com/repos/vllm-project/vllm/releases/latest | grep '"tag_name"' | head -1 | cut -d'"' -f4)
+          echo "latest-version=$latest" >> $GITHUB_OUTPUT
+          
+          if [ "$current" != "$latest" ]; then
+            echo "has-update=true" >> $GITHUB_OUTPUT
+          else
+            echo "has-update=false" >> $GITHUB_OUTPUT
+          fi
+
+  create-pr:
+    needs: check-vllm
+    if: needs.check-vllm.outputs.has-update == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Update versions
+        run: scripts/check-updates.sh --update
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          commit-message: 'chore(deps): bump vLLM to ${{ needs.check-vllm.outputs.latest-version }}'
+          title: 'chore(deps): bump vLLM to ${{ needs.check-vllm.outputs.latest-version }}'
+          body: |
+            Automated upstream release monitor detected a new vLLM release.
+            
+            **Changes:**
+            - vLLM: `${{ needs.check-vllm.outputs.current-version }}` -> `${{ needs.check-vllm.outputs.latest-version }}`
+            
+            This PR will trigger `bump.sh` on the Spark to resolve COMMIT SHAs and regenerate lockfiles.
+          branch: deps/vllm-${{ needs.check-vllm.outputs.latest-version }}
+          delete-branch: true

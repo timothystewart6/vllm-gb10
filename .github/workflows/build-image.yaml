@@ -59,7 +59,7 @@ jobs:
 
     steps:
       - name: Stop Docker
-        run: sudo systemctl stop docker
+        run: sudo systemctl stop docker.service docker.socket
         continue-on-error: true
 
       - name: Checkout
@@ -200,7 +200,7 @@ jobs:
 
       - name: Start Docker
         if: always()
-        run: sudo systemctl start docker
+        run: sudo systemctl start docker.socket docker.service
         continue-on-error: true
 
   verify:

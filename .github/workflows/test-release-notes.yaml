@@ -42,7 +42,8 @@ jobs:
           OUTPUT=/tmp/test-release-notes-output.md
 
           # Count code fences - must be even (open + close pairs)
-          FENCES=$(grep -c '^\s*\`\`\`' "$OUTPUT")
+          # Lines that start with optional whitespace followed by exactly 3 backticks
+          FENCES=$(grep -cE '^\s*```' "$OUTPUT")
           if [ $((FENCES % 2)) -ne 0 ]; then
             echo "ERROR: Odd number of code fences ($FENCES) in output - markdown is broken."
             exit 1

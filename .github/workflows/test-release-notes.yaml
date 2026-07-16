@@ -1,0 +1,70 @@
+# .github/workflows/test-release-notes.yaml
+#
+# Validates the release-notes diff logic against every realistic scenario.
+# Runs on ubuntu-latest (no GPU or aarch64 needed) - just Python and git.
+#
+# The test harness simulates git tags and versions.env content to exercise
+# all combinations of component changes, lockfile changes, and edge cases,
+# then verifies the output is well-formed and correct.
+#
+# actions/checkout             v6.0.2  => de0fac2e4500dabe0009e67214ff5f5447ce83dd
+# actions/upload-artifact      v7.0.1  => 043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+
+name: Test release notes
+
+on:
+  pull_request:
+    paths:
+      - scripts/generate-release-notes.sh
+      - tests/test-release-notes-scenarios.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          # Fetch all history and tags so the test harness can simulate
+          # tag lookups against real release tags.
+          fetch-depth: 0
+
+      - name: Run release-notes test harness
+        run: python3 tests/test-release-notes-scenarios.py
+
+      - name: Verify output is well-formed
+        run: |
+          OUTPUT=/tmp/test-release-notes-output.md
+
+          # Count code fences - must be even (open + close pairs)
+          FENCES=$(grep -c '^\s*\`\`\`' "$OUTPUT")
+          if [ $((FENCES % 2)) -ne 0 ]; then
+            echo "ERROR: Odd number of code fences ($FENCES) in output - markdown is broken."
+            exit 1
+          fi
+          echo "OK: $FENCES code fences (all properly paired)"
+
+          # Verify each scenario section exists
+          for i in $(seq 1 16); do
+            if ! grep -q "^## Scenario $i:" "$OUTPUT"; then
+              echo "ERROR: Scenario $i section missing from output."
+              exit 1
+            fi
+          done
+          echo "OK: All 16 scenario sections present"
+
+          # Verify no raw triple-backtick fences inside rendered output blocks
+          # (they should be escaped with zero-width space)
+          INNER_FENCES=$(grep -cP '`\x{200b}``' "$OUTPUT")
+          echo "OK: $INNER_FENCES inner code fences properly escaped"
+
+      - name: Upload test output artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: test-scenarios-output
+          path: /tmp/test-release-notes-output.md

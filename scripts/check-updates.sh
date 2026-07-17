@@ -225,15 +225,33 @@ load_vllm_reqs "${VLLM_LATEST}"
 NCCL_LATEST=$(gh_latest_tag "NVIDIA/nccl")
 report "NCCL (NCCL_REF)" "NCCL_REF" "${NCCL_REF}" "${NCCL_LATEST}"
 
-# FlashInfer ref is driven by vLLM's flashinfer-python pin; fall back to GH latest
-# only when vLLM doesn't pin it (which would be unexpected).
+# FlashInfer is constrained by vLLM's flashinfer-python pin at VLLM_REF, which
+# is the authoritative source of truth for this stack.  If our FLASHINFER_REF
+# already matches that constraint we are aligned -- do NOT flag a GitHub
+# "latest" as an update (upstream FlashInfer releases that are newer than what
+# the pinned vLLM expects would cause pip conflicts or ABI mismatches).
+# Fall back to GH latest only when vLLM does not pin flashinfer-python at
+# VLLM_REF.
+log "Fetching vLLM ${VLLM_REF} requirements for FlashInfer constraint..."
+load_vllm_reqs "${VLLM_REF}"
 FLASHINFER_PIN=$(vllm_pin "flashinfer-python")
 if [[ -n "${FLASHINFER_PIN}" ]]; then
   FLASHINFER_LATEST="v${FLASHINFER_PIN}"
+  if [[ "${FLASHINFER_REF#v}" == "${FLASHINFER_PIN}" ]]; then
+    printf '%s %-30s current=%-20s (aligned to VLLM %s pin)\n' \
+      "${OK}" "FlashInfer (FLASHINFER_REF)" "${FLASHINFER_REF}" "${VLLM_REF}"
+  else
+    printf '%s %-30s current=%-20s vLLM=%s (mismatch!)\n' \
+      "${OUT}" "FlashInfer (FLASHINFER_REF)" "${FLASHINFER_REF}" "v${FLASHINFER_PIN}"
+    UPDATES=$((UPDATES + 1))
+    if [[ "${DO_UPDATE}" -eq 1 ]]; then
+      update_env "FLASHINFER_REF" "v${FLASHINFER_PIN}"
+    fi
+  fi
 else
   FLASHINFER_LATEST=$(gh_latest_tag "flashinfer-ai/flashinfer")
+  report "FlashInfer (FLASHINFER_REF)" "FLASHINFER_REF" "${FLASHINFER_REF}" "${FLASHINFER_LATEST}"
 fi
-report "FlashInfer (FLASHINFER_REF)" "FLASHINFER_REF" "${FLASHINFER_REF}" "${FLASHINFER_LATEST}"
 
 UV_LATEST=$(gh_latest_tag "astral-sh/uv")
 report "uv (UV_VERSION)" "UV_VERSION" "${UV_VERSION}" "${UV_LATEST}"

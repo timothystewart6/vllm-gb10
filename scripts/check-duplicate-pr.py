@@ -41,13 +41,18 @@ def run_gh(args, check=True):
     )
 
 
-def get_versions_diff(ref=None):
-    """Get the diff for versions.env, optionally against a ref.
+def get_versions_diff(ref=None, base=None):
+    """Get the diff for versions.env, optionally against a ref and/or base.
 
+    If ref is given, compares ref vs base (defaults to HEAD if no base).
+    If no ref, compares working tree vs HEAD.
     Returns the diff text, or None if there's no diff.
     """
     if ref:
-        args = ["diff", "--exit-code", f"origin/{ref}", "--", "versions.env"]
+        if base:
+            args = ["diff", "--exit-code", base, f"origin/{ref}", "--", "versions.env"]
+        else:
+            args = ["diff", "--exit-code", "HEAD", f"origin/{ref}", "--", "versions.env"]
     else:
         # Check both staged and unstaged changes vs HEAD
         args = ["diff", "--exit-code", "HEAD", "--", "versions.env"]
@@ -117,19 +122,14 @@ def check_for_duplicate():
         # Fetch the branch
         run_git(["fetch", "origin", branch])
 
-        # Compare only the substantive portion of versions.env
-        branch_diff = get_versions_diff(branch)
-        if branch_diff is None:
-            # Branch versions.env matches working tree exactly (no diff)
-            print(f"PR #{number} has matching versions.env -- skipping duplicate")
-            return True
-
-        # Branch has a diff -- compare substantive lines
-        if diff_has_substantive_changes(branch_diff) != diff_has_substantive_changes(working_diff):
+        # Compare the substantive changes between the PR branch and origin/main
+        # vs the working tree and origin/main. This way we compare what each
+        # changes relative to the common base, ignoring GB10_BUILD.
+        branch_diff_vs_main = get_versions_diff(branch, "origin/main")
+        if diff_has_substantive_changes(branch_diff_vs_main) != diff_has_substantive_changes(working_diff):
             print(f"PR #{number} has different versions.env -- not a match")
             continue
 
-        # Both diffs have substantive changes; compare the actual lines
         def substantive_lines(diff):
             lines = set()
             for line in diff.splitlines():
@@ -139,7 +139,7 @@ def check_for_duplicate():
                         lines.add(line)
             return lines
 
-        if substantive_lines(branch_diff) == substantive_lines(working_diff):
+        if substantive_lines(branch_diff_vs_main) == substantive_lines(working_diff):
             print(f"PR #{number} has matching versions.env -- skipping duplicate")
             return True
         else:

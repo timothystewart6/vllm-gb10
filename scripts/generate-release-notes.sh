@@ -22,7 +22,20 @@ set -a; . ./versions.env; set +a
 SHORT_SHA="${GITHUB_SHA::7}"
 
 python3 - <<'PYEOF'
-import os, re, subprocess, textwrap
+import os, subprocess, textwrap, sys
+
+# Add scripts/ to sys.path so the shared module is importable
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__))))
+
+from versions_diff import (
+    COMPONENT_LABELS,
+    COMPONENTS,
+    LOCKFILES,
+    parse_versions_env,
+    file_sha256,
+    extract_apt_snapshot_date,
+    format_change_lines,
+)
 
 tag               = os.environ["TAG"]
 short_sha         = os.environ["GITHUB_SHA"][:7]
@@ -65,38 +78,6 @@ tag_sha        = f"{registry}:sha-{short_sha}"
 # ---------------------------------------------------------------------------
 # Determine previous tag and diff component versions
 # ---------------------------------------------------------------------------
-# Components to track for changes (variable name -> display label)
-COMPONENTS = [
-    ("VLLM_REF", "vLLM"),
-    ("FLASHINFER_REF", "FlashInfer"),
-    ("NCCL_REF", "NCCL"),
-    ("TORCH_VERSION", "PyTorch"),
-    ("TORCHVISION_VERSION", "torchvision"),
-    ("TORCHAUDIO_VERSION", "torchaudio"),
-    ("TRITON_VERSION", "Triton"),
-    ("CUDA_BASE_IMAGE", "CUDA base"),
-    ("UV_VERSION", "uv"),
-    ("RAY_VERSION", "Ray"),
-    ("NVSHMEM_VERSION", "NVSHMEM"),
-    ("TVM_FFI_VERSION", "TVM-FFI"),
-    ("TILELANG_VERSION", "TileLang"),
-    ("NUMBA_VERSION", "Numba"),
-    ("FASTSAFETENSORS_VERSION", "fastsafetensors"),
-    ("INSTANTTENSOR_VERSION", "instanttensor"),
-    ("TORCH_CUDA_ARCH_LIST", "Target arch"),
-]
-
-def parse_versions_env(text):
-    """Parse a versions.env text into a dict of variable -> value."""
-    env = {}
-    for line in text.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        m = re.match(r'^([A-Za-z_][A-Za-z0-9_]*)=(.*)$', line)
-        if m:
-            env[m.group(1)] = m.group(2)
-    return env
 
 def get_previous_tag(current_tag):
     """Find the previous v*-gb10.* tag before current_tag, sorted by version."""
@@ -136,11 +117,6 @@ def git_show_file(prev_tag, path):
     except Exception:
         return None
 
-def file_sha256(content):
-    """Return first 12 chars of SHA256 hex digest of content."""
-    import hashlib
-    return hashlib.sha256(content.encode()).hexdigest()[:12]
-
 def read_current_file(path):
     """Read a file from the working tree."""
     try:
@@ -149,34 +125,21 @@ def read_current_file(path):
     except Exception:
         return None
 
-def extract_apt_snapshot_date(content):
-    """Extract the snapshot timestamp from apt-sources.list, e.g. 20260714T000000Z."""
-    if not content:
-        return None
-    m = re.search(r'snapshot\.ubuntu\.com/ubuntu/(\d{8}T\d{6}Z)', content)
-    return m.group(1) if m else None
-
 prev_tag = get_previous_tag(tag)
 changed_lines = []
 
 if prev_tag:
     prev_env = get_previous_versions(prev_tag)
     if prev_env:
+        changes = {}
         for var, label in COMPONENTS:
             old_val = prev_env.get(var, "")
             new_val = os.environ.get(var, "")
             if old_val != new_val:
-                changed_lines.append(f"- **{label}**: {old_val} -> {new_val}")
+                changes[var] = (old_val, new_val)
+        changed_lines = format_change_lines(changes, COMPONENT_LABELS)
 
     # --- Lockfile diffs ---
-    LOCKFILES = [
-        ("locks/apt-packages.txt", "apt packages"),
-        ("locks/apt-sources.list", "apt snapshot"),
-        ("locks/python-bootstrap.txt", "python bootstrap lock"),
-        ("locks/python-build.txt", "python build lock"),
-        ("locks/python-runtime.txt", "python runtime lock"),
-    ]
-
     for lock_path, lock_label in LOCKFILES:
         old_content = git_show_file(prev_tag, lock_path)
         new_content = read_current_file(lock_path)
@@ -184,7 +147,6 @@ if prev_tag:
             old_hash = file_sha256(old_content)
             new_hash = file_sha256(new_content)
             if old_hash != new_hash:
-                # For apt-sources.list, show the snapshot date change
                 if lock_path == "locks/apt-sources.list":
                     old_date = extract_apt_snapshot_date(old_content)
                     new_date = extract_apt_snapshot_date(new_content)

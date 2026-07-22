@@ -17,6 +17,8 @@ on:
     paths:
       - scripts/generate-release-notes.sh
       - tests/test-release-notes-scenarios.py
+      - tests/test-pr-body-generation.py
+      - .github/workflows/monitor-upstream-releases.yaml
   workflow_dispatch:
 
 permissions:
@@ -36,6 +38,9 @@ jobs:
 
       - name: Run release-notes test harness
         run: python3 tests/test-release-notes-scenarios.py
+
+      - name: Run PR body generation test harness
+        run: python3 tests/test-pr-body-generation.py
 
       - name: Verify output is well-formed
         run: |

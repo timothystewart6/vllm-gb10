@@ -41,15 +41,44 @@ def run_gh(args, check=True):
     )
 
 
+def get_versions_diff(ref=None):
+    """Get the diff for versions.env, optionally against a ref.
+
+    Returns the diff text, or None if there's no diff.
+    """
+    if ref:
+        args = ["diff", "--exit-code", f"origin/{ref}", "--", "versions.env"]
+    else:
+        # Check both staged and unstaged changes vs HEAD
+        args = ["diff", "--exit-code", "HEAD", "--", "versions.env"]
+    result = run_git(args, check=False)
+    if result.returncode == 0:
+        return None
+    return result.stdout
+
+
+def diff_has_substantive_changes(diff_text):
+    """Check if a versions.env diff has changes beyond GB10_BUILD.
+
+    Returns True if there are any changed variables other than GB10_BUILD.
+    """
+    if diff_text is None:
+        return False
+    for line in diff_text.splitlines():
+        # Look for +/- lines that define variables (not diff headers, not comments)
+        if line.startswith(("+", "-")) and "=" in line and not line.startswith("---") and not line.startswith("+++"):
+            var_name = line.split("=", 1)[0][1:].strip()  # strip +/- prefix
+            if var_name != "GB10_BUILD":
+                return True
+    return False
+
+
 def check_for_duplicate():
     """Check for existing PRs with matching versions.env, return True if duplicate."""
     # First check if versions.env actually has uncommitted changes
-    diff_result = run_git(
-        ["diff", "--exit-code", "versions.env"], check=False
-    )
-    if diff_result.returncode == 0:
-        # No changes to versions.env in working tree -- nothing to PR
-        print("No changes to versions.env in working tree")
+    working_diff = get_versions_diff()
+    if not diff_has_substantive_changes(working_diff):
+        print("No substantive changes to versions.env in working tree")
         return True
 
     # Find all open deps/bump PRs by this actor
@@ -69,9 +98,16 @@ def check_for_duplicate():
         print("No open deps/bump PRs by this actor")
         return False
 
-    prs = json.loads(prs_text)
-    if not isinstance(prs, list):
-        prs = [prs]
+    # gh --jq '.[]' outputs one JSON object per line (NDJSON) when there are
+    # multiple results, or a single JSON object when there's exactly one.
+    # Handle both cases.
+    lines = [l.strip() for l in prs_text.splitlines() if l.strip()]
+    if len(lines) == 1:
+        prs = json.loads(lines[0])
+        if not isinstance(prs, list):
+            prs = [prs]
+    else:
+        prs = [json.loads(line) for line in lines]
 
     for pr in prs:
         number = pr["number"]
@@ -81,12 +117,29 @@ def check_for_duplicate():
         # Fetch the branch
         run_git(["fetch", "origin", branch])
 
-        # Compare versions.env between the PR branch and the working tree
-        r = run_git(
-            ["diff", "--exit-code", f"origin/{branch}", "--", "versions.env"],
-            check=False,
-        )
-        if r.returncode == 0:
+        # Compare only the substantive portion of versions.env
+        branch_diff = get_versions_diff(branch)
+        if branch_diff is None:
+            # Branch versions.env matches working tree exactly (no diff)
+            print(f"PR #{number} has matching versions.env -- skipping duplicate")
+            return True
+
+        # Branch has a diff -- compare substantive lines
+        if diff_has_substantive_changes(branch_diff) != diff_has_substantive_changes(working_diff):
+            print(f"PR #{number} has different versions.env -- not a match")
+            continue
+
+        # Both diffs have substantive changes; compare the actual lines
+        def substantive_lines(diff):
+            lines = set()
+            for line in diff.splitlines():
+                if line.startswith(("+", "-")) and "=" in line and not line.startswith("---") and not line.startswith("+++"):
+                    var_name = line.split("=", 1)[0][1:].strip()
+                    if var_name != "GB10_BUILD":
+                        lines.add(line)
+            return lines
+
+        if substantive_lines(branch_diff) == substantive_lines(working_diff):
             print(f"PR #{number} has matching versions.env -- skipping duplicate")
             return True
         else:

@@ -63,13 +63,24 @@ jobs:
             echo "has-changes=true" >> $GITHUB_OUTPUT
           fi
 
-      - name: Build PR body
-        id: pr-body
+      - name: Check for existing PR with same changes
+        id: existing-pr
         if: steps.changes.outputs.has-changes == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_MONITOR_PAT }}
+        run: |
+          if scripts/check-duplicate-pr.py; then
+            echo "skip-pr=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip-pr=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build PR body
+        if: steps.changes.outputs.has-changes == 'true' && steps.existing-pr.outputs.skip-pr == 'false'
         run: scripts/generate-pr-body.sh > /tmp/pr-body.md
 
       - name: Create Pull Request
-        if: steps.changes.outputs.has-changes == 'true'
+        if: steps.changes.outputs.has-changes == 'true' && steps.existing-pr.outputs.skip-pr == 'false'
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1
         with:
           token: ${{ secrets.RELEASE_MONITOR_PAT }}

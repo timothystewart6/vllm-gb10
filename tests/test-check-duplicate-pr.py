@@ -9,8 +9,8 @@ Scenario coverage:
   - Only GB10_BUILD changes (skip - not substantive)
   - Substantive changes, no open PRs (proceed)
   - Single PR with matching substantive changes (skip)
-  - Single PR with different substantive changes (proceed)
   - Single PR with only GB10_BUILD diff, working tree has UV (proceed - different substantive)
+  - Single PR with different substantive changes (proceed)
   - Single PR with same UV but different GB10_BUILD (skip - same substantive, GB10 ignored)
   - Multiple PRs, none matching (proceed)
   - Multiple PRs, second one matches (skip)
@@ -19,12 +19,11 @@ Scenario coverage:
   - gh pr list errors/network issue (proceed - fails open)
   - gh returns empty array (proceed)
   - git fetch fails (proceed - fetch failure shouldn't block)
-  - Branch has no substantive changes but working tree does (proceed)
-  - Working tree has only GB10_BUILD, branch has substantive (skip - no substantive changes)
+  - Branch has only GB10_BUILD change vs main, working tree has UV (proceed)
+  - Working tree has only GB10_BUILD, branch has substantive vs main (skip)
 """
 
 import sys
-import textwrap
 
 sys.path.insert(0, "scripts")
 
@@ -33,14 +32,12 @@ sys.path.insert(0, "scripts")
 # Helpers to generate realistic unified diff output for mock git
 # ---------------------------------------------------------------------------
 
-SIMPLE_DIFF = """\
+SIMPLE_UV_DIFF = """\
 diff --git a/versions.env b/versions.env
 index abc1234..def5678 100644
 --- a/versions.env
 +++ b/versions.env
 @@ -20,6 +20,6 @@ GB10_BUILD=2
- # Python / uv bootstrap
- # ---------------------------------------------------------------------------
 -UV_VERSION=0.11.29
 +UV_VERSION=0.11.30
 """
@@ -52,9 +49,6 @@ index abc1234..def5678 100644
 --- a/versions.env
 +++ b/versions.env
 @@ -14,6 +14,6 @@ CUDA_BASE_DIGEST=sha256:a5b6256e470196fc1d5f8f62139d57d3662867746dfe1cb352d76
- # Image stack revision.
- # Reset to 0 each time VLLM_REF bumps to a new minor/patch.
- # Incremented by bump.sh when any non-vLLM input changes on the same VLLM_REF.
 -GB10_BUILD=2
 +GB10_BUILD=3
 """
@@ -66,14 +60,9 @@ index abc1234..def5678 100644
 --- a/versions.env
 +++ b/versions.env
 @@ -14,6 +14,6 @@ CUDA_BASE_DIGEST=sha256:a5b6256e470196fc1d5f8f62139d57d3662867746dfe1cb352d76
- # Image stack revision.
- # Reset to 0 each time VLLM_REF bumps to a new minor/patch.
- # Incremented by bump.sh when any non-vLLM input changes on the same VLLM_REF.
 -GB10_BUILD=2
 +GB10_BUILD=3
 @@ -20,6 +20,6 @@ GB10_BUILD=3
- # Python / uv bootstrap
- # ---------------------------------------------------------------------------
 -UV_VERSION=0.11.29
 +UV_VERSION=0.11.30
 """
@@ -85,8 +74,6 @@ index abc1234..def5678 100644
 --- a/versions.env
 +++ b/versions.env
 @@ -28,6 +28,6 @@ GB10_BUILD=2
- # vLLM
- # ---------------------------------------------------------------------------
 -VLLM_REF=v0.24.0
 +VLLM_REF=v0.25.1
 """
@@ -98,14 +85,9 @@ index abc1234..def5678 100644
 --- a/versions.env
 +++ b/versions.env
 @@ -28,6 +28,6 @@ GB10_BUILD=2
- # vLLM
- # ---------------------------------------------------------------------------
 -VLLM_REF=v0.24.0
 +VLLM_REF=v0.25.1
 @@ -14,6 +14,6 @@ CUDA_BASE_DIGEST=sha256:a5b6256e470196fc1d5f8f62139d57d3662867746dfe1cb352d76
- # Image stack revision.
- # Reset to 0 each time VLLM_REF bumps to a new minor/patch.
- # Incremented by bump.sh when any non-vLLM input changes on the same VLLM_REF.
 -GB10_BUILD=2
 +GB10_BUILD=3
 """
@@ -132,135 +114,132 @@ if __name__ == "__main__":
     #
     # fake_gh_stdout: what gh pr list returns (empty string = no PRs, or error)
     # fake_git_behaviors dict:
-    #   working_diff: the diff text to return for working tree diff, or None for exit 0
-    #   branch_diffs: dict mapping branch name -> diff text, or None for exit 0
+    #   working_diff: the diff text to return for working tree diff vs HEAD, or None for exit 0
+    #   branch_diffs_vs_main: dict mapping branch name -> diff text vs origin/main, or None for exit 0
     #   fetch_exit: exit code for git fetch (0 = success, 1 = failure)
 
-    GB10_ONLY_BRANCH = GB10_ONLY_DIFF
-    UV_AND_GB10_BRANCH = UV_AND_GB10_DIFF
-    VLLM_AND_GB10_BRANCH = VLLM_AND_GB10_DIFF
     EMPTY = None  # No diff (exit 0)
 
     scenarios = [
         (
-            "No changes in working tree (git diff versions.env exits 0)",
+            "No changes in working tree",
             "",
-            {"working_diff": EMPTY, "branch_diffs": {}, "fetch_exit": 0},
+            {"working_diff": EMPTY, "branch_diffs_vs_main": {}, "fetch_exit": 0},
             0,  # skip (no changes)
         ),
         (
             "Only GB10_BUILD changes in working tree (not substantive)",
             "",
-            {"working_diff": GB10_ONLY_BRANCH, "branch_diffs": {}, "fetch_exit": 0},
+            {"working_diff": GB10_ONLY_DIFF, "branch_diffs_vs_main": {}, "fetch_exit": 0},
             0,  # skip (no substantive changes)
         ),
         (
             "Substantive changes (UV_VERSION + GB10_BUILD), no open PRs",
             "",
-            {"working_diff": UV_AND_GB10_BRANCH, "branch_diffs": {}, "fetch_exit": 0},
+            {"working_diff": UV_AND_GB10_DIFF, "branch_diffs_vs_main": {}, "fetch_exit": 0},
             1,  # proceed
         ),
         (
             "Single PR with matching substantive changes (UV_VERSION + GB10_BUILD)",
-            '[{"number": 42, "headRefName": "deps/bump-42"}]',
-            {"working_diff": UV_AND_GB10_BRANCH,
-             "branch_diffs": {"deps/bump-42": None},  # exit 0 = same as working tree
+            '{"number": 42, "headRefName": "deps/bump-42"}',
+            {"working_diff": UV_AND_GB10_DIFF,
+             "branch_diffs_vs_main": {"deps/bump-42": UV_AND_GB10_DIFF},
              "fetch_exit": 0},
             0,  # skip
         ),
         (
-            "Single PR with only GB10_BUILD diff, working tree has UV (different substantive)",
-            '[{"number": 42, "headRefName": "deps/bump-42"}]',
-            {"working_diff": UV_AND_GB10_BRANCH,
-             "branch_diffs": {"deps/bump-42": GB10_ONLY_BRANCH},
+            "Single PR with only GB10_BUILD diff vs main, working tree has UV (different substantive)",
+            '{"number": 42, "headRefName": "deps/bump-42"}',
+            {"working_diff": UV_AND_GB10_DIFF,
+             "branch_diffs_vs_main": {"deps/bump-42": GB10_ONLY_DIFF},
              "fetch_exit": 0},
-            1,  # proceed (branch has no substantive change)
+            1,  # proceed (branch has no substantive change vs main)
         ),
         (
             "Single PR with different substantive changes (VLLM_REF vs UV_VERSION)",
-            '[{"number": 42, "headRefName": "deps/bump-42"}]',
-            {"working_diff": UV_AND_GB10_BRANCH,
-             "branch_diffs": {"deps/bump-42": VLLM_AND_GB10_BRANCH},
+            '{"number": 42, "headRefName": "deps/bump-42"}',
+            {"working_diff": UV_AND_GB10_DIFF,
+             "branch_diffs_vs_main": {"deps/bump-42": VLLM_AND_GB10_DIFF},
              "fetch_exit": 0},
             1,  # proceed (different variables changed)
         ),
         (
             "Single PR with same UV but different GB10_BUILD (same substantive)",
-            '[{"number": 42, "headRefName": "deps/bump-42"}]',
-            {"working_diff": UV_AND_GB10_BRANCH,
-             "branch_diffs": {"deps/bump-42": SIMPLE_DIFF},
+            '{"number": 42, "headRefName": "deps/bump-42"}',
+            {"working_diff": UV_AND_GB10_DIFF,
+             "branch_diffs_vs_main": {"deps/bump-42": SIMPLE_UV_DIFF},
              "fetch_exit": 0},
             0,  # skip (same UV change, GB10_BUILD differs but ignored)
         ),
         (
             "Multiple PRs, none matching",
             '{"number": 41, "headRefName": "deps/bump-41"}\n{"number": 42, "headRefName": "deps/bump-42"}',
-            {"working_diff": UV_AND_GB10_BRANCH,
-             "branch_diffs": {"deps/bump-41": VLLM_AND_GB10_BRANCH, "deps/bump-42": VLLM_AND_GB10_BRANCH},
+            {"working_diff": UV_AND_GB10_DIFF,
+             "branch_diffs_vs_main": {"deps/bump-41": VLLM_AND_GB10_DIFF, "deps/bump-42": VLLM_AND_GB10_DIFF},
              "fetch_exit": 0},
             1,  # proceed
         ),
         (
             "Multiple PRs, second one matches",
             '{"number": 41, "headRefName": "deps/bump-41"}\n{"number": 42, "headRefName": "deps/bump-42"}',
-            {"working_diff": UV_AND_GB10_BRANCH,
-             "branch_diffs": {"deps/bump-41": VLLM_AND_GB10_BRANCH, "deps/bump-42": None},  # second matches exactly
+            {"working_diff": UV_AND_GB10_DIFF,
+             "branch_diffs_vs_main": {"deps/bump-41": VLLM_AND_GB10_DIFF, "deps/bump-42": UV_AND_GB10_DIFF},
              "fetch_exit": 0},
             0,  # skip (second one matches)
         ),
         (
             "Multiple PRs, all match",
             '{"number": 41, "headRefName": "deps/bump-41"}\n{"number": 42, "headRefName": "deps/bump-42"}',
-            {"working_diff": UV_AND_GB10_BRANCH,
-             "branch_diffs": {"deps/bump-41": None, "deps/bump-42": None},  # both match exactly
+            {"working_diff": UV_AND_GB10_DIFF,
+             "branch_diffs_vs_main": {"deps/bump-41": UV_AND_GB10_DIFF, "deps/bump-42": UV_AND_GB10_DIFF},
              "fetch_exit": 0},
             0,  # skip (first match short-circuits)
         ),
         (
             "gh returns single object not array",
             '{"number": 42, "headRefName": "deps/bump-42"}',
-            {"working_diff": UV_AND_GB10_BRANCH,
-             "branch_diffs": {"deps/bump-42": None},  # matching exactly
+            {"working_diff": UV_AND_GB10_DIFF,
+             "branch_diffs_vs_main": {"deps/bump-42": UV_AND_GB10_DIFF},
              "fetch_exit": 0},
             0,  # skip
         ),
         (
             "gh pr list errors (network issue)",
             "",
-            {"working_diff": UV_AND_GB10_BRANCH,
-             "branch_diffs": {},
+            {"working_diff": UV_AND_GB10_DIFF,
+             "branch_diffs_vs_main": {},
              "fetch_exit": 0},
             1,  # proceed (fails open)
         ),
         (
             "gh returns empty array (no matching PRs)",
             "[]",
-            {"working_diff": UV_AND_GB10_BRANCH,
-             "branch_diffs": {},
+            {"working_diff": UV_AND_GB10_DIFF,
+             "branch_diffs_vs_main": {},
              "fetch_exit": 0},
             1,  # proceed
         ),
         (
             "git fetch fails for the PR branch (rate limited)",
-            '[{"number": 42, "headRefName": "deps/bump-42"}]',
-            {"working_diff": UV_AND_GB10_BRANCH,
-             "branch_diffs": {},
+            '{"number": 42, "headRefName": "deps/bump-42"}',
+            {"working_diff": UV_AND_GB10_DIFF,
+             "branch_diffs_vs_main": {},
              "fetch_exit": 1},  # fetch fails
             1,  # proceed (fetch failure shouldn't block)
         ),
         (
-            "Branch has no substantive changes (GB10_BUILD only) but working tree does",
-            '[{"number": 42, "headRefName": "deps/bump-42"}]',
-            {"working_diff": UV_AND_GB10_BRANCH,
-             "branch_diffs": {"deps/bump-42": GB10_ONLY_BRANCH},
+            "Branch has only GB10_BUILD change vs main, working tree has UV",
+            '{"number": 42, "headRefName": "deps/bump-42"}',
+            {"working_diff": UV_AND_GB10_DIFF,
+             "branch_diffs_vs_main": {"deps/bump-42": GB10_ONLY_DIFF},
              "fetch_exit": 0},
             1,  # proceed (different substantive content)
         ),
         (
-            "Working tree has only GB10_BUILD, branch has substantive changes",
-            '[{"number": 42, "headRefName": "deps/bump-42"}]',
-            {"working_diff": GB10_ONLY_BRANCH,
-             "branch_diffs": {"deps/bump-42": UV_AND_GB10_BRANCH},
+            "Working tree has only GB10_BUILD, branch has substantive vs main",
+            '{"number": 42, "headRefName": "deps/bump-42"}',
+            {"working_diff": GB10_ONLY_DIFF,
+             "branch_diffs_vs_main": {"deps/bump-42": UV_AND_GB10_DIFF},
              "fetch_exit": 0},
             0,  # skip (no substantive changes in working tree)
         ),
@@ -275,7 +254,7 @@ if __name__ == "__main__":
         print(f"Scenario: {name}")
         with tempfile.TemporaryDirectory() as tmpdir:
             working_diff = fake_git_behaviors["working_diff"]
-            branch_diffs = fake_git_behaviors.get("branch_diffs", {})
+            branch_diffs_vs_main = fake_git_behaviors.get("branch_diffs_vs_main", {})
             fetch_exit = fake_git_behaviors.get("fetch_exit", 0)
 
             # Create mock gh script
@@ -308,19 +287,19 @@ if __name__ == "__main__":
                 f.write(f"  exit {fetch_exit}\n")
                 f.write("fi\n")
 
-                # Handle "git diff --exit-code origin/<branch> -- versions.env"
-                f.write('if [ "$1" = "diff" ] && [ "$2" = "--exit-code" ] && [[ "$3" =~ ^origin/ ]] && [ "$4" = "--" ] && [ "$5" = "versions.env" ] && [ $# -eq 5 ]; then\n')
-                if branch_diffs:
+                # Handle "git diff --exit-code origin/main origin/<branch> -- versions.env"
+                f.write('if [ "$1" = "diff" ] && [ "$2" = "--exit-code" ] && [ "$3" = "origin/main" ] && [[ "$4" =~ ^origin/ ]] && [ "$5" = "--" ] && [ "$6" = "versions.env" ] && [ $# -eq 6 ]; then\n')
+                if branch_diffs_vs_main:
                     i=0
-                    for br, diff_content in branch_diffs.items():
+                    for br, diff_content in branch_diffs_vs_main.items():
                         prefix = "elif" if i > 0 else "if"
                         i+=1
                         if diff_content is not None:
-                            f.write(f'  {prefix} [ "$3" = "origin/{br}" ]; then\n')
+                            f.write(f'  {prefix} [ "$4" = "origin/{br}" ]; then\n')
                             f.write(f'    cat << \'ENDDIFF\'\n{diff_content}\nENDDIFF\n')
                             f.write("    exit 1\n")
                         else:
-                            f.write(f'  {prefix} [ "$3" = "origin/{br}" ]; then\n')
+                            f.write(f'  {prefix} [ "$4" = "origin/{br}" ]; then\n')
                             f.write("    exit 0\n")
                     f.write("  else\n")
                     f.write("    exit 1\n")

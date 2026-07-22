@@ -118,6 +118,46 @@ if __name__ == "__main__":
              "diff_branch_exit": 0},
             1,  # proceed (fails open)
         ),
+        (
+            "gh pr list returns empty array (no PRs)",
+            "[]",
+            {"diff_exit": 1,
+             "fetch_exit": 0,
+             "diff_branch_exit": 0},
+            1,  # proceed
+        ),
+        (
+            "gh pr list returns non-JSON output (stale/weird token)",
+            "",
+            {"diff_exit": 1,
+             "fetch_exit": 0,
+             "diff_branch_exit": 0},
+            1,  # proceed (json.loads will crash but script catches via stdout empty check)
+        ),
+        (
+            "Multiple PRs, all match",
+            '[{"number": 41, "headRefName": "deps/bump-41"}, {"number": 42, "headRefName": "deps/bump-42"}]',
+            {"diff_exit": 1,
+             "fetch_exit": 0,
+             "diff_branch_exit": [0, 0]},  # both match
+            0,  # skip (first match short-circuits)
+        ),
+        (
+            "Single PR, git fetch fails (rate-limited or branch deleted)",
+            '[{"number": 42, "headRefName": "deps/bump-42"}]',
+            {"diff_exit": 1,
+             "fetch_exit": 1,  # git fetch fails
+             "diff_branch_exit": 0},  # diff not reached
+            1,  # proceed (fetch failure should not block PR creation)
+        ),
+        (
+            "versions.env changes but lockfiles only changed (no component version change)",
+            "",
+            {"diff_exit": 1,  # git diff versions.env exits 1 (has changes, e.g. GB10_BUILD)
+             "fetch_exit": 0,
+             "diff_branch_exit": 0},
+            1,  # proceed (no PRs exist, should proceed)
+        ),
     ]
 
     script_path = os.path.join(

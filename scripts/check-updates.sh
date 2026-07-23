@@ -73,20 +73,28 @@ for arg in "$@"; do
   esac
 done
 
+if [[ "${DO_UPDATE}" -eq 1 && "${DO_BUMP_APT}" -eq 1 ]]; then
+  printf '%s\n' 'Choose either --update or --bump-apt-snapshot, not both.' >&2
+  exit 1
+fi
+
 log()  { printf '[check-updates] %s\n' "$*" >&2; }
 need() { command -v "$1" &>/dev/null || { log "Required tool '$1' not found."; exit 1; }; }
 
 need curl
 need python3
 
-# shellcheck source=../versions.env
-set -a; source "${VERSIONS}"; set +a
+set -a
+# shellcheck disable=SC1090,SC1091
+source "${VERSIONS}"
+set +a
 
 OK="OK     "
 OUT="UPDATE "
 
 # Tracks whether any updates were found
 UPDATES=0
+ENV_UPDATES=0
 
 # ---------------------------------------------------------------------------
 # sed -i is not portable between macOS and Linux. Use a temp-file swap.
@@ -95,9 +103,15 @@ update_env() {
   local key="$1"
   local val="$2"
   local tmp
+  if ! grep -q "^${key}=" "${VERSIONS}"; then
+    log "Cannot update missing key ${key} in versions.env."
+    return 1
+  fi
   tmp="$(mktemp)"
   sed "s|^${key}=.*|${key}=${val}|" "${VERSIONS}" > "${tmp}"
+  chmod 0644 "${tmp}"
   mv "${tmp}" "${VERSIONS}"
+  ENV_UPDATES=$((ENV_UPDATES + 1))
   log "  updated ${key}=${val}"
 }
 
@@ -116,6 +130,7 @@ update_apt_snapshot() {
     -e "s|/[0-9]\{8\}T[0-9]\{6\}Z/|/${new_stamp}/|g" \
     -e "s|# Snapshot date: .*|# Snapshot date: ${new_display}T00:00:00Z|" \
     "${sources}" > "${tmp}"
+  chmod 0644 "${tmp}"
   mv "${tmp}" "${sources}"
   log "  updated apt-sources.list snapshot -> ${new_display}T00:00:00Z"
 }
@@ -158,6 +173,10 @@ load_vllm_reqs() {
       curl -fsSL "${base}/requirements/build/cuda.txt" 2>/dev/null || true
     }
   )"
+  if [[ -z "${VLLM_REQS_RAW//[[:space:]]/}" ]]; then
+    log "Could not fetch vLLM requirements for ${tag}."
+    return 1
+  fi
 }
 
 vllm_pin() {
@@ -203,43 +222,56 @@ VLLM_LATEST=$(gh_latest_tag "vllm-project/vllm")
 # newer than the latest stable (e.g. v0.23.0) is reported as INFO, not UPDATE.
 # Only flag UPDATE when the stable release is genuinely ahead of our pin.
 VLLM_CMP=$(python3 -c "
-from packaging.version import Version
-cur = Version('${VLLM_REF}'.lstrip('v'))
-lat = Version('${VLLM_LATEST}'.lstrip('v'))
+import re
+
+def parse(value):
+    match = re.fullmatch(r'v?(\d+)\.(\d+)\.(\d+)(?:(a|b|rc)(\d+))?', value)
+    if not match:
+        raise ValueError(value)
+    major, minor, patch, stage, number = match.groups()
+    stage_rank = {'a': 0, 'b': 1, 'rc': 2, None: 3}[stage]
+    return (int(major), int(minor), int(patch), stage_rank, int(number or 0))
+
+cur = parse('${VLLM_REF}')
+lat = parse('${VLLM_LATEST}')
 print('ahead' if cur >= lat else 'behind')
 " 2>/dev/null || echo 'unknown')
 if [ "${VLLM_CMP}" = "behind" ]; then
+  VLLM_TARGET="${VLLM_LATEST}"
   report "vLLM (VLLM_REF)" "VLLM_REF" "${VLLM_REF}" "${VLLM_LATEST}"
 elif [ "${VLLM_CMP}" = "ahead" ] && [ "${VLLM_REF}" != "${VLLM_LATEST}" ]; then
+  VLLM_TARGET="${VLLM_REF}"
   printf 'INFO    %-30s current=%-20s stable=%s (pinned to newer pre-release)\n' \
     "vLLM (VLLM_REF)" "${VLLM_REF}" "${VLLM_LATEST}"
-else
+elif [ "${VLLM_CMP}" = "ahead" ]; then
+  VLLM_TARGET="${VLLM_REF}"
   printf '%s %-30s current=%-20s\n' "${OK}" "vLLM (VLLM_REF)" "${VLLM_REF}"
+else
+  log "Could not compare vLLM versions '${VLLM_REF}' and '${VLLM_LATEST}'."
+  exit 1
 fi
 
 # Load vLLM's pinned dep versions at the *target* tag so dependent components
 # below can be aligned to it (rather than blindly tracking PyPI latest).
-log "Fetching vLLM ${VLLM_LATEST} requirements for cross-checks..."
-load_vllm_reqs "${VLLM_LATEST}"
+log "Fetching vLLM ${VLLM_TARGET} requirements for cross-checks..."
+load_vllm_reqs "${VLLM_TARGET}"
 
 NCCL_LATEST=$(gh_latest_tag "NVIDIA/nccl")
 report "NCCL (NCCL_REF)" "NCCL_REF" "${NCCL_REF}" "${NCCL_LATEST}"
 
-# FlashInfer is constrained by vLLM's flashinfer-python pin at VLLM_REF, which
+# FlashInfer is constrained by vLLM's flashinfer-python pin at VLLM_TARGET, which
 # is the authoritative source of truth for this stack.  If our FLASHINFER_REF
 # already matches that constraint we are aligned -- do NOT flag a GitHub
 # "latest" as an update (upstream FlashInfer releases that are newer than what
-# the pinned vLLM expects would cause pip conflicts or ABI mismatches).
+# the target vLLM expects would cause pip conflicts or ABI mismatches).
 # Fall back to GH latest only when vLLM does not pin flashinfer-python at
-# VLLM_REF.
-log "Fetching vLLM ${VLLM_REF} requirements for FlashInfer constraint..."
-load_vllm_reqs "${VLLM_REF}"
+# VLLM_TARGET.
 FLASHINFER_PIN=$(vllm_pin "flashinfer-python")
 if [[ -n "${FLASHINFER_PIN}" ]]; then
   FLASHINFER_LATEST="v${FLASHINFER_PIN}"
   if [[ "${FLASHINFER_REF#v}" == "${FLASHINFER_PIN}" ]]; then
     printf '%s %-30s current=%-20s (aligned to VLLM %s pin)\n' \
-      "${OK}" "FlashInfer (FLASHINFER_REF)" "${FLASHINFER_REF}" "${VLLM_REF}"
+      "${OK}" "FlashInfer (FLASHINFER_REF)" "${FLASHINFER_REF}" "${VLLM_TARGET}"
   else
     printf '%s %-30s current=%-20s vLLM=%s (mismatch!)\n' \
       "${OUT}" "FlashInfer (FLASHINFER_REF)" "${FLASHINFER_REF}" "v${FLASHINFER_PIN}"
@@ -380,7 +412,7 @@ print((datetime.now(timezone.utc) - snap).days)
     fi
   elif [[ "${APT_SNAPSHOT_AGE}" -ge 30 ]]; then
     printf 'INFO    %-30s age=%d days (snapshot=%s) - consider refreshing soon\n' \
-      "" "apt snapshot" "${APT_SNAPSHOT_AGE}" "${APT_SNAPSHOT_DISPLAY}"
+      "apt snapshot" "${APT_SNAPSHOT_AGE}" "${APT_SNAPSHOT_DISPLAY}"
     if [[ "${DO_BUMP_APT}" -eq 1 ]]; then
       update_apt_snapshot "${TODAY_STAMP}"
     fi
@@ -399,7 +431,7 @@ if [ "${UPDATES}" -eq 0 ]; then
   echo "All components are current."
 else
   if [ "${DO_UPDATE}" -eq 1 ]; then
-    printf '%d component(s) updated in versions.env.\n' "${UPDATES}"
+    printf '%d component(s) updated in versions.env.\n' "${ENV_UPDATES}"
     echo ""
     echo "Next steps:"
     echo "  1. git diff versions.env          # review changes"

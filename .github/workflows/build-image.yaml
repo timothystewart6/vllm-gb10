@@ -104,7 +104,9 @@ jobs:
         # step outputs so downstream jobs can reuse them without
         # re-sourcing versions.env.
         run: |
-          CUDA_SHORT="cu$(echo "$CUDA_BASE_IMAGE" | sed 's/.*cuda:\([0-9]*\.[0-9]*\)\.[0-9]*.*/\1/')"
+          CUDA_VERSION="${CUDA_BASE_IMAGE#*cuda:}"
+          CUDA_VERSION="${CUDA_VERSION%%-*}"
+          CUDA_SHORT="cu${CUDA_VERSION%.*}"
           TORCH_SHORT="torch$(echo "$TORCH_VERSION" | cut -d. -f1-2)"
           SHA_TAG="sha-$(git rev-parse --short HEAD)"
           CANONICAL="${VLLM_REF}-gb10.${GB10_BUILD}"
@@ -272,6 +274,9 @@ jobs:
       - name: Checkout
         # Needed for `git tag` / `git push` of the release tag.
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          # Release notes compare the current tag with the previous release.
+          fetch-depth: 0
 
       - name: Log in to GHCR
         uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0

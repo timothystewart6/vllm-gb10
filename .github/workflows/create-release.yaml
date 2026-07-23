@@ -30,6 +30,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          # Release notes compare the current tag with the previous release.
+          fetch-depth: 0
 
       - name: Generate release notes
         env:

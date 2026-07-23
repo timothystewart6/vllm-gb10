@@ -18,6 +18,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${REPO_ROOT}"
 
 # Determine what to diff against (origin/main or HEAD~1 as fallback)
 BASEREF="origin/main"
@@ -31,55 +32,65 @@ if git diff --exit-code "${BASEREF}" -- versions.env locks/ > /dev/null 2>&1; th
   exit 1
 fi
 
-export REPO_ROOT
+export BASEREF REPO_ROOT
 python3 - <<'PYEOF'
-import os, subprocess, sys, hashlib, re, textwrap
+import os
+import subprocess
+import sys
+from pathlib import Path
 
 repo_root = os.environ["REPO_ROOT"]
 sys.path.insert(0, os.path.join(repo_root, "scripts"))
-from versions_diff import COMPONENT_LABELS, diff_from_git_diff, format_changes_with_lockfiles
+from versions_diff import (
+    COMPONENT_LABELS,
+    LOCKFILES,
+    diff_env_dicts,
+    extract_apt_snapshot_date,
+    file_sha256,
+    format_changes_with_lockfiles,
+    parse_versions_env,
+)
 
-baseref = os.environ.get("BASEREF", "origin/main")
+baseref = os.environ["BASEREF"]
 
-# 1. Parse versions.env diff
-diff = subprocess.run(
-    ["git", "diff", baseref, "--", "versions.env"],
+# 1. Compare the base versions.env with the current working-tree file.
+old_versions = subprocess.run(
+    ["git", "show", f"{baseref}:versions.env"],
     capture_output=True, text=True, check=True,
 ).stdout
-changes = diff_from_git_diff(diff)
+new_versions = Path(repo_root, "versions.env").read_text()
+changes = diff_env_dicts(
+    parse_versions_env(old_versions),
+    parse_versions_env(new_versions),
+)
 
 # 2. Check lockfile changes
-lockfiles = [
-    ("locks/apt-packages.txt", "apt packages"),
-    ("locks/apt-sources.list", "apt snapshot"),
-    ("locks/python-bootstrap.txt", "python bootstrap lock"),
-    ("locks/python-build.txt", "python build lock"),
-    ("locks/python-runtime.txt", "python runtime lock"),
-]
-
-for lock_path, lock_label in lockfiles:
+for lock_path, _lock_label in LOCKFILES:
     old_result = subprocess.run(
         ["git", "show", f"{baseref}:{lock_path}"],
         capture_output=True, text=True,
     )
-    new_result = subprocess.run(
-        ["git", "show", f"HEAD:{lock_path}"],
-        capture_output=True, text=True,
-    )
-    if old_result.returncode == 0 and new_result.returncode == 0 and old_result.stdout and new_result.stdout:
-        old_hash = hashlib.sha256(old_result.stdout.encode()).hexdigest()[:12]
-        new_hash = hashlib.sha256(new_result.stdout.encode()).hexdigest()[:12]
+    new_path = Path(repo_root, lock_path)
+    old_content = old_result.stdout if old_result.returncode == 0 else None
+    new_content = new_path.read_text() if new_path.is_file() else None
+
+    if old_content is not None and new_content is not None:
+        old_hash = file_sha256(old_content)
+        new_hash = file_sha256(new_content)
         if old_hash != new_hash:
-            # For apt-sources.list, show the snapshot date when it differs
             if lock_path == "locks/apt-sources.list":
-                m_old = re.search(r"snapshot\.ubuntu\.com/ubuntu/(\d{8}T\d{6}Z)", old_result.stdout)
-                m_new = re.search(r"snapshot\.ubuntu\.com/ubuntu/(\d{8}T\d{6}Z)", new_result.stdout)
-                if m_old and m_new and m_old.group(1) != m_new.group(1):
-                    changes[f"LOCK:{lock_path}"] = (m_old.group(1), m_new.group(1))
+                old_date = extract_apt_snapshot_date(old_content)
+                new_date = extract_apt_snapshot_date(new_content)
+                if old_date and new_date and old_date != new_date:
+                    changes[f"LOCK:{lock_path}"] = (old_date, new_date)
                 else:
                     changes[f"LOCK:{lock_path}"] = (f"sha256:{old_hash}", f"sha256:{new_hash}")
             else:
                 changes[f"LOCK:{lock_path}"] = (f"sha256:{old_hash}", f"sha256:{new_hash}")
+    elif old_content != new_content:
+        old_value = f"sha256:{file_sha256(old_content)}" if old_content is not None else "(missing)"
+        new_value = f"sha256:{file_sha256(new_content)}" if new_content is not None else "(missing)"
+        changes[f"LOCK:{lock_path}"] = (old_value, new_value)
 
 # Separate component changes from lockfile changes
 lock_keys = {k for k in changes if k.startswith("LOCK:")}

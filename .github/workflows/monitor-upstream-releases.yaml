@@ -32,13 +32,16 @@ jobs:
       - name: Check for dependency updates
         id: check
         run: |
-          scripts/check-updates.sh > /tmp/check-updates.log 2>&1 || true
+          if ! scripts/check-updates.sh > /tmp/check-updates.log 2>&1; then
+            cat /tmp/check-updates.log
+            exit 1
+          fi
           cat /tmp/check-updates.log
           
           if grep -q "have updates available" /tmp/check-updates.log; then
-            echo "has-update=true" >> $GITHUB_OUTPUT
+            echo "has-update=true" >> "$GITHUB_OUTPUT"
           else
-            echo "has-update=false" >> $GITHUB_OUTPUT
+            echo "has-update=false" >> "$GITHUB_OUTPUT"
           fi
 
   create-pr:
@@ -58,9 +61,9 @@ jobs:
         id: changes
         run: |
           if git diff --exit-code versions.env > /dev/null 2>&1; then
-            echo "has-changes=false" >> $GITHUB_OUTPUT
+            echo "has-changes=false" >> "$GITHUB_OUTPUT"
           else
-            echo "has-changes=true" >> $GITHUB_OUTPUT
+            echo "has-changes=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Check for existing PR with same changes

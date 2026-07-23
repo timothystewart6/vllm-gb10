@@ -8,50 +8,70 @@ Output is written to the path specified by OUTPUT_PATH env var, or
 defaults to /tmp/test-release-notes-output.md.
 """
 
-import hashlib, os, re, textwrap
+import os
+import subprocess
+import sys
+import tempfile
+import textwrap
+from pathlib import Path
+
+SOURCE_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(SOURCE_ROOT / "scripts"))
+from versions_diff import (
+    COMPONENTS,
+    LOCKFILES,
+    extract_apt_snapshot_date,
+    file_sha256,
+    parse_versions_env,
+)
+
+
+def test_release_notes_script_imports_shared_module():
+    """Every supported launch form must import the repository's shared module."""
+    repo_root = Path(__file__).resolve().parent.parent
+    script = repo_root / "scripts" / "generate-release-notes.sh"
+    launch_commands = [
+        ["bash", "scripts/generate-release-notes.sh"],  # Exact CI invocation
+        ["./scripts/generate-release-notes.sh"],
+        ["bash", str(script)],
+    ]
+
+    with tempfile.TemporaryDirectory() as fake_module_dir:
+        # A conflicting module must not override the repository copy. This also
+        # verifies that an inherited REPO_ROOT cannot redirect imports.
+        fake_module = Path(fake_module_dir) / "versions_diff.py"
+        fake_module.write_text("raise RuntimeError('imported fake versions_diff')\n")
+
+        env = os.environ.copy()
+        env.update({
+            "TAG": "v-import-regression-gb10.0",
+            "GITHUB_SHA": "0123456789abcdef0123456789abcdef01234567",
+            "PYTHONPATH": fake_module_dir,
+            "REPO_ROOT": fake_module_dir,
+        })
+
+        for command in launch_commands:
+            result = subprocess.run(
+                command,
+                cwd=repo_root,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=20,
+            )
+            assert result.returncode == 0, (
+                f"release-note command failed: {command}\n{result.stderr}"
+            )
+            assert "## v-import-regression-gb10.0" in result.stdout
+            assert "ModuleNotFoundError" not in result.stderr
+            assert "imported fake versions_diff" not in result.stderr
+
+
+test_release_notes_script_imports_shared_module()
 
 # ---------------------------------------------------------------------------
-# The exact logic from generate-release-notes.sh (extracted for testing)
+# Release-note scenario helpers
 # ---------------------------------------------------------------------------
-
-COMPONENTS = [
-    ("VLLM_REF", "vLLM"),
-    ("FLASHINFER_REF", "FlashInfer"),
-    ("NCCL_REF", "NCCL"),
-    ("TORCH_VERSION", "PyTorch"),
-    ("TORCHVISION_VERSION", "torchvision"),
-    ("TORCHAUDIO_VERSION", "torchaudio"),
-    ("TRITON_VERSION", "Triton"),
-    ("CUDA_BASE_IMAGE", "CUDA base"),
-    ("UV_VERSION", "uv"),
-    ("RAY_VERSION", "Ray"),
-    ("NVSHMEM_VERSION", "NVSHMEM"),
-    ("TVM_FFI_VERSION", "TVM-FFI"),
-    ("TILELANG_VERSION", "TileLang"),
-    ("NUMBA_VERSION", "Numba"),
-    ("FASTSAFETENSORS_VERSION", "fastsafetensors"),
-    ("INSTANTTENSOR_VERSION", "instanttensor"),
-    ("TORCH_CUDA_ARCH_LIST", "Target arch"),
-]
-
-LOCKFILES = [
-    ("locks/apt-packages.txt", "apt packages"),
-    ("locks/apt-sources.list", "apt snapshot"),
-    ("locks/python-bootstrap.txt", "python bootstrap lock"),
-    ("locks/python-build.txt", "python build lock"),
-    ("locks/python-runtime.txt", "python runtime lock"),
-]
-
-def parse_versions_env(text):
-    env = {}
-    for line in text.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        m = re.match(r'^([A-Za-z_][A-Za-z0-9_]*)=(.*)$', line)
-        if m:
-            env[m.group(1)] = m.group(2)
-    return env
 
 def get_previous_tag(current_tag, all_tags):
     """Simulated version: pass a sorted list of all tags (newest first)."""
@@ -60,17 +80,6 @@ def get_previous_tag(current_tag, all_tags):
         if idx + 1 < len(all_tags):
             return all_tags[idx + 1]
     return None
-
-def file_sha256(content):
-    """Return first 12 chars of SHA256 hex digest of content."""
-    return hashlib.sha256(content.encode()).hexdigest()[:12]
-
-def extract_apt_snapshot_date(content):
-    """Extract the snapshot timestamp from apt-sources.list, e.g. 20260714T000000Z."""
-    if not content:
-        return None
-    m = re.search(r'snapshot\.ubuntu\.com/ubuntu/(\d{8}T\d{6}Z)', content)
-    return m.group(1) if m else None
 
 def get_changed_section(current_tag, current_env, prev_tag, prev_env,
                         lockfile_map=None):

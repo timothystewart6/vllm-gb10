@@ -71,8 +71,8 @@ def diff_env_dicts(old_env, new_env):
     changes = {}
     all_keys = set(old_env.keys()) | set(new_env.keys())
     for key in sorted(all_keys):
-        old_val = old_env.get(key, "")
-        new_val = new_env.get(key, "")
+        old_val = old_env.get(key, "(added)")
+        new_val = new_env.get(key, "(removed)")
         if old_val != new_val:
             changes[key] = (old_val, new_val)
     return changes
@@ -85,19 +85,23 @@ def diff_from_git_diff(diff_text):
         -VLLM_REF=v0.24.0
         +VLLM_REF=v0.25.1
     """
+    old_env = {}
+    new_env = {}
+    for line in diff_text.splitlines():
+        if line.startswith("---") or line.startswith("+++"):
+            continue
+        match = re.match(r"^([-+])([A-Za-z_][A-Za-z0-9_]*)=(.*)$", line)
+        if not match:
+            continue
+        destination = old_env if match.group(1) == "-" else new_env
+        destination[match.group(2)] = match.group(3)
+
     changes = {}
-    for m in re.finditer(r"^-([A-Za-z_][A-Za-z0-9_]*)=(.*)", diff_text, re.MULTILINE):
-        key = m.group(1)
-        old_val = m.group(2)
-        plus_m = re.search(
-            r"^\+" + re.escape(key) + r"=(.*)", diff_text, re.MULTILINE
-        )
-        if plus_m:
-            new_val = plus_m.group(1)
-            if old_val != new_val:
-                changes[key] = (old_val, new_val)
-                continue
-        changes[key] = (old_val, "(removed)")
+    for key in sorted(old_env.keys() | new_env.keys()):
+        old_val = old_env.get(key, "(added)")
+        new_val = new_env.get(key, "(removed)")
+        if old_val != new_val:
+            changes[key] = (old_val, new_val)
     return changes
 
 

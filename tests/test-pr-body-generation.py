@@ -266,8 +266,9 @@ SCENARIOS = [
         +BRAND_NEW_VAR=1.0.0
         """),
         {},
-        1,
+        2,
         [
+            "- **BRAND_NEW_VAR**: (added) -> 1.0.0",
             "- **vLLM**: v0.24.0 -> v0.25.1",
         ],
     ),

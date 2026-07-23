@@ -15,7 +15,12 @@ name: Test release notes
 on:
   pull_request:
     paths:
+      - scripts/check-updates.sh
+      - scripts/generate-pr-body.sh
       - scripts/generate-release-notes.sh
+      - scripts/versions_diff.py
+      - tests/test-check-updates.py
+      - tests/test-script-integrations.py
       - tests/test-release-notes-scenarios.py
       - tests/test-pr-body-generation.py
       - tests/test-check-duplicate-pr.py
@@ -41,8 +46,14 @@ jobs:
       - name: Run release-notes test harness
         run: python3 tests/test-release-notes-scenarios.py
 
+      - name: Run update-check test harness
+        run: python3 tests/test-check-updates.py
+
       - name: Run PR body generation test harness
         run: python3 tests/test-pr-body-generation.py
+
+      - name: Run real-script integration tests
+        run: python3 tests/test-script-integrations.py
 
       - name: Run duplicate PR check test harness
         run: python3 tests/test-check-duplicate-pr.py
@@ -53,7 +64,7 @@ jobs:
 
           # Count code fences - must be even (open + close pairs)
           # Lines that start with optional whitespace followed by exactly 3 backticks
-          FENCES=$(grep -cE '^\s*```' "$OUTPUT")
+          FENCES=$(grep -cE '^[[:space:]]*```' "$OUTPUT")
           if [ $((FENCES % 2)) -ne 0 ]; then
             echo "ERROR: Odd number of code fences ($FENCES) in output - markdown is broken."
             exit 1
@@ -71,7 +82,8 @@ jobs:
 
           # Verify no raw triple-backtick fences inside rendered output blocks
           # (they should be escaped with zero-width space)
-          INNER_FENCES=$(grep -cP '`\x{200b}``' "$OUTPUT")
+          # shellcheck disable=SC2016
+          INNER_FENCES=$(python3 -c 'import sys; print(open(sys.argv[1]).read().count("`\u200b``"))' "$OUTPUT")
           echo "OK: $INNER_FENCES inner code fences properly escaped"
 
       - name: Upload test output artifact

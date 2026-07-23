@@ -16,16 +16,21 @@ set -euo pipefail
 : "${TAG:?TAG env var required}"
 : "${GITHUB_SHA:?GITHUB_SHA env var required}"
 
-# shellcheck disable=SC1091
-set -a; . ./versions.env; set +a
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export REPO_ROOT
+cd "${REPO_ROOT}"
 
-SHORT_SHA="${GITHUB_SHA::7}"
+set -a
+# shellcheck disable=SC1090,SC1091
+. "${REPO_ROOT}/versions.env"
+set +a
 
 python3 - <<'PYEOF'
 import os, subprocess, textwrap, sys
 
-# Add scripts/ to sys.path so the shared module is importable
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__))))
+# Python is reading this program from stdin, so __file__ cannot locate the
+# script directory. Use the path resolved by the shell wrapper instead.
+sys.path.insert(0, os.path.join(os.environ["REPO_ROOT"], "scripts"))
 
 from versions_diff import (
     COMPONENT_LABELS,
@@ -120,7 +125,7 @@ def git_show_file(prev_tag, path):
 def read_current_file(path):
     """Read a file from the working tree."""
     try:
-        with open(path, "r") as f:
+        with open(os.path.join(os.environ["REPO_ROOT"], path), "r") as f:
             return f.read()
     except Exception:
         return None

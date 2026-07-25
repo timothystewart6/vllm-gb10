@@ -2,7 +2,7 @@
 """
 Check if an open deps/bump PR already exists with identical versions.env changes.
 
-Returns exit code 0 (skip), 1 (proceed), or 2 (error) and prints a
+Returns exit code 0 (skip), 10 (proceed), or 2 (known error) and prints a
 user-facing message.
 
 Usage:
@@ -14,8 +14,11 @@ Environment:
 Exit codes:
   0 - Skip: an existing open PR already has the same versions.env changes
       (or no changes to versions.env in working tree)
-  1 - Proceed: no matching PR found, caller should create a new one
+ 10 - Proceed: no matching PR found, caller should create a new one
   2 - Error: the duplicate check could not be completed reliably
+
+All other nonzero exit codes are unexpected errors and must also fail the
+workflow.
 """
 
 import json
@@ -161,4 +164,4 @@ if __name__ == "__main__":
     except (json.JSONDecodeError, RuntimeError, subprocess.CalledProcessError) as error:
         print(f"Duplicate PR check failed: {error}", file=sys.stderr)
         sys.exit(2)
-    sys.exit(0 if should_skip else 1)
+    sys.exit(0 if should_skip else 10)

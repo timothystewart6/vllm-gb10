@@ -16,9 +16,10 @@ Scenario coverage:
   - Multiple PRs, second one matches (skip)
   - Multiple PRs, all match (skip - first match short-circuits)
   - gh returns single object not array (skip)
-  - gh pr list errors/network issue (proceed - fails open)
+  - gh pr list errors/network issue (error)
   - gh returns empty array (proceed)
-  - git fetch fails (proceed - fetch failure shouldn't block)
+  - git fetch fails (error)
+  - Workflow invokes the script through Python and maps all exit codes correctly
   - Branch has only GB10_BUILD change vs main, working tree has UV (proceed)
   - Working tree has only GB10_BUILD, branch has substantive vs main (skip)
 """
@@ -208,8 +209,9 @@ if __name__ == "__main__":
             "",
             {"working_diff": UV_AND_GB10_DIFF,
              "branch_diffs_vs_main": {},
-             "fetch_exit": 0},
-            1,  # proceed (fails open)
+             "fetch_exit": 0,
+             "gh_exit": 1},
+            2,  # error (the duplicate check was inconclusive)
         ),
         (
             "gh returns empty array (no matching PRs)",
@@ -225,7 +227,7 @@ if __name__ == "__main__":
             {"working_diff": UV_AND_GB10_DIFF,
              "branch_diffs_vs_main": {},
              "fetch_exit": 1},  # fetch fails
-            1,  # proceed (fetch failure shouldn't block)
+            2,  # error (the duplicate check was inconclusive)
         ),
         (
             "Branch has only GB10_BUILD change vs main, working tree has UV",
@@ -256,6 +258,7 @@ if __name__ == "__main__":
             working_diff = fake_git_behaviors["working_diff"]
             branch_diffs_vs_main = fake_git_behaviors.get("branch_diffs_vs_main", {})
             fetch_exit = fake_git_behaviors.get("fetch_exit", 0)
+            gh_exit = fake_git_behaviors.get("gh_exit", 0)
 
             # Create mock gh script
             mock_gh = os.path.join(tmpdir, "gh")
@@ -263,8 +266,7 @@ if __name__ == "__main__":
                 f.write("#!/usr/bin/env bash\n")
                 if fake_gh_stdout:
                     f.write(f'cat << \'ENDJSON\'\n{fake_gh_stdout}\nENDJSON\n')
-                else:
-                    f.write("exit 0\n")
+                f.write(f"exit {gh_exit}\n")
             os.chmod(mock_gh, 0o755)
 
             # Create mock git script
@@ -333,6 +335,30 @@ if __name__ == "__main__":
                 print(f"  {line}")
 
         print()
+
+    workflow_path = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", ".github", "workflows",
+                     "monitor-upstream-releases.yaml")
+    )
+    with open(workflow_path) as workflow_file:
+        workflow = workflow_file.read()
+
+    check(
+        "python3 scripts/check-duplicate-pr.py" in workflow,
+        "Workflow must invoke the Python script without relying on its executable bit",
+    )
+    check(
+        '0) echo "skip-pr=true"' in workflow,
+        "Workflow must skip PR creation when the script reports a duplicate",
+    )
+    check(
+        '1) echo "skip-pr=false"' in workflow,
+        "Workflow must proceed when the script reports no duplicate",
+    )
+    check(
+        'exit "$result"' in workflow,
+        "Workflow must fail instead of skipping when the duplicate check errors",
+    )
 
     print(f"FAIL: {failed}")
     if failed:

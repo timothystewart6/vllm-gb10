@@ -72,11 +72,19 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RELEASE_MONITOR_PAT }}
         run: |
-          if scripts/check-duplicate-pr.py; then
-            echo "skip-pr=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip-pr=true" >> "$GITHUB_OUTPUT"
-          fi
+          set +e
+          python3 scripts/check-duplicate-pr.py
+          result=$?
+          set -e
+
+          case "$result" in
+            0) echo "skip-pr=true" >> "$GITHUB_OUTPUT" ;;
+            1) echo "skip-pr=false" >> "$GITHUB_OUTPUT" ;;
+            *)
+              echo "Duplicate PR check failed with exit code $result" >&2
+              exit "$result"
+              ;;
+          esac
 
       - name: Build PR body
         if: steps.changes.outputs.has-changes == 'true' && steps.existing-pr.outputs.skip-pr == 'false'

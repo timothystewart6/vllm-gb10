@@ -138,7 +138,7 @@ if __name__ == "__main__":
             "Substantive changes (UV_VERSION + GB10_BUILD), no open PRs",
             "",
             {"working_diff": UV_AND_GB10_DIFF, "branch_diffs_vs_main": {}, "fetch_exit": 0},
-            1,  # proceed
+            10,  # proceed
         ),
         (
             "Single PR with matching substantive changes (UV_VERSION + GB10_BUILD)",
@@ -154,7 +154,7 @@ if __name__ == "__main__":
             {"working_diff": UV_AND_GB10_DIFF,
              "branch_diffs_vs_main": {"deps/bump-42": GB10_ONLY_DIFF},
              "fetch_exit": 0},
-            1,  # proceed (branch has no substantive change vs main)
+            10,  # proceed (branch has no substantive change vs main)
         ),
         (
             "Single PR with different substantive changes (VLLM_REF vs UV_VERSION)",
@@ -162,7 +162,7 @@ if __name__ == "__main__":
             {"working_diff": UV_AND_GB10_DIFF,
              "branch_diffs_vs_main": {"deps/bump-42": VLLM_AND_GB10_DIFF},
              "fetch_exit": 0},
-            1,  # proceed (different variables changed)
+            10,  # proceed (different variables changed)
         ),
         (
             "Single PR with same UV but different GB10_BUILD (same substantive)",
@@ -178,7 +178,7 @@ if __name__ == "__main__":
             {"working_diff": UV_AND_GB10_DIFF,
              "branch_diffs_vs_main": {"deps/bump-41": VLLM_AND_GB10_DIFF, "deps/bump-42": VLLM_AND_GB10_DIFF},
              "fetch_exit": 0},
-            1,  # proceed
+            10,  # proceed
         ),
         (
             "Multiple PRs, second one matches",
@@ -219,7 +219,7 @@ if __name__ == "__main__":
             {"working_diff": UV_AND_GB10_DIFF,
              "branch_diffs_vs_main": {},
              "fetch_exit": 0},
-            1,  # proceed
+            10,  # proceed
         ),
         (
             "git fetch fails for the PR branch (rate limited)",
@@ -235,7 +235,7 @@ if __name__ == "__main__":
             {"working_diff": UV_AND_GB10_DIFF,
              "branch_diffs_vs_main": {"deps/bump-42": GB10_ONLY_DIFF},
              "fetch_exit": 0},
-            1,  # proceed (different substantive content)
+            10,  # proceed (different substantive content)
         ),
         (
             "Working tree has only GB10_BUILD, branch has substantive vs main",
@@ -352,8 +352,12 @@ if __name__ == "__main__":
         "Workflow must skip PR creation when the script reports a duplicate",
     )
     check(
-        '1) echo "skip-pr=false"' in workflow,
+        '10) echo "skip-pr=false"' in workflow,
         "Workflow must proceed when the script reports no duplicate",
+    )
+    check(
+        '1) echo "skip-pr=false"' not in workflow,
+        "Workflow must not treat a generic script failure as permission to proceed",
     )
     check(
         'exit "$result"' in workflow,

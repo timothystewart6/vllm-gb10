@@ -79,7 +79,7 @@ jobs:
 
           case "$result" in
             0) echo "skip-pr=true" >> "$GITHUB_OUTPUT" ;;
-            1) echo "skip-pr=false" >> "$GITHUB_OUTPUT" ;;
+            10) echo "skip-pr=false" >> "$GITHUB_OUTPUT" ;;
             *)
               echo "Duplicate PR check failed with exit code $result" >&2
               exit "$result"

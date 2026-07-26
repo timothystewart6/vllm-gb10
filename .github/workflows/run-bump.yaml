@@ -1,12 +1,15 @@
 # .github/workflows/run-bump.yaml
 #
 # Runs scripts/bump.sh on the DGX Spark whenever versions.env changes in a PR.
-# Commits the resolved SHAs, updated GB10_BUILD, and regenerated lockfiles back
-# to the PR branch so the PR is always self-contained and ready to merge.
+# For branches in this repository, commits the resolved SHAs, updated
+# GB10_BUILD, and regenerated lockfiles back to the PR branch. For fork PRs,
+# runs the same bump without write credentials and uploads the result for
+# maintainer review.
 #
-# Trigger: any PR (from this repo, not forks) that touches versions.env.
+# Trigger: any PR that touches a build input handled by bump.sh.
 #
 # actions/checkout  v6.0.2 => de0fac2e4500dabe0009e67214ff5f5447ce83dd
+# actions/upload-artifact v7.0.1 => 043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
 
 name: Run bump.sh
 
@@ -18,14 +21,14 @@ on:
       - Dockerfile
       - locks/apt-sources.list
 
-# Only run one bump at a time per PR branch - cancel in-flight runs if a new
+# Only run one bump at a time per PR - cancel in-flight runs if a new
 # commit lands before the previous bump finishes.
 concurrency:
-  group: bump-${{ github.head_ref }}
+  group: bump-pr-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   bump:
@@ -33,9 +36,13 @@ jobs:
     # (bot commits back resolved SHAs -> would re-trigger this workflow).
     # Do NOT use [skip ci] in the commit message: it bleeds into squash merge
     # commits on main and suppresses build-image.yaml.
-    if: github.actor != 'github-actions[bot]'
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux, ARM64, dgx-spark]
     timeout-minutes: 30
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout PR branch
@@ -50,6 +57,8 @@ jobs:
         run: bash scripts/bump.sh
 
       - name: Commit resolved SHAs and lockfiles back to PR branch
+        env:
+          HEAD_REF: ${{ github.head_ref }}
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -58,5 +67,50 @@ jobs:
             echo "Nothing changed - bump.sh was a no-op (all pins already current)."
           else
             git commit -m "chore(bump): resolve SHAs and regenerate lockfiles"
-            git push origin HEAD:${{ github.head_ref }}
+            git push origin "HEAD:${HEAD_REF}"
           fi
+
+  bump-fork:
+    if: github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: [self-hosted, linux, ARM64, dgx-spark]
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout exact fork commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Record upstream base as origin/main
+        env:
+          BASE_REPOSITORY: ${{ github.repository }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --no-tags "https://github.com/${BASE_REPOSITORY}.git" "${BASE_SHA}"
+          git update-ref refs/remotes/origin/main "${BASE_SHA}"
+
+      - name: Run bump.sh without write credentials
+        run: bash scripts/bump.sh
+
+      - name: Run repository tests
+        run: |
+          bash -n scripts/bump.sh
+          python3 -m py_compile scripts/*.py tests/*.py
+          for test_file in tests/test-*.py; do
+            python3 "${test_file}"
+          done
+
+      - name: Upload generated bump result
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: bump-pr-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+          path: |
+            versions.env
+            locks/
+          if-no-files-found: error
+          retention-days: 7

@@ -30,6 +30,7 @@ on:
       - scripts/check-duplicate-pr.py
       - Dockerfile
       - versions.env
+      - .github/workflows/run-bump.yaml
       - .github/workflows/build-image.yaml
       - .github/workflows/monitor-upstream-releases.yaml
   workflow_dispatch:

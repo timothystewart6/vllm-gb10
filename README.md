@@ -84,6 +84,10 @@ bumps. There is intentionally no bare `v0.24.0` tag - it would be mutable.
 
 You do not need to SSH into the Spark or run anything locally.
 
+Maintainers should follow the
+[Contributor CI security workflow](docs/contributor-ci-security.md) for the
+complete fork-promotion and approval process.
+
 CI also triggers on changes to `Dockerfile`, `locks/`, `scripts/`, and
 `checksums/`.
 

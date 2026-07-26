@@ -51,6 +51,10 @@ from the exact trusted `main` workflow revision. Before manual dispatch:
 The workflow checks the SHA before execution and again before pushing. Any new
 contributor commit invalidates the approval and requires another review.
 
+See [Contributor CI security workflow](docs/contributor-ci-security.md) for the
+complete trust model, fork-promotion commands, failure handling, and required
+repository settings.
+
 ## What is and is not in scope
 
 This repo builds and ships vLLM. It does not patch or modify upstream component

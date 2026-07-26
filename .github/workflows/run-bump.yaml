@@ -3,6 +3,7 @@
 # Imports reviewed declarative inputs from an exact commit, then runs trusted
 # scripts from main on the persistent DGX Spark. Contributor scripts, workflows,
 # and Dockerfile instructions are never executed by this workflow.
+# Maintainer runbook: docs/contributor-ci-security.md
 #
 # actions/checkout pinned SHA is allowlisted in tests/test-ci-security-policy.py.
 

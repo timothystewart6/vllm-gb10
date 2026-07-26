@@ -45,6 +45,14 @@ def test_quack_is_pinned_for_cutlass_dsl_compatibility():
 
     bump = read("scripts/bump.sh")
     assert "quack-kernels==${QUACK_KERNELS_VERSION}" in bump
+    assert (
+        'OLD_QUACK_KERNELS_VERSION="$(_main_get QUACK_KERNELS_VERSION || true)"'
+        in bump
+    )
+    assert (
+        '"${QUACK_KERNELS_VERSION}" != "${OLD_QUACK_KERNELS_VERSION}"'
+        in bump
+    )
 
 
 def main():

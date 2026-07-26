@@ -33,6 +33,17 @@ jobs:
         with:
           # Release notes compare the current tag with the previous release.
           fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require tag commit on main
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$RELEASE_SHA" origin/main; then
+            echo "Refusing to execute release code from a tag outside main."
+            exit 1
+          fi
 
       - name: Generate release notes
         env:

@@ -58,6 +58,28 @@ def test_trusted_builds_checkout_the_exact_event_sha():
         assert "ref: ${{ github.sha }}" in workflow, name
 
 
+def test_privileged_workflows_reject_untrusted_refs():
+    monitor = read(WORKFLOWS / "monitor-upstream-releases.yaml")
+    assert 'WORKFLOW_REF: ${{ github.ref }}' in monitor
+    assert '"refs/heads/main"' in monitor
+    assert monitor.count("ref: ${{ github.sha }}") == 2
+    assert monitor.count("persist-credentials: false") == 2
+
+    release = read(WORKFLOWS / "create-release.yaml")
+    assert "git merge-base --is-ancestor" in release
+    assert "persist-credentials: false" in release
+
+
+def test_pr_workflows_are_read_only_and_secret_free():
+    for path in WORKFLOWS.glob("*.yaml"):
+        workflow = read(path)
+        if "\n  pull_request:" not in workflow:
+            continue
+        assert "contents: read" in workflow, path
+        assert "secrets." not in workflow, path
+        assert "contents: write" not in workflow, path
+
+
 def test_security_policy_runs_for_every_workflow_change():
     workflow = read(WORKFLOWS / "test-release-notes.yaml")
     assert "- .github/workflows/**" in workflow
@@ -71,6 +93,8 @@ def main():
         test_all_external_actions_are_pinned_by_full_sha,
         test_bump_workflow_preserves_approval_boundary,
         test_trusted_builds_checkout_the_exact_event_sha,
+        test_privileged_workflows_reject_untrusted_refs,
+        test_pr_workflows_are_read_only_and_secret_free,
         test_security_policy_runs_for_every_workflow_change,
     ]
     for test in tests:

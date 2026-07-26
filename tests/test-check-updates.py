@@ -22,7 +22,7 @@ if os.environ.get("FAKE_FAIL_ALL") == "1":
 if "raw.githubusercontent.com" in url:
     if os.environ.get("FAKE_FAIL_RAW") == "1":
         sys.exit(22)
-    if "/v0.26.0/" in url:
+    if "/v0.26.0/" in url and os.environ.get("FAKE_CURRENT_REQUIREMENTS") != "1":
         print("""torch==9.9.0
 torchvision==9.8.0
 torchaudio==9.7.0
@@ -34,16 +34,16 @@ flashinfer-python==9.3.0""")
         print("""torch==2.11.0
 torchvision==0.26.0
 torchaudio==2.11.0
-apache-tvm-ffi==0.1.9
+apache-tvm-ffi==0.1.10
 tilelang==0.1.9
 numba==0.65.0
-flashinfer-python==0.6.13""")
+flashinfer-python==0.6.14""")
 elif "vllm-project/vllm/releases/latest" in url:
     print(json.dumps({"tag_name": os.environ.get("FAKE_VLLM_TAG", "v0.26.0")}))
 elif "NVIDIA/nccl/releases/latest" in url:
     print(json.dumps({"tag_name": "v2.30.7-1"}))
 elif "astral-sh/uv/releases/latest" in url:
-    print(json.dumps({"tag_name": "0.11.31"}))
+    print(json.dumps({"tag_name": "0.11.32"}))
 elif "flashinfer-ai/flashinfer/releases/latest" in url:
     print(json.dumps({"tag_name": "v0.6.13"}))
 elif "/pypi/triton/json" in url:
@@ -118,7 +118,7 @@ def test_target_vllm_requirements_are_applied():
         assert values["TILELANG_VERSION"] == "9.5.0"
         assert values["NUMBA_VERSION"] == "9.4.0"
         assert (root / "versions.env").stat().st_mode & 0o777 == 0o644
-        assert "8 component(s) updated in versions.env" in result.stdout
+        assert "7 component(s) updated in versions.env" in result.stdout
 
 
 def test_dry_run_does_not_write_versions():
@@ -134,7 +134,8 @@ def test_dry_run_does_not_write_versions():
 def test_current_stack_reports_no_updates():
     with tempfile.TemporaryDirectory() as directory:
         root, env = setup_case(directory)
-        env["FAKE_VLLM_TAG"] = "v0.25.1"
+        env["FAKE_VLLM_TAG"] = "v0.26.0"
+        env["FAKE_CURRENT_REQUIREMENTS"] = "1"
         result = run_check(root, env)
         assert result.returncode == 0, result.stderr
         assert "All components are current" in result.stdout
@@ -145,7 +146,7 @@ def test_newer_prerelease_remains_the_dependency_target():
         root, env = setup_case(directory)
         env["FAKE_VLLM_TAG"] = "v0.26.0"
         versions = root / "versions.env"
-        text = versions.read_text().replace("VLLM_REF=v0.25.1", "VLLM_REF=v0.27.0rc1")
+        text = versions.read_text().replace("VLLM_REF=v0.26.0", "VLLM_REF=v0.27.0rc1")
         versions.write_text(text)
         result = run_check(root, env)
         assert result.returncode == 0, result.stderr
@@ -156,7 +157,8 @@ def test_newer_prerelease_remains_the_dependency_target():
 def test_apt_snapshot_bump_only_updates_snapshot():
     with tempfile.TemporaryDirectory() as directory:
         root, env = setup_case(directory)
-        env["FAKE_VLLM_TAG"] = "v0.25.1"
+        env["FAKE_VLLM_TAG"] = "v0.26.0"
+        env["FAKE_CURRENT_REQUIREMENTS"] = "1"
         sources = root / "locks" / "apt-sources.list"
         stale = sources.read_text().replace("20260714T000000Z", "20200101T000000Z")
         stale = stale.replace("2026-07-14T00:00:00Z", "2020-01-01T00:00:00Z")

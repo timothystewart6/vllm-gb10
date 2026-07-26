@@ -229,6 +229,7 @@ RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
 FROM base AS runner
 ARG PYTORCH_INDEX_URL
 ARG PYPI_INDEX_URL
+ARG FLASHINFER_INDEX_URL
 
 # Copied here (not in apt-base) so runtime dep changes only bust this stage.
 COPY locks/python-runtime.txt /tmp/python-runtime.txt
@@ -275,6 +276,7 @@ RUN --mount=type=bind,from=flashinfer-builder,source=/wheels,target=/fi-wheels \
  && _retry uv pip install --require-hashes -r /tmp/python-runtime.txt \
       --index-url ${PYPI_INDEX_URL} \
       --extra-index-url ${PYTORCH_INDEX_URL} \
+      --extra-index-url ${FLASHINFER_INDEX_URL} \
       --index-strategy unsafe-best-match \
  && uv pip install --no-deps /fi-wheels/*.whl /vllm-wheels/*.whl \
  && mkdir -p /workspace/build-artifacts \

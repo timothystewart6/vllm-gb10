@@ -58,11 +58,22 @@ jobs:
       sha_tag: ${{ steps.vars.outputs.sha_tag }}
 
     steps:
+      - name: Require main
+        env:
+          WORKFLOW_REF: ${{ github.ref }}
+        run: |
+          if [[ "$WORKFLOW_REF" != "refs/heads/main" ]]; then
+            echo "Refusing to run GX10 jobs from a non-main workflow ref."
+            exit 1
+          fi
+
       - name: Stop vLLM containers
         run: docker stop vllm-ray-head vllm-ray-worker 2>/dev/null || true
 
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
 
       - name: Validate versions.env
         run: python3 scripts/versions_env.py versions.env

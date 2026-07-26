@@ -89,6 +89,35 @@ jobs:
       - name: Run bump.sh
         run: bash scripts/bump.sh
 
+      - name: Validate generated changes
+        run: |
+          if [[ "$(git rev-parse HEAD)" != "$APPROVED_SHA" ]]; then
+            echo "Refusing to continue: bump.sh moved HEAD or created a commit."
+            exit 1
+          fi
+
+          invalid_path=false
+          while IFS= read -r -d '' path; do
+            case "$path" in
+              versions.env|locks/*) ;;
+              *)
+                printf 'Refusing unexpected generated path: %q\n' "$path"
+                invalid_path=true
+                ;;
+            esac
+          done < <(
+            git diff --name-only -z
+            git diff --cached --name-only -z
+            git ls-files --others --exclude-standard -z
+          )
+          if [[ "$invalid_path" == true ]]; then
+            exit 1
+          fi
+          if find locks -type l -print -quit | grep -q .; then
+            echo "Refusing generated symlink under locks/."
+            exit 1
+          fi
+
       - name: Commit generated files
         run: |
           git config user.name "github-actions[bot]"
@@ -97,7 +126,8 @@ jobs:
           if git diff --staged --quiet; then
             echo "Nothing changed. bump.sh was a no-op."
           else
-            git commit -m "chore(bump): resolve SHAs and regenerate lockfiles"
+            git -c core.hooksPath=/dev/null commit \
+              -m "chore(bump): resolve SHAs and regenerate lockfiles"
           fi
 
       - name: Recheck branch and push

@@ -92,6 +92,8 @@ OLD_RAY_VERSION="${RAY_VERSION}"  # auto-resolved fresh from PyPI; branch value 
 OLD_UV_VERSION="$(_main_get UV_VERSION)"
 OLD_TORCH_VERSION="$(_main_get TORCH_VERSION)"
 OLD_TORCHVISION_VERSION="$(_main_get TORCHVISION_VERSION)"
+# This key may be new in the PR and therefore absent from origin/main.
+OLD_QUACK_KERNELS_VERSION="$(_main_get QUACK_KERNELS_VERSION || true)"
 
 # ---------------------------------------------------------------------------
 # 3. Resolve git commit SHAs via ls-remote (no auth needed for public repos)
@@ -183,6 +185,7 @@ elif [[ "${NCCL_COMMIT}"         != "${OLD_NCCL_COMMIT}"         ||
         "${UV_VERSION}"          != "${OLD_UV_VERSION}"          ||
         "${TORCH_VERSION}"       != "${OLD_TORCH_VERSION}"       ||
         "${TORCHVISION_VERSION}" != "${OLD_TORCHVISION_VERSION}" ||
+        "${QUACK_KERNELS_VERSION}" != "${OLD_QUACK_KERNELS_VERSION}" ||
         "${DOCKERFILE_HASH}"     != "${OLD_DOCKERFILE_HASH}"     ||
         "${APT_SOURCES_HASH}"    != "${OLD_APT_SOURCES_HASH}"    ]]; then
   GB10_BUILD=$(( OLD_GB10_BUILD + 1 ))

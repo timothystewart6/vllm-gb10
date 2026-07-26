@@ -55,11 +55,19 @@ def test_quack_is_pinned_for_cutlass_dsl_compatibility():
     )
 
 
+def test_random_lock_input_paths_are_normalized():
+    bump = read("scripts/bump.sh")
+    assert bump.count('scripts/normalize-lockfile.py"') == 2
+    assert '"/tmp/vllm-gb10-build.in"' in bump
+    assert '"/tmp/vllm-gb10-runtime.in"' in bump
+
+
 def main():
     tests = [
         test_flashinfer_index_is_an_explicit_build_input,
         test_lock_generation_and_runtime_use_the_same_indexes,
         test_quack_is_pinned_for_cutlass_dsl_compatibility,
+        test_random_lock_input_paths_are_normalized,
     ]
     for test in tests:
         test()

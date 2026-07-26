@@ -330,6 +330,10 @@ uv pip compile \
   --output-file "${LOCKS}/python-build.txt" \
   "${TMP_BUILD}"
 
+python3 "${REPO_ROOT}/scripts/normalize-lockfile.py" \
+  "${LOCKS}/python-build.txt" \
+  "${TMP_BUILD}" \
+  "/tmp/vllm-gb10-build.in"
 rm -f "${TMP_BUILD}"
 trap - EXIT
 log "  Done -> ${LOCKS}/python-build.txt"
@@ -372,6 +376,10 @@ uv pip compile \
   --output-file "${LOCKS}/python-runtime.txt" \
   "${TMP_RUNTIME}"
 
+python3 "${REPO_ROOT}/scripts/normalize-lockfile.py" \
+  "${LOCKS}/python-runtime.txt" \
+  "${TMP_RUNTIME}" \
+  "/tmp/vllm-gb10-runtime.in"
 rm -f "${TMP_RUNTIME}"
 trap - EXIT
 log "  Done -> ${LOCKS}/python-runtime.txt"

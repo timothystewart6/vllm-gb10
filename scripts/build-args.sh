@@ -17,8 +17,9 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# shellcheck source=../versions.env
+python3 "${REPO_ROOT}/scripts/versions_env.py" "${REPO_ROOT}/versions.env" >/dev/null
 set -a
+# shellcheck disable=SC1091
 source "${REPO_ROOT}/versions.env"
 set +a
 

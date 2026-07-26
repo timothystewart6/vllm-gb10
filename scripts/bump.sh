@@ -45,8 +45,11 @@ need curl
 # ---------------------------------------------------------------------------
 # 1. Load current versions.env
 # ---------------------------------------------------------------------------
-# shellcheck source=../versions.env
-set -a; source "${VERSIONS}"; set +a
+python3 "${REPO_ROOT}/scripts/versions_env.py" "${VERSIONS}" >/dev/null
+set -a
+# shellcheck disable=SC1090
+source "${VERSIONS}"
+set +a
 
 log "Loaded versions.env"
 log "  VLLM_REF=${VLLM_REF}"
@@ -217,7 +220,10 @@ _update_env RAY_VERSION       "${RAY_VERSION}"
 log "versions.env updated with resolved SHAs and digest."
 
 # Re-source to pick up the freshly written values
-set -a; source "${VERSIONS}"; set +a
+set -a
+# shellcheck disable=SC1090
+source "${VERSIONS}"
+set +a
 
 # ---------------------------------------------------------------------------
 # Helper: fetch a vLLM requirements file from the pinned commit.

@@ -20,6 +20,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export REPO_ROOT
 cd "${REPO_ROOT}"
 
+python3 "${REPO_ROOT}/scripts/versions_env.py" "${REPO_ROOT}/versions.env" >/dev/null
 set -a
 # shellcheck disable=SC1090,SC1091
 . "${REPO_ROOT}/versions.env"

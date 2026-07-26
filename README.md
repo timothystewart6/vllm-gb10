@@ -71,12 +71,14 @@ bumps. There is intentionally no bare `v0.24.0` tag - it would be mutable.
 ## Bumping versions
 
 1. Edit one or more `_REF` lines in `versions.env` on a branch
-2. Open a pull request - the `run-bump.yaml` workflow picks it up, runs
-   `scripts/bump.sh` on the DGX Spark runner, and commits the resolved
-   `_COMMIT` SHAs, updated `GB10_BUILD`, and regenerated lockfiles back to
-   your branch
-3. Review the diff that CI committed, then merge
-4. A green build on `main` publishes updated image tags to GHCR and creates
+2. Open a pull request. GitHub-hosted checks validate the proposed changes
+   without running contributor code on the DGX Spark
+3. After reviewing an exact commit SHA, a maintainer promotes fork changes to
+   an upstream integration branch and manually dispatches `run-bump.yaml` from
+   `main`. The workflow verifies that the branch still points to the reviewed
+   SHA, runs `scripts/bump.sh`, and commits the generated files to that branch
+4. Review the generated diff, then merge
+5. A green build on `main` publishes updated image tags to GHCR and creates
    a GitHub Release automatically
 
 You do not need to SSH into the Spark or run anything locally.

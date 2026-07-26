@@ -64,10 +64,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
+      - name: Validate versions.env
+        run: python3 scripts/versions_env.py versions.env
+
       - name: Source versions.env into GITHUB_ENV
-        # Pass every non-comment, non-blank line directly.
-        # Values may contain colons and slashes (URLs, digests) but not
-        # newlines, so this is safe.
+        # Validation constrains keys and values before they reach GITHUB_ENV.
         run: |
           grep -v '^\s*#' versions.env | grep -v '^\s*$' >> "$GITHUB_ENV"
 

@@ -23,6 +23,7 @@ on:
       - scripts/normalize-lockfile.py
       - scripts/versions_env.py
       - scripts/versions_diff.py
+      - tests/test-ci-security-policy.py
       - tests/test-check-updates.py
       - tests/test-script-integrations.py
       - tests/test-release-notes-scenarios.py
@@ -34,9 +35,7 @@ on:
       - scripts/check-duplicate-pr.py
       - Dockerfile
       - versions.env
-      - .github/workflows/build-image.yaml
-      - .github/workflows/monitor-upstream-releases.yaml
-      - .github/workflows/run-bump.yaml
+      - .github/workflows/**
   workflow_dispatch:
 
 permissions:
@@ -71,6 +70,9 @@ jobs:
 
       - name: Verify package index contract
         run: python3 tests/test-package-index-contract.py
+
+      - name: Verify CI security policy
+        run: python3 tests/test-ci-security-policy.py
 
       - name: Verify deterministic lockfile comments
         run: python3 tests/test-lockfile-normalization.py

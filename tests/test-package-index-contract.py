@@ -62,12 +62,26 @@ def test_random_lock_input_paths_are_normalized():
     assert '"/tmp/vllm-gb10-runtime.in"' in bump
 
 
+def test_generated_values_compare_against_trusted_main():
+    bump = read("scripts/bump.sh")
+    for key in (
+        "NCCL_COMMIT",
+        "VLLM_COMMIT",
+        "FLASHINFER_COMMIT",
+        "CUDA_BASE_DIGEST",
+        "GB10_BUILD",
+        "RAY_VERSION",
+    ):
+        assert f'OLD_{key}="$(_main_get {key})"' in bump
+
+
 def main():
     tests = [
         test_flashinfer_index_is_an_explicit_build_input,
         test_lock_generation_and_runtime_use_the_same_indexes,
         test_quack_is_pinned_for_cutlass_dsl_compatibility,
         test_random_lock_input_paths_are_normalized,
+        test_generated_values_compare_against_trusted_main,
     ]
     for test in tests:
         test()

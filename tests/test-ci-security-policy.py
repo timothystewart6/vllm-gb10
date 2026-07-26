@@ -8,6 +8,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = ROOT / ".github" / "workflows"
 ANY_ACTION = re.compile(r"^\s*uses:\s*([^#\s]+)@([^#\s]+)\s*$", re.MULTILINE)
+APPROVED_ACTIONS = {
+    "actions/checkout": "3d3c42e5aac5ba805825da76410c181273ba90b1",
+    "actions/upload-artifact": "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+    "docker/build-push-action": "53b7df96c91f9c12dcc8a07bcb9ccacbed38856a",
+    "docker/login-action": "af1e73f918a031802d376d3c8bbc3fe56130a9b0",
+    "docker/metadata-action": "dc802804100637a589fabce1cb79ff13a1411302",
+    "docker/setup-buildx-action": "bb05f3f5519dd87d3ba754cc423b652a5edd6d2c",
+    "peter-evans/create-pull-request": "5f6978faf089d4d20b00c7766989d076bb2fc7f1",
+    "softprops/action-gh-release": "3d0d9888cb7fd7b750713d6e236d1fcb99157228",
+}
 
 
 def read(path):
@@ -31,8 +41,11 @@ def test_all_external_actions_are_pinned_by_full_sha():
     for path in WORKFLOWS.glob("*.yaml"):
         workflow = read(path)
         for action, revision in ANY_ACTION.findall(workflow):
-            assert re.fullmatch(r"[0-9a-f]{40}", revision), (
-                f"{path}: {action}@{revision} is not pinned by full SHA"
+            assert action in APPROVED_ACTIONS, (
+                f"{path}: unreviewed external action {action}"
+            )
+            assert revision == APPROVED_ACTIONS[action], (
+                f"{path}: {action}@{revision} is not the reviewed pin"
             )
 
 
@@ -40,7 +53,10 @@ def test_bump_workflow_preserves_approval_boundary():
     workflow = read(WORKFLOWS / "run-bump.yaml")
     required_controls = (
         "persist-credentials: false",
-        '[[ "$(git rev-parse HEAD)" != "$APPROVED_SHA" ]]',
+        'git worktree add --detach "$GENERATOR_DIR" "$GITHUB_SHA"',
+        'git show "$APPROVED_SHA:versions.env"',
+        "python3 scripts/validate-apt-inputs.py",
+        "working-directory: ${{ env.GENERATOR_DIR }}",
         "git diff --cached --name-only -z",
         "git ls-files --others --exclude-standard -z",
         "versions.env|locks/*",
@@ -50,6 +66,8 @@ def test_bump_workflow_preserves_approval_boundary():
     for control in required_controls:
         assert control in workflow, f"run-bump.yaml lost control: {control}"
     assert workflow.count("git ls-remote --exit-code origin") == 2
+    assert "git checkout --detach \"$APPROVED_SHA\"" in workflow
+    assert workflow.count("run: bash scripts/bump.sh") == 1
 
 
 def test_trusted_builds_checkout_the_exact_event_sha():
@@ -80,11 +98,25 @@ def test_pr_workflows_are_read_only_and_secret_free():
         assert "contents: write" not in workflow, path
 
 
-def test_security_policy_runs_for_every_workflow_change():
+def test_security_policy_runs_for_every_pull_request():
     workflow = read(WORKFLOWS / "test-release-notes.yaml")
-    assert "- .github/workflows/**" in workflow
-    assert "- tests/test-ci-security-policy.py" in workflow
+    pull_request_trigger = workflow.split("workflow_dispatch:", 1)[0]
+    assert "pull_request:" in pull_request_trigger
+    assert "paths:" not in pull_request_trigger
     assert "python3 tests/test-ci-security-policy.py" in workflow
+
+
+def test_sensitive_paths_have_codeowners():
+    codeowners = read(ROOT / ".github" / "CODEOWNERS")
+    for path in (
+        "/.github/CODEOWNERS",
+        "/.github/workflows/",
+        "/Dockerfile",
+        "/versions.env",
+        "/locks/",
+        "/scripts/",
+    ):
+        assert f"{path} @timothystewart6" in codeowners
 
 
 def main():
@@ -95,7 +127,8 @@ def main():
         test_trusted_builds_checkout_the_exact_event_sha,
         test_privileged_workflows_reject_untrusted_refs,
         test_pr_workflows_are_read_only_and_secret_free,
-        test_security_policy_runs_for_every_workflow_change,
+        test_security_policy_runs_for_every_pull_request,
+        test_sensitive_paths_have_codeowners,
     ]
     for test in tests:
         test()

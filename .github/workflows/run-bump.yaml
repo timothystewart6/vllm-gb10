@@ -1,10 +1,10 @@
 # .github/workflows/run-bump.yaml
 #
-# Runs reviewed code on the persistent DGX Spark only after a maintainer
-# explicitly approves an immutable commit SHA. The workflow refuses to run
-# from any ref other than main and refuses a branch that moved after review.
+# Imports reviewed declarative inputs from an exact commit, then runs trusted
+# scripts from main on the persistent DGX Spark. Contributor scripts, workflows,
+# and Dockerfile instructions are never executed by this workflow.
 #
-# actions/checkout  v6.0.2 => de0fac2e4500dabe0009e67214ff5f5447ce83dd
+# actions/checkout pinned SHA is allowlisted in tests/test-ci-security-policy.py.
 
 name: Run bump.sh
 
@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       branch:
-        description: Upstream branch to update, for example integration/pr-62
+        description: Upstream integration branch to update
         required: true
         type: string
       sha:
@@ -59,15 +59,14 @@ jobs:
             exit 1
           fi
 
-      - name: Checkout trusted workflow revision
+      - name: Checkout exact trusted workflow revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: main
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
-          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Verify branch still points to approved SHA
+      - name: Verify integration branch still points to approved SHA
         run: |
           REMOTE_SHA=$(git ls-remote --exit-code origin "refs/heads/$APPROVED_BRANCH" | cut -f1)
           if [[ "$REMOTE_SHA" != "$APPROVED_SHA" ]]; then
@@ -76,26 +75,60 @@ jobs:
             echo "Actual:   $REMOTE_SHA"
             exit 1
           fi
-
-      - name: Checkout exact approved commit
-        run: |
           git fetch --no-tags origin "$APPROVED_SHA"
-          git checkout --detach "$APPROVED_SHA"
-          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
 
-      - name: Validate versions.env before executing repository scripts
-        run: python3 scripts/versions_env.py versions.env
+      - name: Create trusted generator worktree
+        run: |
+          GENERATOR_DIR=$(mktemp -d "${RUNNER_TEMP}/vllm-gb10-generator-XXXXXX")
+          OUTPUT_DIR=$(mktemp -d "${RUNNER_TEMP}/vllm-gb10-output-XXXXXX")
+          git worktree add --detach "$GENERATOR_DIR" "$GITHUB_SHA"
+          {
+            echo "GENERATOR_DIR=$GENERATOR_DIR"
+            echo "OUTPUT_DIR=$OUTPUT_DIR"
+          } >> "$GITHUB_ENV"
 
-      - name: Run bump.sh
+      - name: Import reviewed declarative inputs
+        run: |
+          git show "$APPROVED_SHA:versions.env" > "$GENERATOR_DIR/versions.env"
+          git show "$APPROVED_SHA:Dockerfile" > "$GENERATOR_DIR/Dockerfile"
+          git show "$APPROVED_SHA:locks/apt-sources.list" \
+            > "$GENERATOR_DIR/locks/apt-sources.list"
+          git show "$APPROVED_SHA:locks/apt-packages.txt" \
+            > "$GENERATOR_DIR/locks/apt-packages.txt"
+
+      - name: Validate imported inputs with trusted validators
+        run: |
+          python3 scripts/versions_env.py "$GENERATOR_DIR/versions.env"
+          python3 scripts/validate-apt-inputs.py \
+            "$GENERATOR_DIR/locks/apt-sources.list" \
+            "$GENERATOR_DIR/locks/apt-packages.txt"
+
+      - name: Run trusted bump.sh
+        working-directory: ${{ env.GENERATOR_DIR }}
         run: bash scripts/bump.sh
+
+      - name: Preserve generated outputs
+        run: |
+          cp "$GENERATOR_DIR/versions.env" "$OUTPUT_DIR/versions.env"
+          cp -R "$GENERATOR_DIR/locks" "$OUTPUT_DIR/locks"
+          python3 scripts/versions_env.py "$OUTPUT_DIR/versions.env"
+          python3 scripts/validate-apt-inputs.py \
+            "$OUTPUT_DIR/locks/apt-sources.list" \
+            "$OUTPUT_DIR/locks/apt-packages.txt"
+          (
+            cd "$GENERATOR_DIR"
+            python3 tests/test-lockfile-security.py
+          )
+
+      - name: Apply outputs to exact approved commit
+        run: |
+          git checkout --detach "$APPROVED_SHA"
+          cp "$OUTPUT_DIR/versions.env" versions.env
+          cp -R "$OUTPUT_DIR/locks/." locks/
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
 
       - name: Validate generated changes
         run: |
-          if [[ "$(git rev-parse HEAD)" != "$APPROVED_SHA" ]]; then
-            echo "Refusing to continue: bump.sh moved HEAD or created a commit."
-            exit 1
-          fi
-
           invalid_path=false
           while IFS= read -r -d '' path; do
             case "$path" in
@@ -144,4 +177,11 @@ jobs:
           else
             gh auth setup-git
             git push origin "HEAD:refs/heads/$APPROVED_BRANCH"
+          fi
+
+      - name: Remove trusted generator worktree
+        if: always()
+        run: |
+          if [[ -n "${GENERATOR_DIR:-}" ]]; then
+            git worktree remove --force "$GENERATOR_DIR" || true
           fi

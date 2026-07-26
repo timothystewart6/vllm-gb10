@@ -20,12 +20,14 @@ aarch64 DGX Spark** (it compiles and resolves platform-specific dependencies).
 2. Open a PR. GitHub-hosted checks validate the change without executing
    contributor code on a persistent DGX Spark runner.
 3. A maintainer reviews an exact commit SHA. For a fork PR, the maintainer
-   copies that SHA to an upstream branch such as `integration/pr-62`.
+   copies that SHA to an upstream branch such as `integration/pr-62` and opens
+   a replacement PR from that integration branch.
 4. The maintainer dispatches `run-bump.yaml` from `main` with the upstream
    branch and reviewed 40-character SHA. The workflow refuses to run if the
    branch moved after review.
-5. Review the generated `_COMMIT` SHAs, `GB10_BUILD`, and lockfile diff, then
-   merge.
+5. Review the generated `_COMMIT` SHAs, `GB10_BUILD`, and lockfile diff on the
+   integration PR, then merge that PR. Do not merge the original fork PR after
+   promotion.
 
 You do not need to SSH into the Spark or run anything locally.
 
@@ -33,12 +35,15 @@ You do not need to SSH into the Spark or run anything locally.
 
 ### Maintainer approval flow
 
-Code from pull requests never runs automatically on the DGX Spark. Before
-manual dispatch:
+Contributor code is not executed by `run-bump.yaml`. The workflow imports only
+`versions.env`, `Dockerfile`, `locks/apt-sources.list`, and
+`locks/apt-packages.txt` as declarative data, validates them, and runs scripts
+from the exact trusted `main` workflow revision. Before manual dispatch:
 
 1. Review every changed executable file at the exact SHA, especially
    workflows, shell scripts, Python scripts, the Dockerfile, and build inputs.
-2. Copy fork changes to an upstream integration branch without modifying them.
+2. Copy fork changes to an upstream integration branch without modifying them,
+   then open a replacement PR from that branch.
 3. Confirm the integration branch head equals the reviewed SHA.
 4. In Actions, select **Run bump.sh**, choose the `main` workflow ref, and
    enter the integration branch and exact SHA.

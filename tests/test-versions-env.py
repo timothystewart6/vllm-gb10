@@ -22,6 +22,11 @@ def expect_rejected(text, reason):
     raise AssertionError(f"accepted unsafe versions.env: {reason}")
 
 
+def replace_value(text, key, value):
+    current = next(line for line in text.splitlines() if line.startswith(f"{key}="))
+    return text.replace(current, f"{key}={value}")
+
+
 def main():
     valid = (ROOT / "versions.env").read_text()
     parsed = VERSIONS_ENV.parse_versions_env(valid)
@@ -70,6 +75,34 @@ def main():
     expect_rejected(valid + f"\n{uv_line}\n", "duplicate key")
     expect_rejected(valid + "\nUNREVIEWED_INPUT=1\n", "unknown key")
     expect_rejected(valid.replace(f"{uv_line}\n", ""), "missing key")
+    expect_rejected(
+        replace_value(valid, "VLLM_REPO", "https://attacker.example/vllm.git"),
+        "unapproved source repository",
+    )
+    expect_rejected(
+        replace_value(valid, "PYPI_INDEX_URL", "https://attacker.example/simple"),
+        "unapproved package index",
+    )
+    expect_rejected(
+        replace_value(valid, "CUDA_BASE_IMAGE", "attacker/cuda:13.2.0"),
+        "unapproved container image",
+    )
+    expect_rejected(
+        replace_value(valid, "VLLM_COMMIT", "deadbeef"),
+        "short commit SHA",
+    )
+    expect_rejected(
+        replace_value(valid, "CUDA_BASE_DIGEST", "sha256:deadbeef"),
+        "short image digest",
+    )
+    expect_rejected(
+        replace_value(valid, "GB10_BUILD", "-1"),
+        "negative build number",
+    )
+    expect_rejected(
+        replace_value(valid, "TORCH_CUDA_ARCH_LIST", "12.1a+9.0"),
+        "unexpected GPU architecture",
+    )
     print("All versions.env security tests passed!")
 
 

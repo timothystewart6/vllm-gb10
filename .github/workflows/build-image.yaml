@@ -6,13 +6,7 @@
 # Actions are pinned by SHA per the SPEC. Update SHAs via Dependabot
 # (added in Phase 5) - do NOT track floating tags.
 #
-# actions/checkout             v6.0.2  => de0fac2e4500dabe0009e67214ff5f5447ce83dd
-# docker/setup-buildx-action   v4.1.0  => d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5
-# docker/login-action          v4.2.0  => 650006c6eb7dba73a995cc03b0b2d7f5ca915bee
-# docker/metadata-action       v6.1.0  => 80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9
-# docker/build-push-action     v7.2.0  => f9f3042f7e2789586610d6e8b85c8f03e5195baf
-# actions/upload-artifact      v7.0.1  => 043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-# softprops/action-gh-release  v2.6.2  => 3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
+# Action SHAs are reviewed and allowlisted in tests/test-ci-security-policy.py.
 #
 # Job layout (split so re-runs of cheap stages don't require a 1-hour rebuild):
 #

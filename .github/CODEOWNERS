@@ -1,0 +1,9 @@
+# Security-sensitive build and automation paths.
+/.github/CODEOWNERS @timothystewart6
+/.github/dependabot.yml @timothystewart6
+/.github/workflows/ @timothystewart6
+/Dockerfile @timothystewart6
+/versions.env @timothystewart6
+/locks/ @timothystewart6
+/scripts/ @timothystewart6
+/tests/test-ci-security-policy.py @timothystewart6

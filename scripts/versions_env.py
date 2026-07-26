@@ -22,6 +22,7 @@ EXPECTED_KEYS = {
 }
 KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 VALUE_RE = re.compile(r"^[A-Za-z0-9._:/+@-]+$")
+MAX_VALUE_LENGTH = 2048
 
 
 class VersionsEnvError(ValueError):
@@ -47,7 +48,11 @@ def parse_versions_env(text: str) -> dict[str, str]:
             raise VersionsEnvError(f"line {line_number}: duplicate key {key}")
         if key not in EXPECTED_KEYS:
             raise VersionsEnvError(f"line {line_number}: unknown key {key}")
-        if not value or not VALUE_RE.fullmatch(value):
+        if (
+            not value
+            or len(value) > MAX_VALUE_LENGTH
+            or not VALUE_RE.fullmatch(value)
+        ):
             raise VersionsEnvError(
                 f"line {line_number}: unsafe or empty value for {key}"
             )

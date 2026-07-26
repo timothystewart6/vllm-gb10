@@ -40,6 +40,30 @@ def main():
         "shell quoting",
     )
     expect_rejected(
+        valid.replace(uv_line, "UV_VERSION=`touch /tmp/pwned`"),
+        "backtick substitution",
+    )
+    expect_rejected(
+        valid.replace(uv_line, "UV_VERSION=${PATH}"),
+        "parameter expansion",
+    )
+    expect_rejected(
+        valid.replace(uv_line, "UV_VERSION=ok%0AATTACK=1"),
+        "encoded environment newline",
+    )
+    expect_rejected(
+        valid.replace(uv_line, "UV_VERSION=ok\u202eattack"),
+        "Unicode direction control",
+    )
+    expect_rejected(
+        valid.replace(uv_line, "UV_VERSION=ok\rATTACK=1"),
+        "embedded carriage return",
+    )
+    expect_rejected(
+        valid.replace(uv_line, f"UV_VERSION={'a' * 4097}"),
+        "unreasonably long value",
+    )
+    expect_rejected(
         valid.replace(uv_line, f" {uv_line}"),
         "leading whitespace",
     )

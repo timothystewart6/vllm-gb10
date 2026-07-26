@@ -24,6 +24,7 @@ on:
       - scripts/versions_env.py
       - scripts/versions_diff.py
       - tests/test-ci-security-policy.py
+      - tests/test-lockfile-security.py
       - tests/test-check-updates.py
       - tests/test-script-integrations.py
       - tests/test-release-notes-scenarios.py
@@ -73,6 +74,9 @@ jobs:
 
       - name: Verify CI security policy
         run: python3 tests/test-ci-security-policy.py
+
+      - name: Verify lockfile supply-chain policy
+        run: python3 tests/test-lockfile-security.py
 
       - name: Verify deterministic lockfile comments
         run: python3 tests/test-lockfile-normalization.py

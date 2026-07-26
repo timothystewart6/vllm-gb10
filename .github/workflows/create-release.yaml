@@ -10,8 +10,7 @@
 #   2. git tag v0.20.1-gb10.0 && git push origin v0.20.1-gb10.0
 #   3. This workflow fires, creates the release with the component table.
 #
-# actions/checkout             v6.0.2  => de0fac2e4500dabe0009e67214ff5f5447ce83dd
-# softprops/action-gh-release  v2.6.2  => 3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
+# Action SHAs are reviewed and allowlisted in tests/test-ci-security-policy.py.
 
 name: Create release on tag
 

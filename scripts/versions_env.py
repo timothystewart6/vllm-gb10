@@ -23,6 +23,29 @@ EXPECTED_KEYS = {
 KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 VALUE_RE = re.compile(r"^[A-Za-z0-9._:/+@-]+$")
 MAX_VALUE_LENGTH = 2048
+HEX_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+VERSION_RE = re.compile(r"^[0-9]+(?:\.[0-9]+)+(?:[.-][A-Za-z0-9]+)*$")
+REF_RE = re.compile(r"^v[0-9]+(?:\.[0-9]+)+(?:-[0-9]+)?$")
+CUDA_IMAGE_RE = re.compile(
+    r"^nvidia/cuda:[0-9]+\.[0-9]+\.[0-9]+-devel-ubuntu24\.04$"
+)
+EXACT_VALUES = {
+    "NCCL_REPO": "https://github.com/NVIDIA/nccl.git",
+    "VLLM_REPO": "https://github.com/vllm-project/vllm.git",
+    "FLASHINFER_REPO": "https://github.com/flashinfer-ai/flashinfer.git",
+    "PYPI_INDEX_URL": "https://pypi.org/simple",
+    "PYTORCH_INDEX_URL": "https://download.pytorch.org/whl/cu130",
+    "FLASHINFER_INDEX_URL": "https://flashinfer.ai/whl",
+    "TORCH_CUDA_ARCH_LIST": "12.1a",
+    "FLASHINFER_CUDA_ARCH_LIST": "12.1a",
+}
+COMMIT_KEYS = {"NCCL_COMMIT", "VLLM_COMMIT", "FLASHINFER_COMMIT"}
+REF_KEYS = {"NCCL_REF", "VLLM_REF", "FLASHINFER_REF"}
+VERSION_KEYS = EXPECTED_KEYS - {
+    "CUDA_BASE_DIGEST", "CUDA_BASE_IMAGE", "GB10_BUILD",
+    *COMMIT_KEYS, *REF_KEYS, *EXACT_VALUES.keys(),
+}
 
 
 class VersionsEnvError(ValueError):
@@ -60,6 +83,29 @@ def parse_versions_env(text: str) -> dict[str, str]:
     missing = sorted(EXPECTED_KEYS - values.keys())
     if missing:
         raise VersionsEnvError(f"missing required keys: {', '.join(missing)}")
+    for key, expected in EXACT_VALUES.items():
+        if values[key] != expected:
+            raise VersionsEnvError(f"{key} must be {expected!r}")
+    for key in COMMIT_KEYS:
+        if not HEX_SHA_RE.fullmatch(values[key]):
+            raise VersionsEnvError(f"{key} must be a 40-character commit SHA")
+    for key in REF_KEYS:
+        if not REF_RE.fullmatch(values[key]):
+            raise VersionsEnvError(f"{key} must be a released v-prefixed tag")
+    for key in VERSION_KEYS:
+        if not VERSION_RE.fullmatch(values[key]):
+            raise VersionsEnvError(f"{key} must be an exact numeric version")
+    if not DIGEST_RE.fullmatch(values["CUDA_BASE_DIGEST"]):
+        raise VersionsEnvError("CUDA_BASE_DIGEST must be a SHA-256 digest")
+    if not CUDA_IMAGE_RE.fullmatch(values["CUDA_BASE_IMAGE"]):
+        raise VersionsEnvError(
+            "CUDA_BASE_IMAGE must be an NVIDIA CUDA devel image for Ubuntu 24.04"
+        )
+    if (
+        not values["GB10_BUILD"].isdigit()
+        or int(values["GB10_BUILD"]) > 1_000_000
+    ):
+        raise VersionsEnvError("GB10_BUILD must be a non-negative integer")
     return values
 
 

@@ -7,36 +7,12 @@
 # all combinations of component changes, lockfile changes, and edge cases,
 # then verifies the output is well-formed and correct.
 #
-# actions/checkout             v6.0.2  => de0fac2e4500dabe0009e67214ff5f5447ce83dd
-# actions/upload-artifact      v7.0.1  => 043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+# Action SHAs are reviewed and allowlisted in tests/test-ci-security-policy.py.
 
 name: Test release notes
 
 on:
   pull_request:
-    paths:
-      - scripts/check-updates.sh
-      - scripts/bump.sh
-      - scripts/build-args.sh
-      - scripts/generate-pr-body.sh
-      - scripts/generate-release-notes.sh
-      - scripts/normalize-lockfile.py
-      - scripts/versions_env.py
-      - scripts/versions_diff.py
-      - tests/test-ci-security-policy.py
-      - tests/test-lockfile-security.py
-      - tests/test-check-updates.py
-      - tests/test-script-integrations.py
-      - tests/test-release-notes-scenarios.py
-      - tests/test-pr-body-generation.py
-      - tests/test-check-duplicate-pr.py
-      - tests/test-package-index-contract.py
-      - tests/test-lockfile-normalization.py
-      - tests/test-versions-env.py
-      - scripts/check-duplicate-pr.py
-      - Dockerfile
-      - versions.env
-      - .github/workflows/**
   workflow_dispatch:
 
 permissions:
@@ -83,6 +59,9 @@ jobs:
 
       - name: Validate versions.env security rules
         run: python3 tests/test-versions-env.py
+
+      - name: Validate apt input security rules
+        run: python3 tests/test-apt-inputs.py
 
       - name: Verify output is well-formed
         run: |

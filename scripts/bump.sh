@@ -59,11 +59,16 @@ log "  NCCL_REF=${NCCL_REF}"
 # ---------------------------------------------------------------------------
 # 2. Snapshot old values for GB10_BUILD change detection
 # ---------------------------------------------------------------------------
-OLD_NCCL_COMMIT="${NCCL_COMMIT:-UNSET}"
-OLD_VLLM_COMMIT="${VLLM_COMMIT:-UNSET}"
-OLD_FLASHINFER_COMMIT="${FLASHINFER_COMMIT:-UNSET}"
-OLD_CUDA_BASE_DIGEST="${CUDA_BASE_DIGEST:-UNSET}"
-OLD_GB10_BUILD="${GB10_BUILD:-0}"
+_MAIN_VERSIONS="$(git show origin/main:versions.env 2>/dev/null \
+  || git show HEAD~1:versions.env 2>/dev/null \
+  || cat "${VERSIONS}")"
+_main_get() { printf '%s\n' "${_MAIN_VERSIONS}" | grep "^$1=" | head -1 | cut -d= -f2-; }
+
+OLD_NCCL_COMMIT="$(_main_get NCCL_COMMIT)"
+OLD_VLLM_COMMIT="$(_main_get VLLM_COMMIT)"
+OLD_FLASHINFER_COMMIT="$(_main_get FLASHINFER_COMMIT)"
+OLD_CUDA_BASE_DIGEST="$(_main_get CUDA_BASE_DIGEST)"
+OLD_GB10_BUILD="$(_main_get GB10_BUILD)"
 
 # Snapshot the Dockerfile hash from origin/main (or the previous commit)
 # so that Dockerfile-only PRs also increment GB10_BUILD.
@@ -84,14 +89,7 @@ APT_SOURCES_HASH="$(sha256sum "${REPO_ROOT}/locks/apt-sources.list" | awk '{prin
 # reading from the branch gives OLD == NEW and no change is detected. Instead
 # we read those fields from origin/main (the merge target) so that any version
 # bump introduced by the PR is correctly detected and GB10_BUILD is incremented.
-# _COMMIT fields need no special treatment: they are only ever written by this
-# script, so the branch copy already matches main before this run.
-_MAIN_VERSIONS="$(git show origin/main:versions.env 2>/dev/null \
-  || git show HEAD~1:versions.env 2>/dev/null \
-  || cat "${VERSIONS}")"
-_main_get() { printf '%s\n' "${_MAIN_VERSIONS}" | grep "^$1=" | head -1 | cut -d= -f2-; }
-
-OLD_RAY_VERSION="${RAY_VERSION}"  # auto-resolved fresh from PyPI; branch value == main
+OLD_RAY_VERSION="$(_main_get RAY_VERSION)"
 OLD_UV_VERSION="$(_main_get UV_VERSION)"
 OLD_TORCH_VERSION="$(_main_get TORCH_VERSION)"
 OLD_TORCHVISION_VERSION="$(_main_get TORCHVISION_VERSION)"

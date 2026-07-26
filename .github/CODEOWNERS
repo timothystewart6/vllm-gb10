@@ -3,6 +3,7 @@
 /.github/dependabot.yml @timothystewart6
 /.github/workflows/ @timothystewart6
 /Dockerfile @timothystewart6
+/docs/contributor-ci-security.md @timothystewart6
 /versions.env @timothystewart6
 /locks/ @timothystewart6
 /scripts/ @timothystewart6

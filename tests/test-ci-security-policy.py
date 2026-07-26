@@ -112,11 +112,24 @@ def test_sensitive_paths_have_codeowners():
         "/.github/CODEOWNERS",
         "/.github/workflows/",
         "/Dockerfile",
+        "/docs/contributor-ci-security.md",
         "/versions.env",
         "/locks/",
         "/scripts/",
     ):
         assert f"{path} @timothystewart6" in codeowners
+
+
+def test_security_runbook_is_linked_from_entry_points():
+    runbook = ROOT / "docs" / "contributor-ci-security.md"
+    assert runbook.is_file()
+    link = "docs/contributor-ci-security.md"
+    for path in (
+        ROOT / "README.md",
+        ROOT / "CONTRIBUTING.md",
+        WORKFLOWS / "run-bump.yaml",
+    ):
+        assert link in read(path), path
 
 
 def main():
@@ -129,6 +142,7 @@ def main():
         test_pr_workflows_are_read_only_and_secret_free,
         test_security_policy_runs_for_every_pull_request,
         test_sensitive_paths_have_codeowners,
+        test_security_runbook_is_linked_from_entry_points,
     ]
     for test in tests:
         test()

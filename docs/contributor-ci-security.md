@@ -120,6 +120,14 @@ Merge the integration PR only after required GitHub-hosted checks pass and the
 generated diff has been reviewed. Close the original fork PR with a link to the
 integration PR.
 
+This repository currently has one collaborator. GitHub does not allow a pull
+request author to approve their own pull request, so maintainer-authored pull
+requests require the repository administrator bypass. Use that bypass only
+after the required check passes and the complete diff has been reviewed. Never
+use the bypass for an external contributor's pull request. External changes
+must be promoted to an integration branch, receive the maintainer's code-owner
+approval after the final generated commit, and pass all required checks.
+
 The push to `main` starts the GX10 image build and smoke test.
 
 ## Validation policy
@@ -169,7 +177,8 @@ The repository configuration must enforce the controls that files cannot:
 - require pull requests for `main`;
 - require the GitHub-hosted test workflow;
 - require CODEOWNERS review for sensitive paths;
-- prevent bypass of required checks;
+- dismiss stale approvals when new commits are pushed;
+- reserve administrator bypass for maintainer-authored pull requests;
 - limit workflow dispatch and integration-branch pushes to maintainers;
 - never assign public fork jobs to self-hosted runners.
 

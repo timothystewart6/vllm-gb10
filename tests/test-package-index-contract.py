@@ -40,10 +40,18 @@ def test_lock_generation_and_runtime_use_the_same_indexes():
     assert "ARG FLASHINFER_INDEX_URL" in dockerfile
 
 
+def test_quack_is_pinned_for_cutlass_dsl_compatibility():
+    assert env_value("QUACK_KERNELS_VERSION") == "0.6.1"
+
+    bump = read("scripts/bump.sh")
+    assert "quack-kernels==${QUACK_KERNELS_VERSION}" in bump
+
+
 def main():
     tests = [
         test_flashinfer_index_is_an_explicit_build_input,
         test_lock_generation_and_runtime_use_the_same_indexes,
+        test_quack_is_pinned_for_cutlass_dsl_compatibility,
     ]
     for test in tests:
         test()

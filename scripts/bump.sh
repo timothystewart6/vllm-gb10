@@ -350,6 +350,7 @@ tilelang==${TILELANG_VERSION}
 numba==${NUMBA_VERSION}
 bitsandbytes==${BITSANDBYTES_VERSION}
 accelerate==${ACCELERATE_VERSION}
+quack-kernels==${QUACK_KERNELS_VERSION}
 REQS
 
 uv pip compile \

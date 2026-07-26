@@ -620,9 +620,11 @@ SCENARIOS = [
         +BITSANDBYTES_VERSION=0.49.2
         -ACCELERATE_VERSION=1.13.0
         +ACCELERATE_VERSION=1.14.0
+        -QUACK_KERNELS_VERSION=0.4.1
+        +QUACK_KERNELS_VERSION=0.6.1
         """),
         {},
-        18,
+        19,
         [
             "- **Accelerate**: 1.13.0 -> 1.14.0",
             "- **bitsandbytes**: 0.48.0 -> 0.49.2",
@@ -634,6 +636,7 @@ SCENARIOS = [
             "- **NCCL**: v2.30.4-1 -> v2.30.5-1",
             "- **Numba**: 0.64.0 -> 0.65.0",
             "- **NVSHMEM**: 3.4.0 -> 3.4.5",
+            "- **QuACK kernels**: 0.4.1 -> 0.6.1",
             "- **Ray**: 2.55.0 -> 2.56.0",
             "- **TileLang**: 0.1.8 -> 0.1.9",
             "- **torchaudio**: 2.10.0 -> 2.11.0",

@@ -20,6 +20,7 @@ on:
       - scripts/build-args.sh
       - scripts/generate-pr-body.sh
       - scripts/generate-release-notes.sh
+      - scripts/versions_env.py
       - scripts/versions_diff.py
       - tests/test-check-updates.py
       - tests/test-script-integrations.py
@@ -27,11 +28,13 @@ on:
       - tests/test-pr-body-generation.py
       - tests/test-check-duplicate-pr.py
       - tests/test-package-index-contract.py
+      - tests/test-versions-env.py
       - scripts/check-duplicate-pr.py
       - Dockerfile
       - versions.env
       - .github/workflows/build-image.yaml
       - .github/workflows/monitor-upstream-releases.yaml
+      - .github/workflows/run-bump.yaml
   workflow_dispatch:
 
 permissions:
@@ -66,6 +69,9 @@ jobs:
 
       - name: Verify package index contract
         run: python3 tests/test-package-index-contract.py
+
+      - name: Validate versions.env security rules
+        run: python3 tests/test-versions-env.py
 
       - name: Verify output is well-formed
         run: |

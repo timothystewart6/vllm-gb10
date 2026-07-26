@@ -1,62 +1,117 @@
 # .github/workflows/run-bump.yaml
 #
-# Runs scripts/bump.sh on the DGX Spark whenever versions.env changes in a PR.
-# Commits the resolved SHAs, updated GB10_BUILD, and regenerated lockfiles back
-# to the PR branch so the PR is always self-contained and ready to merge.
-#
-# Trigger: any PR (from this repo, not forks) that touches versions.env.
+# Runs reviewed code on the persistent DGX Spark only after a maintainer
+# explicitly approves an immutable commit SHA. The workflow refuses to run
+# from any ref other than main and refuses a branch that moved after review.
 #
 # actions/checkout  v6.0.2 => de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
 name: Run bump.sh
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
-    paths:
-      - versions.env
-      - Dockerfile
-      - locks/apt-sources.list
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Upstream branch to update, for example integration/pr-62
+        required: true
+        type: string
+      sha:
+        description: Exact 40-character commit SHA reviewed by a maintainer
+        required: true
+        type: string
 
-# Only run one bump at a time per PR branch - cancel in-flight runs if a new
-# commit lands before the previous bump finishes.
 concurrency:
-  group: bump-${{ github.head_ref }}
-  cancel-in-progress: true
+  group: bump-${{ inputs.branch }}
+  cancel-in-progress: false
 
 permissions:
   contents: write
 
 jobs:
   bump:
-    # Skip if the push was made by the bot itself to avoid an infinite loop
-    # (bot commits back resolved SHAs -> would re-trigger this workflow).
-    # Do NOT use [skip ci] in the commit message: it bleeds into squash merge
-    # commits on main and suppresses build-image.yaml.
-    if: github.actor != 'github-actions[bot]'
     runs-on: [self-hosted, linux, ARM64, dgx-spark]
     timeout-minutes: 30
+    env:
+      APPROVED_BRANCH: ${{ inputs.branch }}
+      APPROVED_SHA: ${{ inputs.sha }}
 
     steps:
-      - name: Checkout PR branch
+      - name: Require dispatch from main
+        env:
+          WORKFLOW_REF: ${{ github.ref }}
+        run: |
+          if [[ "$WORKFLOW_REF" != "refs/heads/main" ]]; then
+            echo "Refusing to run: dispatch this workflow from main."
+            exit 1
+          fi
+
+      - name: Validate approved target
+        run: |
+          if [[ ! "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Refusing to run: sha must be a lowercase 40-character commit SHA."
+            exit 1
+          fi
+          if [[ ! "$APPROVED_BRANCH" =~ ^[A-Za-z0-9._/-]+$ ]] ||
+             [[ "$APPROVED_BRANCH" == /* ]] ||
+             [[ "$APPROVED_BRANCH" == */ ]] ||
+             [[ "$APPROVED_BRANCH" == *..* ]]; then
+            echo "Refusing to run: branch has an unsafe format."
+            exit 1
+          fi
+
+      - name: Checkout trusted workflow revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          # Check out the actual PR branch, not the synthetic merge commit,
-          # so we can commit and push back to it.
-          ref: ${{ github.head_ref }}
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify branch still points to approved SHA
+        run: |
+          REMOTE_SHA=$(git ls-remote --exit-code origin "refs/heads/$APPROVED_BRANCH" | cut -f1)
+          if [[ "$REMOTE_SHA" != "$APPROVED_SHA" ]]; then
+            echo "Refusing to run: branch head does not match the reviewed SHA."
+            echo "Expected: $APPROVED_SHA"
+            echo "Actual:   $REMOTE_SHA"
+            exit 1
+          fi
+
+      - name: Checkout exact approved commit
+        run: |
+          git fetch --no-tags origin "$APPROVED_SHA"
+          git checkout --detach "$APPROVED_SHA"
+          test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+
+      - name: Validate versions.env before executing repository scripts
+        run: python3 scripts/versions_env.py versions.env
 
       - name: Run bump.sh
         run: bash scripts/bump.sh
 
-      - name: Commit resolved SHAs and lockfiles back to PR branch
+      - name: Commit generated files
         run: |
-          git config user.name  "github-actions[bot]"
+          git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add versions.env locks/
           if git diff --staged --quiet; then
-            echo "Nothing changed - bump.sh was a no-op (all pins already current)."
+            echo "Nothing changed. bump.sh was a no-op."
           else
             git commit -m "chore(bump): resolve SHAs and regenerate lockfiles"
-            git push origin HEAD:${{ github.head_ref }}
+          fi
+
+      - name: Recheck branch and push
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REMOTE_SHA=$(git ls-remote --exit-code origin "refs/heads/$APPROVED_BRANCH" | cut -f1)
+          if [[ "$REMOTE_SHA" != "$APPROVED_SHA" ]]; then
+            echo "Refusing to push: branch moved while bump.sh was running."
+            exit 1
+          fi
+          if [[ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]]; then
+            echo "Nothing to push."
+          else
+            gh auth setup-git
+            git push origin "HEAD:refs/heads/$APPROVED_BRANCH"
           fi

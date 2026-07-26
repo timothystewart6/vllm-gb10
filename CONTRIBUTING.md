@@ -17,14 +17,34 @@ aarch64 DGX Spark** (it compiles and resolves platform-specific dependencies).
 ### Bumping a component
 
 1. Edit the relevant `_REF` line in `versions.env` (e.g. `VLLM_REF=v0.21.0`) on a branch.
-2. Open a PR. The `run-bump.yaml` workflow detects the change to `versions.env`, runs
-   `scripts/bump.sh` on the DGX Spark runner, and commits the resolved `_COMMIT` SHAs,
-   updated `GB10_BUILD`, and regenerated lockfiles back to your branch automatically.
-3. Review the diff that CI committed, then merge.
+2. Open a PR. GitHub-hosted checks validate the change without executing
+   contributor code on a persistent DGX Spark runner.
+3. A maintainer reviews an exact commit SHA. For a fork PR, the maintainer
+   copies that SHA to an upstream branch such as `integration/pr-62`.
+4. The maintainer dispatches `run-bump.yaml` from `main` with the upstream
+   branch and reviewed 40-character SHA. The workflow refuses to run if the
+   branch moved after review.
+5. Review the generated `_COMMIT` SHAs, `GB10_BUILD`, and lockfile diff, then
+   merge.
 
 You do not need to SSH into the Spark or run anything locally.
 
 **Do not edit lockfiles by hand.** They are generated outputs.
+
+### Maintainer approval flow
+
+Code from pull requests never runs automatically on the DGX Spark. Before
+manual dispatch:
+
+1. Review every changed executable file at the exact SHA, especially
+   workflows, shell scripts, Python scripts, the Dockerfile, and build inputs.
+2. Copy fork changes to an upstream integration branch without modifying them.
+3. Confirm the integration branch head equals the reviewed SHA.
+4. In Actions, select **Run bump.sh**, choose the `main` workflow ref, and
+   enter the integration branch and exact SHA.
+
+The workflow checks the SHA before execution and again before pushing. Any new
+contributor commit invalidates the approval and requires another review.
 
 ## What is and is not in scope
 

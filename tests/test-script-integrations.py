@@ -34,6 +34,7 @@ def copy_runtime(repo):
     for name in (
         "generate-pr-body.sh",
         "generate-release-notes.sh",
+        "versions_env.py",
         "versions_diff.py",
     ):
         shutil.copy2(SOURCE_ROOT / "scripts" / name, repo / "scripts" / name)

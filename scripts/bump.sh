@@ -316,6 +316,7 @@ uv pip compile \
   --python-version 3.12 \
   --index-url "${PYPI_INDEX_URL}" \
   --extra-index-url "${PYTORCH_INDEX_URL}" \
+  --extra-index-url "${FLASHINFER_INDEX_URL}" \
   --index-strategy unsafe-best-match \
   --output-file "${LOCKS}/python-build.txt" \
   "${TMP_BUILD}"
@@ -356,6 +357,7 @@ uv pip compile \
   --python-version 3.12 \
   --index-url "${PYPI_INDEX_URL}" \
   --extra-index-url "${PYTORCH_INDEX_URL}" \
+  --extra-index-url "${FLASHINFER_INDEX_URL}" \
   --index-strategy unsafe-best-match \
   --output-file "${LOCKS}/python-runtime.txt" \
   "${TMP_RUNTIME}"

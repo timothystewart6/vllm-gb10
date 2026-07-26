@@ -179,6 +179,7 @@ jobs:
             TRITON_VERSION=${{ env.TRITON_VERSION }}
             PYTORCH_INDEX_URL=${{ env.PYTORCH_INDEX_URL }}
             PYPI_INDEX_URL=${{ env.PYPI_INDEX_URL }}
+            FLASHINFER_INDEX_URL=${{ env.FLASHINFER_INDEX_URL }}
             NVSHMEM_VERSION=${{ env.NVSHMEM_VERSION }}
             TVM_FFI_VERSION=${{ env.TVM_FFI_VERSION }}
             TILELANG_VERSION=${{ env.TILELANG_VERSION }}

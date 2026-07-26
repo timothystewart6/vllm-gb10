@@ -16,6 +16,8 @@ on:
   pull_request:
     paths:
       - scripts/check-updates.sh
+      - scripts/bump.sh
+      - scripts/build-args.sh
       - scripts/generate-pr-body.sh
       - scripts/generate-release-notes.sh
       - scripts/versions_diff.py
@@ -24,7 +26,11 @@ on:
       - tests/test-release-notes-scenarios.py
       - tests/test-pr-body-generation.py
       - tests/test-check-duplicate-pr.py
+      - tests/test-package-index-contract.py
       - scripts/check-duplicate-pr.py
+      - Dockerfile
+      - versions.env
+      - .github/workflows/build-image.yaml
       - .github/workflows/monitor-upstream-releases.yaml
   workflow_dispatch:
 
@@ -57,6 +63,9 @@ jobs:
 
       - name: Run duplicate PR check test harness
         run: python3 tests/test-check-duplicate-pr.py
+
+      - name: Verify package index contract
+        run: python3 tests/test-package-index-contract.py
 
       - name: Verify output is well-formed
         run: |

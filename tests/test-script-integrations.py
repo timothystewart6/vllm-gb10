@@ -120,6 +120,30 @@ def test_pr_body_uses_worktree_and_fallback_base():
         assert "-> (missing)" in missing_lock.stdout
 
 
+def test_pr_body_supports_single_commit_shallow_checkout():
+    with tempfile.TemporaryDirectory() as directory:
+        repo = Path(directory) / "repo"
+        repo.mkdir()
+        copy_runtime(repo)
+        init_repo(repo)
+        commit_all(repo, "shallow baseline")
+
+        missing_parent = run(
+            ["git", "rev-parse", "--verify", "HEAD~1"],
+            repo,
+            check=False,
+        )
+        assert missing_parent.returncode != 0
+
+        replace_env_value(repo / "versions.env", "UV_VERSION", "99.0.0")
+        result = run(
+            ["bash", str(repo / "scripts" / "generate-pr-body.sh")],
+            Path(directory),
+        )
+        assert "**uv**:" in result.stdout
+        assert "99.0.0" in result.stdout
+
+
 def test_release_notes_compare_real_tags_and_lockfiles():
     with tempfile.TemporaryDirectory() as directory:
         repo = Path(directory) / "repo"
@@ -156,6 +180,7 @@ def test_release_notes_compare_real_tags_and_lockfiles():
 def main():
     tests = [
         test_pr_body_uses_worktree_and_fallback_base,
+        test_pr_body_supports_single_commit_shallow_checkout,
         test_release_notes_compare_real_tags_and_lockfiles,
     ]
     for test in tests:

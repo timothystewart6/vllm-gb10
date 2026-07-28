@@ -92,6 +92,33 @@ def test_guidance_is_visible_to_humans_agents_and_reviewers():
     assert anchor in read(".github/PULL_REQUEST_TEMPLATE.md")
 
 
+def test_repository_onboarding_is_visible_and_enforced():
+    guide = "docs/repository-guide.md"
+    agents = read("AGENTS.md")
+    contributing = read("CONTRIBUTING.md")
+    pull_request = read(".github/PULL_REQUEST_TEMPLATE.md")
+    bug_report = read(".github/ISSUE_TEMPLATE/bug_report.yml")
+    version_bump = read(".github/ISSUE_TEMPLATE/version_bump.yml")
+    codeowners = read(".github/CODEOWNERS")
+
+    assert guide in agents
+    assert guide in contributing
+    assert guide in read("README.md")
+    assert "/.github/ISSUE_TEMPLATE/ @timothystewart6" in codeowners
+    assert "/docs/repository-guide.md @timothystewart6" in codeowners
+    for section in (
+        "## Reasoning and evidence",
+        "## Lifecycle impact",
+        "## Security impact",
+        "## Validation",
+    ):
+        assert section in pull_request
+    for template in (bug_report, version_bump):
+        assert "open and closed issues and pull requests" in template
+        assert "id: related-work" in template
+        assert "id: preflight" in template
+
+
 def test_hosted_ci_discovers_every_python_test():
     workflow = read(".github/workflows/test-release-notes.yaml")
     assert "for test_file in tests/test-*.py" in workflow
@@ -105,6 +132,7 @@ def main():
         test_every_version_has_a_label_and_release_metadata,
         test_every_version_has_a_trusted_build_consumer,
         test_guidance_is_visible_to_humans_agents_and_reviewers,
+        test_repository_onboarding_is_visible_and_enforced,
         test_hosted_ci_discovers_every_python_test,
     ]
     for test in tests:

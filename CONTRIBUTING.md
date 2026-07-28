@@ -4,6 +4,10 @@ This repo builds and ships a reproducible vLLM Docker image for the NVIDIA DGX
 Spark (GB10 / sm_121a). Contributions are welcome, but the scope is intentionally
 narrow: keep the build working, keep the pins current, keep it reproducible.
 
+Start with [Repository guide and change reasoning](docs/repository-guide.md).
+It maps inputs, trusted automation, generated outputs, tests, publishing, and
+the evidence required before opening an issue or pull request.
+
 ## How builds work
 
 All version inputs live in [`versions.env`](versions.env). Every field that can
@@ -172,6 +176,13 @@ If the issue is upstream, please file it there directly:
 ## Opening a PR
 
 - Target `main`.
+- Search open and closed issues and pull requests before starting.
+- Explain the invariant that failed, the root cause or bounded hypothesis, and
+  every upstream and downstream stage inspected.
+- Include a regression that fails for the original reason and passes with the
+  fix. For generated changes, test the resulting repository state.
+- Complete the reasoning, lifecycle, security, and validation sections in the
+  pull request template.
 - Include the output of the smoke test (`tests/smoke-test.sh`) if you changed
   anything in the Dockerfile or build scripts.
 - Keep commits focused - one logical change per PR.

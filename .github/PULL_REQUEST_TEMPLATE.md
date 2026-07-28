@@ -5,7 +5,8 @@
 ## Checklist
 
 - [ ] This change is specific to the GB10 build or CI - not a patch to upstream vLLM, NCCL, FlashInfer, or PyTorch behavior
-- [ ] `versions.env` changes only (bump) - CI will run `bump.sh` and commit resolved SHAs and lockfiles automatically
+- [ ] `versions.env` changes follow the [input integration checklist](../CONTRIBUTING.md#adding-or-changing-a-versionsenv-input)
+- [ ] A maintainer reviewed the exact SHA before manually dispatching trusted `run-bump.yaml`
 - [ ] Dockerfile or script changes tested on DGX Spark
 - [ ] Smoke test output included below if Dockerfile or build scripts changed
 

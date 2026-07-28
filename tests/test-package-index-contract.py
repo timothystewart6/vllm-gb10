@@ -45,34 +45,34 @@ def test_quack_is_pinned_for_cutlass_dsl_compatibility():
 
     bump = read("scripts/bump.sh")
     assert "quack-kernels==${QUACK_KERNELS_VERSION}" in bump
-    assert (
-        'OLD_QUACK_KERNELS_VERSION="$(_main_get QUACK_KERNELS_VERSION || true)"'
-        in bump
-    )
-    assert (
-        '"${QUACK_KERNELS_VERSION}" != "${OLD_QUACK_KERNELS_VERSION}"'
-        in bump
-    )
 
 
-def test_random_lock_input_paths_are_normalized():
+def test_instanttensor_supports_vllm_copy_api():
+    assert env_value("INSTANTTENSOR_VERSION") == "0.1.9"
+
     bump = read("scripts/bump.sh")
-    assert bump.count('scripts/normalize-lockfile.py"') == 2
+    assert "instanttensor==${INSTANTTENSOR_VERSION}" in bump
+
+
+def test_random_lock_paths_are_normalized():
+    bump = read("scripts/bump.sh")
+    assert bump.count('scripts/normalize-lockfile.py"') == 5
     assert '"/tmp/vllm-gb10-build.in"' in bump
     assert '"/tmp/vllm-gb10-runtime.in"' in bump
-
-
-def test_generated_values_compare_against_trusted_main():
-    bump = read("scripts/bump.sh")
-    for key in (
-        "NCCL_COMMIT",
-        "VLLM_COMMIT",
-        "FLASHINFER_COMMIT",
-        "CUDA_BASE_DIGEST",
-        "GB10_BUILD",
-        "RAY_VERSION",
+    for lockfile in (
+        "python-bootstrap.txt",
+        "python-build.txt",
+        "python-runtime.txt",
     ):
-        assert f'OLD_{key}="$(_main_get {key})"' in bump
+        assert f'"locks/{lockfile}"' in bump
+
+
+def test_build_revision_comparison_uses_trusted_main_schema_roles():
+    bump = read("scripts/bump.sh")
+    assert "_MAIN_VERSIONS=" in bump
+    assert 'OLD_GB10_BUILD="$(_main_get GB10_BUILD)"' in bump
+    assert "--list-build-inputs increment" in bump
+    assert 'python3 "${REPO_ROOT}/scripts/compute-gb10-build.py"' in bump
 
 
 def main():
@@ -80,8 +80,9 @@ def main():
         test_flashinfer_index_is_an_explicit_build_input,
         test_lock_generation_and_runtime_use_the_same_indexes,
         test_quack_is_pinned_for_cutlass_dsl_compatibility,
-        test_random_lock_input_paths_are_normalized,
-        test_generated_values_compare_against_trusted_main,
+        test_instanttensor_supports_vllm_copy_api,
+        test_random_lock_paths_are_normalized,
+        test_build_revision_comparison_uses_trusted_main_schema_roles,
     ]
     for test in tests:
         test()

@@ -30,41 +30,12 @@ jobs:
           # tag lookups against real release tags.
           fetch-depth: 0
 
-      - name: Run release-notes test harness
-        run: python3 tests/test-release-notes-scenarios.py
-
-      - name: Run update-check test harness
-        run: python3 tests/test-check-updates.py
-
-      - name: Run PR body generation test harness
-        run: python3 tests/test-pr-body-generation.py
-
-      - name: Run real-script integration tests
-        run: python3 tests/test-script-integrations.py
-
-      - name: Run duplicate PR check test harness
-        run: python3 tests/test-check-duplicate-pr.py
-
-      - name: Verify package index contract
-        run: python3 tests/test-package-index-contract.py
-
-      - name: Verify CI security policy
-        run: python3 tests/test-ci-security-policy.py
-
-      - name: Verify lockfile supply-chain policy
-        run: python3 tests/test-lockfile-security.py
-
-      - name: Verify deterministic lockfile comments
-        run: python3 tests/test-lockfile-normalization.py
-
-      - name: Validate versions.env security rules
-        run: python3 tests/test-versions-env.py
-
-      - name: Validate GB10 build-number allocation
-        run: python3 tests/test-compute-gb10-build.py
-
-      - name: Validate apt input security rules
-        run: python3 tests/test-apt-inputs.py
+      - name: Run every hosted test suite
+        run: |
+          for test_file in tests/test-*.py; do
+            echo "Running ${test_file}"
+            python3 "${test_file}"
+          done
 
       - name: Verify output is well-formed
         run: |

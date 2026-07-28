@@ -20,10 +20,12 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
 
-# Determine what to diff against (origin/main or HEAD~1 as fallback)
+# Determine what to diff against. The monitor updates the working tree after a
+# shallow checkout, so HEAD is the authoritative fallback when origin/main was
+# not fetched. HEAD~1 may not exist and is not the baseline for those updates.
 BASEREF="origin/main"
 if ! git rev-parse --verify "${BASEREF}" > /dev/null 2>&1; then
-  BASEREF="HEAD~1"
+  BASEREF="HEAD"
 fi
 
 # Check if there are any changes to versions.env or lockfiles

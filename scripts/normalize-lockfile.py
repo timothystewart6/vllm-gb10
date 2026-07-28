@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Replace a generated lockfile's random input path with a stable label."""
+"""Replace one generated lockfile path with a stable label."""
 
 from __future__ import annotations
 

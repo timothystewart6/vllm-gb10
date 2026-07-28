@@ -54,11 +54,17 @@ def test_instanttensor_supports_vllm_copy_api():
     assert "instanttensor==${INSTANTTENSOR_VERSION}" in bump
 
 
-def test_random_lock_input_paths_are_normalized():
+def test_random_lock_paths_are_normalized():
     bump = read("scripts/bump.sh")
-    assert bump.count('scripts/normalize-lockfile.py"') == 2
+    assert bump.count('scripts/normalize-lockfile.py"') == 5
     assert '"/tmp/vllm-gb10-build.in"' in bump
     assert '"/tmp/vllm-gb10-runtime.in"' in bump
+    for lockfile in (
+        "python-bootstrap.txt",
+        "python-build.txt",
+        "python-runtime.txt",
+    ):
+        assert f'"locks/{lockfile}"' in bump
 
 
 def test_build_revision_comparison_uses_trusted_main_schema_roles():
@@ -75,7 +81,7 @@ def main():
         test_lock_generation_and_runtime_use_the_same_indexes,
         test_quack_is_pinned_for_cutlass_dsl_compatibility,
         test_instanttensor_supports_vllm_copy_api,
-        test_random_lock_input_paths_are_normalized,
+        test_random_lock_paths_are_normalized,
         test_build_revision_comparison_uses_trusted_main_schema_roles,
     ]
     for test in tests:

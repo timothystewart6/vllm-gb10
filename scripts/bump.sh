@@ -266,6 +266,10 @@ printf 'uv==%s\n' "${UV_VERSION}" \
       --index-url "${PYPI_INDEX_URL}" \
       --output-file "${LOCKS}/python-bootstrap.txt" \
       -
+python3 "${REPO_ROOT}/scripts/normalize-lockfile.py" \
+  "${LOCKS}/python-bootstrap.txt" \
+  "${LOCKS}/python-bootstrap.txt" \
+  "locks/python-bootstrap.txt"
 log "  Done -> ${LOCKS}/python-bootstrap.txt"
 
 # ---------------------------------------------------------------------------
@@ -346,6 +350,10 @@ python3 "${REPO_ROOT}/scripts/normalize-lockfile.py" \
   "${LOCKS}/python-build.txt" \
   "${TMP_BUILD}" \
   "/tmp/vllm-gb10-build.in"
+python3 "${REPO_ROOT}/scripts/normalize-lockfile.py" \
+  "${LOCKS}/python-build.txt" \
+  "${LOCKS}/python-build.txt" \
+  "locks/python-build.txt"
 rm -f "${TMP_BUILD}"
 trap - EXIT
 log "  Done -> ${LOCKS}/python-build.txt"
@@ -392,6 +400,10 @@ python3 "${REPO_ROOT}/scripts/normalize-lockfile.py" \
   "${LOCKS}/python-runtime.txt" \
   "${TMP_RUNTIME}" \
   "/tmp/vllm-gb10-runtime.in"
+python3 "${REPO_ROOT}/scripts/normalize-lockfile.py" \
+  "${LOCKS}/python-runtime.txt" \
+  "${LOCKS}/python-runtime.txt" \
+  "locks/python-runtime.txt"
 rm -f "${TMP_RUNTIME}"
 trap - EXIT
 log "  Done -> ${LOCKS}/python-runtime.txt"

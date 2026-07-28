@@ -62,6 +62,8 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSIONS="${REPO_ROOT}/versions.env"
+VERSIONS_TARGET="${VERSIONS}"
+VERSIONS_CANDIDATE=""
 
 DO_UPDATE=0
 DO_BUMP_APT=0
@@ -76,6 +78,19 @@ done
 if [[ "${DO_UPDATE}" -eq 1 && "${DO_BUMP_APT}" -eq 1 ]]; then
   printf '%s\n' 'Choose either --update or --bump-apt-snapshot, not both.' >&2
   exit 1
+fi
+
+cleanup() {
+  if [[ -n "${VERSIONS_CANDIDATE}" ]]; then
+    rm -f "${VERSIONS_CANDIDATE}"
+  fi
+}
+trap cleanup EXIT
+
+if [[ "${DO_UPDATE}" -eq 1 ]]; then
+  VERSIONS_CANDIDATE="$(mktemp)"
+  cp "${VERSIONS_TARGET}" "${VERSIONS_CANDIDATE}"
+  VERSIONS="${VERSIONS_CANDIDATE}"
 fi
 
 log()  { printf '[check-updates] %s\n' "$*" >&2; }
@@ -108,7 +123,25 @@ update_env() {
     return 1
   fi
   tmp="$(mktemp)"
-  sed "s|^${key}=.*|${key}=${val}|" "${VERSIONS}" > "${tmp}"
+  python3 -c '
+import sys
+
+key, value = sys.argv[1:3]
+found = False
+for line in sys.stdin:
+    if line.startswith(f"{key}="):
+        print(f"{key}={value}")
+        found = True
+    else:
+        print(line, end="")
+if not found:
+    raise SystemExit(f"missing key {key}")
+' "${key}" "${val}" < "${VERSIONS}" > "${tmp}"
+  if ! python3 "${REPO_ROOT}/scripts/versions_env.py" "${tmp}" >/dev/null; then
+    rm -f "${tmp}"
+    log "Rejected unsafe ${key} candidate from upstream."
+    return 1
+  fi
   chmod 0644 "${tmp}"
   mv "${tmp}" "${VERSIONS}"
   ENV_UPDATES=$((ENV_UPDATES + 1))
@@ -185,14 +218,14 @@ vllm_pin() {
   printf '%s\n' "${VLLM_REQS_RAW}" \
     | python3 -c "
 import re, sys
-pkg = '''$pkg'''
+pkg = sys.argv[1]
 pat = re.compile(r'^\s*' + re.escape(pkg) + r'\s*==\s*([^\s#;]+)')
 for line in sys.stdin:
     m = pat.match(line)
     if m:
         print(m.group(1))
         break
-"
+" "${pkg}"
 }
 
 report() {
@@ -221,7 +254,10 @@ VLLM_LATEST=$(gh_latest_tag "vllm-project/vllm")
 # Use semver comparison so that a pinned pre-release (e.g. v0.23.1rc0) that is
 # newer than the latest stable (e.g. v0.23.0) is reported as INFO, not UPDATE.
 # Only flag UPDATE when the stable release is genuinely ahead of our pin.
-VLLM_CMP=$(python3 -c "
+VLLM_CMP=$(MONITOR_CURRENT_VLLM="${VLLM_REF}" \
+  MONITOR_LATEST_VLLM="${VLLM_LATEST}" \
+  python3 -c "
+import os
 import re
 
 def parse(value):
@@ -232,8 +268,8 @@ def parse(value):
     stage_rank = {'a': 0, 'b': 1, 'rc': 2, None: 3}[stage]
     return (int(major), int(minor), int(patch), stage_rank, int(number or 0))
 
-cur = parse('${VLLM_REF}')
-lat = parse('${VLLM_LATEST}')
+cur = parse(os.environ['MONITOR_CURRENT_VLLM'])
+lat = parse(os.environ['MONITOR_LATEST_VLLM'])
 print('ahead' if cur >= lat else 'behind')
 " 2>/dev/null || echo 'unknown')
 if [ "${VLLM_CMP}" = "behind" ]; then
@@ -395,11 +431,12 @@ APT_SNAPSHOT_STAMP=$(grep -m1 '^deb .*snapshot.ubuntu.com' "${APT_SOURCES}" \
 if [[ -z "${APT_SNAPSHOT_STAMP}" ]]; then
   printf 'WARN    %-30s could not parse snapshot date\n' "apt snapshot"
 else
-  APT_SNAPSHOT_AGE=$(python3 -c "
+  APT_SNAPSHOT_AGE=$(python3 -c '
+import sys
 from datetime import datetime, timezone
-snap = datetime.strptime('${APT_SNAPSHOT_STAMP}', '%Y%m%dT%H%M%SZ').replace(tzinfo=timezone.utc)
+snap = datetime.strptime(sys.argv[1], "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
 print((datetime.now(timezone.utc) - snap).days)
-")
+' "${APT_SNAPSHOT_STAMP}")
   APT_SNAPSHOT_DISPLAY="${APT_SNAPSHOT_STAMP:0:4}-${APT_SNAPSHOT_STAMP:4:2}-${APT_SNAPSHOT_STAMP:6:2}"
   TODAY_STAMP=$(date -u +"%Y%m%dT000000Z")
 
@@ -425,6 +462,17 @@ fi
 # ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
+
+if [[ "${DO_UPDATE}" -eq 1 ]]; then
+  if [[ "${ENV_UPDATES}" -gt 0 ]]; then
+    chmod 0644 "${VERSIONS_CANDIDATE}"
+    mv "${VERSIONS_CANDIDATE}" "${VERSIONS_TARGET}"
+  else
+    rm -f "${VERSIONS_CANDIDATE}"
+  fi
+  VERSIONS_CANDIDATE=""
+  VERSIONS="${VERSIONS_TARGET}"
+fi
 
 echo ""
 if [ "${UPDATES}" -eq 0 ]; then

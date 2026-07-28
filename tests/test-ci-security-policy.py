@@ -10,6 +10,7 @@ WORKFLOWS = ROOT / ".github" / "workflows"
 ANY_ACTION = re.compile(r"^\s*uses:\s*([^#\s]+)@([^#\s]+)\s*$", re.MULTILINE)
 APPROVED_ACTIONS = {
     "actions/checkout": "3d3c42e5aac5ba805825da76410c181273ba90b1",
+    "actions/download-artifact": "3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
     "actions/upload-artifact": "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
     "docker/build-push-action": "53b7df96c91f9c12dcc8a07bcb9ccacbed38856a",
     "docker/login-action": "af1e73f918a031802d376d3c8bbc3fe56130a9b0",
@@ -100,6 +101,9 @@ def test_privileged_workflows_reject_untrusted_refs():
 def test_monitor_pr_creation_is_scoped_and_handles_detached_checkout():
     monitor = read(WORKFLOWS / "monitor-upstream-releases.yaml")
     workflow_header = monitor.split("\njobs:", 1)[0]
+    check_job = monitor.split("\n  check-deps:", 1)[1].split(
+        "\n  create-pr:", 1
+    )[0]
     create_pr_job = monitor.split("\n  create-pr:", 1)[1]
     create_pr_step = monitor.split("- name: Create Pull Request", 1)[1]
 
@@ -109,6 +113,17 @@ def test_monitor_pr_creation_is_scoped_and_handles_detached_checkout():
     assert "id-token: write" not in workflow_header
     assert "contents: write" in create_pr_job
     assert "pull-requests: write" in create_pr_job
+    assert "scripts/check-updates.sh --update" in check_job
+    assert "secrets." not in check_job
+    assert "actions/upload-artifact@" in check_job
+    assert "path: versions.env" in check_job
+    assert "scripts/check-updates.sh" not in create_pr_job
+    assert "actions/download-artifact@" in create_pr_job
+    assert (
+        create_pr_job.index("scripts/validate-monitor-update.py")
+        < create_pr_job.index("secrets.RELEASE_MONITOR_PAT")
+    )
+    assert "versions.env /tmp/release-monitor/versions.env" in create_pr_job
     assert "base: main" in create_pr_step
     assert "add-paths: versions.env" in create_pr_step
 
@@ -145,6 +160,7 @@ def test_sensitive_paths_have_codeowners():
         "/versions.env",
         "/locks/",
         "/scripts/",
+        "/tests/test-monitor-update-policy.py",
         "/tests/test-versions-contract.py",
     ):
         assert f"{path} @timothystewart6" in codeowners

@@ -61,6 +61,30 @@ The workflow does not sandbox arbitrary code that a maintainer has merged.
 Containing malicious code that passed review requires ephemeral or separately
 isolated GX10 runners.
 
+## Automated release monitor
+
+The release monitor treats upstream release metadata and requirements files as
+untrusted data. Processing that data happens in a read-only GitHub-hosted job
+with no repository secrets. The job uploads only a candidate `versions.env`.
+
+Pull request creation runs on a fresh GitHub-hosted runner. Before the release
+monitor PAT is available to any step, trusted code from the exact triggering
+`main` SHA checks that the candidate:
+
+- is a valid `versions.env`;
+- changes at least one monitored value;
+- changes only the release monitor's explicit key allowlist;
+- preserves every comment, line, and non-monitored value byte-for-byte.
+
+Only the validated `versions.env` is copied into the trusted checkout. The PR
+action is pinned by full commit SHA, commits only `versions.env`, and receives
+an explicit `main` base because the trusted checkout intentionally uses a
+detached exact SHA.
+
+This fresh-runner boundary is required even when the upstream parser validates
+its output. It prevents a parser defect or compromised upstream response from
+modifying a repository script and then reaching a later step that has the PAT.
+
 ## Maintainer runbook
 
 ### 1. Review the fork PR

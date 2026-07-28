@@ -6,9 +6,9 @@
 #
 #   docker buildx build $(scripts/build-args.sh) ...
 #
-# RAY_VERSION, FASTSAFETENSORS_VERSION, INSTANTTENSOR_VERSION, TILELANG_VERSION,
-# and NUMBA_VERSION are emitted as pass-through metadata (no Dockerfile ARG
-# consumes them directly; they land in build-metadata.yaml for forensics).
+# Some values are emitted as pass-through metadata even when no Dockerfile ARG
+# consumes them directly. The versions contract test requires every validated
+# versions.env key to be emitted here so new inputs cannot be silently omitted.
 #
 # SOURCE_DATE_EPOCH is read from the environment (set by CI or the caller),
 # not from versions.env, because it is derived from `git log -1 --format=%ct`.
@@ -73,6 +73,9 @@ _arg FLASHINFER_COMMIT
 _arg RAY_VERSION
 _arg FASTSAFETENSORS_VERSION
 _arg INSTANTTENSOR_VERSION
+_arg BITSANDBYTES_VERSION
+_arg ACCELERATE_VERSION
+_arg QUACK_KERNELS_VERSION
 
 # GPU architecture
 _arg TORCH_CUDA_ARCH_LIST

@@ -33,6 +33,52 @@ You do not need to SSH into the Spark or run anything locally.
 
 **Do not edit lockfiles by hand.** They are generated outputs.
 
+### Adding or changing a versions.env input
+
+`versions.env` is an integration contract, not only a list of values. Adding,
+removing, or renaming a key affects validation, image revisioning, lock
+generation, build arguments, metadata, release notes, and tests.
+
+Complete this checklist in the same change:
+
+1. Add the key to `versions.env` and to the strict schema in
+   `scripts/versions_env.py`. Add an exact-value allowlist or specialized
+   validation when a generic numeric version is not sufficient.
+2. Confirm its `GB10_BUILD` behavior. The schema classifies every key as a
+   release-ref reset input, a reviewed resolved-commit input, the build counter,
+   or an ordinary increment input. New keys fail closed into increment
+   behavior.
+3. Emit the key from `scripts/build-args.sh`, even when it is metadata-only.
+4. Add the key to the trusted consumer that uses it, such as a lock seed in
+   `scripts/bump.sh`, a Docker build stage, or an update lookup in
+   `scripts/check-updates.sh`.
+5. Add a human-readable label in `scripts/versions_diff.py` and include numeric
+   version inputs in `scripts/render-metadata.sh`. Update release-note output
+   when the component belongs in the published component table.
+6. Update test fixtures and add behavior coverage for the consumer. Do not add
+   a one-off test that only checks for a string when the behavior can be
+   derived from the schema.
+7. Run every hosted test with `for test_file in tests/test-*.py; do python3
+   "$test_file"; done`, plus shell syntax, ShellCheck, actionlint, and
+   `git diff --check`.
+8. Review the generated `versions.env` and lockfile changes before merge.
+
+`tests/test-versions-contract.py` enforces the schema partition, build-argument
+coverage, trusted consumer coverage, display labels, release metadata,
+documentation links, and automatic test discovery. Adding a schema key without
+completing those integration points fails hosted CI.
+
+The trusted-runner model creates one important bootstrap rule. A pull request's
+modified `bump.sh` does not run on the persistent Spark. `run-bump.yaml` runs
+the version from trusted `main` and imports only reviewed declarative inputs.
+If one change needs to teach trusted automation about a new key, merge that
+automation and schema change first. Change the new input in a follow-up pull
+request after the updated `bump.sh` is available on trusted `main`. An explicit
+branch `GB10_BUILD` value does not override trusted build-number policy.
+
+Never weaken the trusted-main execution boundary to make a new variable easier
+to bootstrap.
+
 ### Maintainer approval flow
 
 Contributor code is not executed by `run-bump.yaml`. The workflow imports only

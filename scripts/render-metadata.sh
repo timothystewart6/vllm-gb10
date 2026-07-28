@@ -101,6 +101,9 @@ runtime_seeds:
   ray: "${RAY_VERSION}"
   fastsafetensors: "${FASTSAFETENSORS_VERSION}"
   instanttensor: "${INSTANTTENSOR_VERSION}"
+  bitsandbytes: "${BITSANDBYTES_VERSION}"
+  accelerate: "${ACCELERATE_VERSION}"
+  quack_kernels: "${QUACK_KERNELS_VERSION}"
 
 arch:
   torch_cuda_arch_list: "${TORCH_CUDA_ARCH_LIST}"

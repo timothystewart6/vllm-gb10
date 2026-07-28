@@ -112,19 +112,24 @@ def test_security_policy_runs_for_every_pull_request():
     pull_request_trigger = workflow.split("workflow_dispatch:", 1)[0]
     assert "pull_request:" in pull_request_trigger
     assert "paths:" not in pull_request_trigger
-    assert "python3 tests/test-ci-security-policy.py" in workflow
+    assert "for test_file in tests/test-*.py" in workflow
+    assert 'python3 "${test_file}"' in workflow
 
 
 def test_sensitive_paths_have_codeowners():
     codeowners = read(ROOT / ".github" / "CODEOWNERS")
     for path in (
         "/.github/CODEOWNERS",
+        "/.github/PULL_REQUEST_TEMPLATE.md",
         "/.github/workflows/",
+        "/AGENTS.md",
+        "/CONTRIBUTING.md",
         "/Dockerfile",
         "/docs/contributor-ci-security.md",
         "/versions.env",
         "/locks/",
         "/scripts/",
+        "/tests/test-versions-contract.py",
     ):
         assert f"{path} @timothystewart6" in codeowners
 

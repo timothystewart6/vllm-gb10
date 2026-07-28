@@ -47,6 +47,21 @@ VERSION_KEYS = EXPECTED_KEYS - {
     *COMMIT_KEYS, *REF_KEYS, *EXACT_VALUES.keys(),
 }
 
+# Every build input has exactly one GB10_BUILD role. VLLM_REF resets the image
+# series, VLLM_COMMIT requires reviewed ref-resolution policy, GB10_BUILD is the
+# counter itself, and every other input increments the counter. Keep the
+# increment role derived from EXPECTED_KEYS so new keys fail closed into build
+# revision accounting.
+BUILD_COUNTER_KEY = "GB10_BUILD"
+BUILD_RESET_INPUT_KEYS = {"VLLM_REF"}
+REVIEWED_RESOLUTION_INPUT_KEYS = {"VLLM_COMMIT"}
+BUILD_INCREMENT_INPUT_KEYS = (
+    EXPECTED_KEYS
+    - BUILD_RESET_INPUT_KEYS
+    - REVIEWED_RESOLUTION_INPUT_KEYS
+    - {BUILD_COUNTER_KEY}
+)
+
 
 class VersionsEnvError(ValueError):
     """Raised when versions.env is not safe declarative data."""
@@ -111,8 +126,16 @@ def parse_versions_env(text: str) -> dict[str, str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--list-build-inputs",
+        choices=("increment",),
+        help="print the schema keys for one GB10_BUILD change role",
+    )
     parser.add_argument("path", nargs="?", default="versions.env", type=Path)
     args = parser.parse_args()
+    if args.list_build_inputs:
+        print("\n".join(sorted(BUILD_INCREMENT_INPUT_KEYS)))
+        return 0
     try:
         parse_versions_env(args.path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, VersionsEnvError) as error:

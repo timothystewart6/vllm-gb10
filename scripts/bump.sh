@@ -66,11 +66,8 @@ _MAIN_VERSIONS="$(git show origin/main:versions.env 2>/dev/null \
   || cat "${VERSIONS}")"
 _main_get() { printf '%s\n' "${_MAIN_VERSIONS}" | grep "^$1=" | head -1 | cut -d= -f2-; }
 
-OLD_NCCL_COMMIT="$(_main_get NCCL_COMMIT)"
 OLD_VLLM_REF="$(_main_get VLLM_REF)"
 OLD_VLLM_COMMIT="$(_main_get VLLM_COMMIT)"
-OLD_FLASHINFER_COMMIT="$(_main_get FLASHINFER_COMMIT)"
-OLD_CUDA_BASE_DIGEST="$(_main_get CUDA_BASE_DIGEST)"
 OLD_GB10_BUILD="$(_main_get GB10_BUILD)"
 
 # Snapshot the Dockerfile hash from origin/main (or the previous commit)
@@ -87,18 +84,8 @@ OLD_APT_SOURCES_HASH="$(git show origin/main:locks/apt-sources.list 2>/dev/null 
   || echo 'UNSET')"
 APT_SOURCES_HASH="$(sha256sum "${REPO_ROOT}/locks/apt-sources.list" | awk '{print $1}')"
 
-# For manually-set _VERSION fields (UV_VERSION, TORCH_VERSION, etc.), the PR
-# branch already has the new value in versions.env before bump.sh runs - so
-# reading from the branch gives OLD == NEW and no change is detected. Instead
-# we read those fields from origin/main (the merge target) so that any version
-# bump introduced by the PR is correctly detected and GB10_BUILD is incremented.
+# Ray is resolved automatically below. Keep its trusted-main value for logging.
 OLD_RAY_VERSION="$(_main_get RAY_VERSION)"
-OLD_UV_VERSION="$(_main_get UV_VERSION)"
-OLD_TORCH_VERSION="$(_main_get TORCH_VERSION)"
-OLD_TORCHVISION_VERSION="$(_main_get TORCHVISION_VERSION)"
-OLD_INSTANTTENSOR_VERSION="$(_main_get INSTANTTENSOR_VERSION)"
-# This key may be new in the PR and therefore absent from origin/main.
-OLD_QUACK_KERNELS_VERSION="$(_main_get QUACK_KERNELS_VERSION || true)"
 
 # ---------------------------------------------------------------------------
 # 3. Resolve git commit SHAs via ls-remote (no auth needed for public repos)
@@ -178,20 +165,23 @@ log "  CUDA_BASE_DIGEST=${CUDA_BASE_DIGEST}"
 # ---------------------------------------------------------------------------
 # 5. Compute GB10_BUILD
 # Rule: reset to 0 when VLLM_REF changes.
-#       Increment by 1 when any other pinned input changes with the same VLLM_REF,
-#       including when upstream moves an existing tag to a different commit.
+#       Require explicit review when the same ref resolves to a new commit.
+#       Increment by 1 when any other build input changes with the same VLLM_REF.
 # ---------------------------------------------------------------------------
 OTHER_INPUT_CHANGED=0
-if [[ "${NCCL_COMMIT}"           != "${OLD_NCCL_COMMIT}"           ||
-      "${FLASHINFER_COMMIT}"     != "${OLD_FLASHINFER_COMMIT}"     ||
-      "${CUDA_BASE_DIGEST}"      != "${OLD_CUDA_BASE_DIGEST}"      ||
-      "${RAY_VERSION}"           != "${OLD_RAY_VERSION}"           ||
-      "${UV_VERSION}"            != "${OLD_UV_VERSION}"            ||
-      "${TORCH_VERSION}"         != "${OLD_TORCH_VERSION}"         ||
-      "${TORCHVISION_VERSION}"   != "${OLD_TORCHVISION_VERSION}"   ||
-      "${QUACK_KERNELS_VERSION}" != "${OLD_QUACK_KERNELS_VERSION}" ||
-      "${DOCKERFILE_HASH}"       != "${OLD_DOCKERFILE_HASH}"       ||
-      "${APT_SOURCES_HASH}"      != "${OLD_APT_SOURCES_HASH}" ]]; then
+while IFS= read -r key; do
+  old_value="$(_main_get "${key}" || true)"
+  current_value="${!key}"
+  if [[ "${current_value}" != "${old_value}" ]]; then
+    log "Build increment input changed: ${key}"
+    OTHER_INPUT_CHANGED=1
+  fi
+done < <(
+  python3 "${REPO_ROOT}/scripts/versions_env.py" --list-build-inputs increment
+)
+
+if [[ "${DOCKERFILE_HASH}" != "${OLD_DOCKERFILE_HASH}" ||
+      "${APT_SOURCES_HASH}" != "${OLD_APT_SOURCES_HASH}" ]]; then
   OTHER_INPUT_CHANGED=1
 fi
 

@@ -97,6 +97,12 @@ def test_privileged_workflows_reject_untrusted_refs():
     assert "persist-credentials: false" in release
 
 
+def test_monitor_pr_creation_names_detached_checkout_base():
+    monitor = read(WORKFLOWS / "monitor-upstream-releases.yaml")
+    create_pr_step = monitor.split("- name: Create Pull Request", 1)[1]
+    assert "base: main" in create_pr_step
+
+
 def test_pr_workflows_are_read_only_and_secret_free():
     for path in WORKFLOWS.glob("*.yaml"):
         workflow = read(path)
@@ -153,6 +159,7 @@ def main():
         test_bump_workflow_preserves_approval_boundary,
         test_trusted_builds_checkout_the_exact_event_sha,
         test_privileged_workflows_reject_untrusted_refs,
+        test_monitor_pr_creation_names_detached_checkout_base,
         test_pr_workflows_are_read_only_and_secret_free,
         test_security_policy_runs_for_every_pull_request,
         test_sensitive_paths_have_codeowners,

@@ -112,5 +112,6 @@ jobs:
           commit-message: 'chore(deps): bump upstream dependencies'
           title: 'chore(deps): bump upstream dependencies'
           body-path: /tmp/pr-body.md
+          base: main
           branch: deps/bump-${{ github.run_number }}
           delete-branch: true

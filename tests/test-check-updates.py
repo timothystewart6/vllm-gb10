@@ -22,7 +22,9 @@ if os.environ.get("FAKE_FAIL_ALL") == "1":
 if "raw.githubusercontent.com" in url:
     if os.environ.get("FAKE_FAIL_RAW") == "1":
         sys.exit(22)
-    if "/v0.26.0/" in url and os.environ.get("FAKE_CURRENT_REQUIREMENTS") != "1":
+    if os.environ.get("FAKE_REQUIREMENTS"):
+        print(os.environ["FAKE_REQUIREMENTS"])
+    elif "/v0.26.0/" in url and os.environ.get("FAKE_CURRENT_REQUIREMENTS") != "1":
         print("""torch==9.9.0
 torchvision==9.8.0
 torchaudio==9.7.0
@@ -41,9 +43,9 @@ flashinfer-python==0.6.14""")
 elif "vllm-project/vllm/releases/latest" in url:
     print(json.dumps({"tag_name": os.environ.get("FAKE_VLLM_TAG", "v0.26.0")}))
 elif "NVIDIA/nccl/releases/latest" in url:
-    print(json.dumps({"tag_name": "v2.30.7-1"}))
+    print(json.dumps({"tag_name": os.environ.get("FAKE_NCCL_TAG", "v2.30.7-1")}))
 elif "astral-sh/uv/releases/latest" in url:
-    print(json.dumps({"tag_name": "0.11.32"}))
+    print(json.dumps({"tag_name": os.environ.get("FAKE_UV_TAG", "0.11.32")}))
 elif "flashinfer-ai/flashinfer/releases/latest" in url:
     print(json.dumps({"tag_name": "v0.6.13"}))
 elif "/pypi/triton/json" in url:
@@ -68,6 +70,11 @@ def setup_case(directory):
     (root / "scripts").mkdir(parents=True)
     (root / "locks").mkdir()
     shutil.copy2(SOURCE_ROOT / "scripts" / "check-updates.sh", root / "scripts")
+    shutil.copy2(
+        SOURCE_ROOT / "scripts" / "validate-monitor-update.py",
+        root / "scripts",
+    )
+    shutil.copy2(SOURCE_ROOT / "scripts" / "versions_env.py", root / "scripts")
     shutil.copy2(SOURCE_ROOT / "versions.env", root / "versions.env")
     shutil.copy2(
         SOURCE_ROOT / "locks" / "apt-sources.list",
@@ -131,6 +138,31 @@ def test_dry_run_does_not_write_versions():
         assert (root / "versions.env").read_bytes() == before
 
 
+def test_valid_update_crosses_fresh_runner_policy():
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory)
+        base = Path(directory) / "trusted-versions.env"
+        base.write_bytes((root / "versions.env").read_bytes())
+
+        result = run_check(root, env, "--update")
+        assert result.returncode == 0, result.stderr
+
+        validation = subprocess.run(
+            [
+                "python3",
+                str(root / "scripts" / "validate-monitor-update.py"),
+                str(base),
+                str(root / "versions.env"),
+            ],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert validation.returncode == 0, validation.stderr
+        assert "Validated release monitor changes" in validation.stdout
+
+
 def test_current_stack_reports_no_updates():
     with tempfile.TemporaryDirectory() as directory:
         root, env = setup_case(directory)
@@ -192,6 +224,58 @@ def test_invalid_vllm_release_tag_is_fatal():
         assert "Could not compare vLLM versions" in result.stderr
 
 
+def test_vllm_release_tag_cannot_inject_python():
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory)
+        marker = Path(directory) / "python-injection-marker"
+        env["ATTACK_MARKER"] = str(marker)
+        env["FAKE_VLLM_TAG"] = (
+            "v0.26.1');__import__('pathlib').Path("
+            "__import__('os').environ['ATTACK_MARKER']).write_text('owned');#"
+        )
+        before = (root / "versions.env").read_bytes()
+
+        result = run_check(root, env, "--update")
+
+        assert result.returncode != 0
+        assert not marker.exists()
+        assert (root / "versions.env").read_bytes() == before
+
+
+def test_release_tag_cannot_inject_sed_commands():
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory)
+        marker = Path(directory) / "sed-injection-marker"
+        env["FAKE_NCCL_TAG"] = f"v2.30.8-1|w {marker}"
+        before = (root / "versions.env").read_bytes()
+
+        result = run_check(root, env, "--update")
+
+        assert result.returncode != 0
+        assert "Rejected unsafe NCCL_REF candidate" in result.stderr
+        assert not marker.exists()
+        assert (root / "versions.env").read_bytes() == before
+
+
+def test_requirement_value_metacharacters_are_rejected():
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory)
+        env["FAKE_REQUIREMENTS"] = """torch==9.9.0
+torchvision==9.8.0
+torchaudio==9.7.0
+apache-tvm-ffi==9.6.0
+tilelang==9.5.0|e
+numba==9.4.0
+flashinfer-python==9.3.0"""
+        before = (root / "versions.env").read_bytes()
+
+        result = run_check(root, env, "--update")
+
+        assert result.returncode != 0
+        assert "Rejected unsafe TILELANG_VERSION candidate" in result.stderr
+        assert (root / "versions.env").read_bytes() == before
+
+
 def test_upstream_failure_is_fatal():
     with tempfile.TemporaryDirectory() as directory:
         root, env = setup_case(directory)
@@ -212,11 +296,15 @@ def main():
     tests = [
         test_target_vllm_requirements_are_applied,
         test_dry_run_does_not_write_versions,
+        test_valid_update_crosses_fresh_runner_policy,
         test_current_stack_reports_no_updates,
         test_newer_prerelease_remains_the_dependency_target,
         test_apt_snapshot_bump_only_updates_snapshot,
         test_requirement_fetch_failure_is_fatal,
         test_invalid_vllm_release_tag_is_fatal,
+        test_vllm_release_tag_cannot_inject_python,
+        test_release_tag_cannot_inject_sed_commands,
+        test_requirement_value_metacharacters_are_rejected,
         test_upstream_failure_is_fatal,
         test_mutating_modes_are_mutually_exclusive,
     ]

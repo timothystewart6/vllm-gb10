@@ -363,6 +363,14 @@ if __name__ == "__main__":
         'exit "$result"' in workflow,
         "Workflow must fail instead of skipping when the duplicate check errors",
     )
+    check(
+        "group: monitor-upstream-releases" in workflow,
+        "Workflow must serialize monitor runs to prevent duplicate PR races",
+    )
+    check(
+        "cancel-in-progress: false" in workflow,
+        "Workflow must let the active monitor run finish before starting another",
+    )
 
     print(f"FAIL: {failed}")
     if failed:

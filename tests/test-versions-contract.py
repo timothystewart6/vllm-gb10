@@ -122,12 +122,16 @@ def test_repository_onboarding_is_visible_and_enforced():
 def test_agent_instructions_have_one_canonical_source():
     agents = read("AGENTS.md")
     claude = read("CLAUDE.md")
+    copilot = read(".github/copilot-instructions.md")
     codeowners = read(".github/CODEOWNERS")
 
     assert "canonical repository instruction source" in agents
     assert claude.startswith("@AGENTS.md\n")
     assert len(claude.encode("utf-8")) < 512
+    assert "[AGENTS.md](../AGENTS.md)" in copilot
+    assert len(copilot.encode("utf-8")) < 512
     assert "/CLAUDE.md @timothystewart6" in codeowners
+    assert "/.github/copilot-instructions.md @timothystewart6" in codeowners
 
 
 def test_hosted_ci_discovers_every_python_test():

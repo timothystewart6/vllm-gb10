@@ -1,8 +1,10 @@
 # Repository Agent Instructions
 
-`AGENTS.md` is the canonical repository instruction source. `CLAUDE.md` is a
-compatibility shim that imports this file. Keep shared instructions here and
-do not duplicate them in tool-specific files.
+`AGENTS.md` is the canonical repository instruction source. Codex and supported
+GitHub Copilot agent and review surfaces read it directly. `CLAUDE.md` imports
+it, and `.github/copilot-instructions.md` points Copilot surfaces here. Keep
+shared instructions in this file and do not duplicate them in tool-specific
+files.
 
 ## Required repository onboarding
 

@@ -9,9 +9,13 @@ the generated repository state, and each downstream consumer.
 
 `AGENTS.md` is the single source of shared repository instructions.
 `CLAUDE.md` imports it for Claude Code compatibility and must not repeat its
-content. Put instructions that apply to every coding agent in `AGENTS.md`.
-Add tool-specific text only when another agent cannot follow the shared rule,
-and keep that exception in the importing compatibility file.
+content. Codex reads `AGENTS.md` directly. GitHub Copilot coding agent and
+supported review and chat surfaces also read it directly, while
+`.github/copilot-instructions.md` provides a minimal pointer for Copilot
+surfaces that require that filename. Put instructions that apply to every
+coding agent in `AGENTS.md`. Add tool-specific text only when another agent
+cannot follow the shared rule, and keep that exception in its compatibility
+file.
 
 ## Repository map
 

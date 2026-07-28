@@ -160,7 +160,9 @@ def test_sensitive_paths_have_codeowners():
         "/versions.env",
         "/locks/",
         "/scripts/",
+        "/tests/test-monitor-lifecycle.py",
         "/tests/test-monitor-update-policy.py",
+        "/tests/test-update-versions-env.py",
         "/tests/test-versions-contract.py",
     ):
         assert f"{path} @timothystewart6" in codeowners

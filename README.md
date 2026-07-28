@@ -93,7 +93,9 @@ CI also triggers on changes to `Dockerfile`, `locks/`, `scripts/`, and
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Security issues: [SECURITY.md](SECURITY.md).
+Start with the [repository guide](docs/repository-guide.md), then follow
+[CONTRIBUTING.md](CONTRIBUTING.md). Security issues:
+[SECURITY.md](SECURITY.md).
 
 ## License
 

@@ -14,6 +14,10 @@ body:
         [vllm-project/vllm](https://github.com/vllm-project/vllm/issues) instead.
         Open here only if the issue is specific to this image or the GB10 build.
 
+        Search open and closed issues and pull requests before filing. Include
+        the exact release, commit, or Actions run and enough evidence to
+        distinguish repository behavior from an upstream failure.
+
   - type: input
     id: image-tag
     attributes:
@@ -48,6 +52,21 @@ body:
       required: true
 
   - type: textarea
+    id: expected-actual
+    attributes:
+      label: Expected and actual behavior
+      description: State the invariant that failed, what should have happened, and what happened instead.
+    validations:
+      required: true
+
+  - type: input
+    id: related-work
+    attributes:
+      label: Related issues, pull requests, or Actions run
+      description: Link related open or closed work and the failing workflow run when applicable.
+      placeholder: "https://github.com/timothystewart6/vllm-gb10/actions/runs/..."
+
+  - type: textarea
     id: logs
     attributes:
       label: Relevant logs or error output
@@ -58,3 +77,13 @@ body:
     attributes:
       label: DGX Spark firmware version
       placeholder: "e.g. 1.2.3"
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched open and closed issues and pull requests.
+          required: true
+        - label: I confirmed this is specific to this image, GB10 build, or repository automation.
+          required: true

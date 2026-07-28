@@ -112,38 +112,20 @@ UPDATES=0
 ENV_UPDATES=0
 
 # ---------------------------------------------------------------------------
-# sed -i is not portable between macOS and Linux. Use a temp-file swap.
+# Pass upstream values as data to the shared atomic schema-validating writer.
 # ---------------------------------------------------------------------------
 update_env() {
   local key="$1"
   local val="$2"
-  local tmp
   if ! grep -q "^${key}=" "${VERSIONS}"; then
     log "Cannot update missing key ${key} in versions.env."
     return 1
   fi
-  tmp="$(mktemp)"
-  python3 -c '
-import sys
-
-key, value = sys.argv[1:3]
-found = False
-for line in sys.stdin:
-    if line.startswith(f"{key}="):
-        print(f"{key}={value}")
-        found = True
-    else:
-        print(line, end="")
-if not found:
-    raise SystemExit(f"missing key {key}")
-' "${key}" "${val}" < "${VERSIONS}" > "${tmp}"
-  if ! python3 "${REPO_ROOT}/scripts/versions_env.py" "${tmp}" >/dev/null; then
-    rm -f "${tmp}"
+  if ! python3 "${REPO_ROOT}/scripts/update-versions-env.py" \
+      "${VERSIONS}" "${key}=${val}"; then
     log "Rejected unsafe ${key} candidate from upstream."
     return 1
   fi
-  chmod 0644 "${tmp}"
-  mv "${tmp}" "${VERSIONS}"
   ENV_UPDATES=$((ENV_UPDATES + 1))
   log "  updated ${key}=${val}"
 }

@@ -2,6 +2,13 @@ name: Version bump request
 description: Request a newer version of vLLM, PyTorch, NCCL, FlashInfer, or another component
 labels: ["bump"]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Search open and closed issues, pull requests, and recent monitor runs
+        before filing. Link the upstream release and note compatibility or
+        migration concerns that could affect generation, build, or runtime.
+
   - type: dropdown
     id: component
     attributes:
@@ -39,9 +46,27 @@ body:
     attributes:
       label: Upstream release link
       placeholder: "https://github.com/vllm-project/vllm/releases/tag/v0.21.0"
+    validations:
+      required: true
+
+  - type: input
+    id: related-work
+    attributes:
+      label: Related issue, pull request, or monitor run
+      description: Link existing work so this request does not duplicate it.
 
   - type: textarea
     id: notes
     attributes:
       label: Notes
       description: Anything relevant - breaking changes, GB10-specific concerns, etc.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched open and closed issues and pull requests.
+          required: true
+        - label: I checked recent Monitor Upstream Releases runs.
+          required: true

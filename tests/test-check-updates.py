@@ -1,15 +1,42 @@
 #!/usr/bin/env python3
 """Tests for check-updates.sh using deterministic mocked upstream APIs."""
 
+import importlib.util
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
 
 SOURCE_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(SOURCE_ROOT / "scripts"))
+MONITOR_POLICY_SPEC = importlib.util.spec_from_file_location(
+    "validate_monitor_update",
+    SOURCE_ROOT / "scripts" / "validate-monitor-update.py",
+)
+MONITOR_POLICY = importlib.util.module_from_spec(MONITOR_POLICY_SPEC)
+assert MONITOR_POLICY_SPEC.loader is not None
+MONITOR_POLICY_SPEC.loader.exec_module(MONITOR_POLICY)
+
+MONITOR_FIXTURE_BASELINE = {
+    "CUDA_BASE_DIGEST": (
+        "sha256:a5b6256e470196fc1d5f8f62139d57d3662867746dfe1cb"
+        "352d7652024047020"
+    ),
+    "FLASHINFER_REF": "v0.6.14",
+    "NCCL_REF": "v2.30.7-1",
+    "NUMBA_VERSION": "0.65.0",
+    "TILELANG_VERSION": "0.1.9",
+    "TORCHAUDIO_VERSION": "2.11.0",
+    "TORCHVISION_VERSION": "0.26.0",
+    "TORCH_VERSION": "2.11.0",
+    "TVM_FFI_VERSION": "0.1.10",
+    "UV_VERSION": "0.11.32",
+    "VLLM_REF": "v0.26.0",
+}
 
 FAKE_CURL = r'''#!/usr/bin/env python3
 import json
@@ -65,7 +92,18 @@ else:
 '''
 
 
-def setup_case(directory):
+def write_monitor_fixture_baseline(path):
+    text = path.read_text(encoding="utf-8")
+    current_values = parse_env(path)
+    assert set(MONITOR_FIXTURE_BASELINE) == MONITOR_POLICY.ALLOWED_UPDATE_KEYS
+    for key, value in MONITOR_FIXTURE_BASELINE.items():
+        current = f"{key}={current_values[key]}"
+        assert current in text
+        text = text.replace(current, f"{key}={value}", 1)
+    path.write_text(text, encoding="utf-8")
+
+
+def setup_case(directory, source_versions=None):
     root = Path(directory) / "repo"
     (root / "scripts").mkdir(parents=True)
     (root / "locks").mkdir()
@@ -75,7 +113,12 @@ def setup_case(directory):
         root / "scripts",
     )
     shutil.copy2(SOURCE_ROOT / "scripts" / "versions_env.py", root / "scripts")
-    shutil.copy2(SOURCE_ROOT / "versions.env", root / "versions.env")
+    versions = root / "versions.env"
+    if source_versions is None:
+        shutil.copy2(SOURCE_ROOT / "versions.env", versions)
+    else:
+        versions.write_text(source_versions, encoding="utf-8")
+    write_monitor_fixture_baseline(versions)
     shutil.copy2(
         SOURCE_ROOT / "locks" / "apt-sources.list",
         root / "locks" / "apt-sources.list",
@@ -125,6 +168,26 @@ def test_target_vllm_requirements_are_applied():
         assert values["TILELANG_VERSION"] == "9.5.0"
         assert values["NUMBA_VERSION"] == "9.4.0"
         assert (root / "versions.env").stat().st_mode & 0o777 == 0o644
+        assert "7 component(s) updated in versions.env" in result.stdout
+
+
+def test_repository_version_drift_does_not_change_fixture_results():
+    with tempfile.TemporaryDirectory() as directory:
+        source_versions = (SOURCE_ROOT / "versions.env").read_text(
+            encoding="utf-8"
+        )
+        current_uv = parse_env(SOURCE_ROOT / "versions.env")["UV_VERSION"]
+        source_versions = source_versions.replace(
+            f"UV_VERSION={current_uv}",
+            "UV_VERSION=0.12.0",
+            1,
+        )
+        root, env = setup_case(directory, source_versions)
+
+        assert parse_env(root / "versions.env")["UV_VERSION"] == "0.11.32"
+        result = run_check(root, env, "--update")
+
+        assert result.returncode == 0, result.stderr
         assert "7 component(s) updated in versions.env" in result.stdout
 
 
@@ -295,6 +358,7 @@ def test_mutating_modes_are_mutually_exclusive():
 def main():
     tests = [
         test_target_vllm_requirements_are_applied,
+        test_repository_version_drift_does_not_change_fixture_results,
         test_dry_run_does_not_write_versions,
         test_valid_update_crosses_fresh_runner_policy,
         test_current_stack_reports_no_updates,

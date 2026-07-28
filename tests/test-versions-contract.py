@@ -119,6 +119,17 @@ def test_repository_onboarding_is_visible_and_enforced():
         assert "id: preflight" in template
 
 
+def test_agent_instructions_have_one_canonical_source():
+    agents = read("AGENTS.md")
+    claude = read("CLAUDE.md")
+    codeowners = read(".github/CODEOWNERS")
+
+    assert "canonical repository instruction source" in agents
+    assert claude.startswith("@AGENTS.md\n")
+    assert len(claude.encode("utf-8")) < 512
+    assert "/CLAUDE.md @timothystewart6" in codeowners
+
+
 def test_hosted_ci_discovers_every_python_test():
     workflow = read(".github/workflows/test-release-notes.yaml")
     assert "for test_file in tests/test-*.py" in workflow
@@ -133,6 +144,7 @@ def main():
         test_every_version_has_a_trusted_build_consumer,
         test_guidance_is_visible_to_humans_agents_and_reviewers,
         test_repository_onboarding_is_visible_and_enforced,
+        test_agent_instructions_have_one_canonical_source,
         test_hosted_ci_discovers_every_python_test,
     ]
     for test in tests:

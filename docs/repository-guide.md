@@ -5,6 +5,14 @@ DGX Spark with GB10. Its automation is a pipeline, so a change is not complete
 when one script or workflow step works. Review the input, every transformation,
 the generated repository state, and each downstream consumer.
 
+## Agent instruction source
+
+`AGENTS.md` is the single source of shared repository instructions.
+`CLAUDE.md` imports it for Claude Code compatibility and must not repeat its
+content. Put instructions that apply to every coding agent in `AGENTS.md`.
+Add tool-specific text only when another agent cannot follow the shared rule,
+and keep that exception in the importing compatibility file.
+
 ## Repository map
 
 | Layer | Source of truth | Purpose |

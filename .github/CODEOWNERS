@@ -5,6 +5,7 @@
 /.github/dependabot.yml @timothystewart6
 /.github/workflows/ @timothystewart6
 /AGENTS.md @timothystewart6
+/CLAUDE.md @timothystewart6
 /CONTRIBUTING.md @timothystewart6
 /Dockerfile @timothystewart6
 /docs/contributor-ci-security.md @timothystewart6

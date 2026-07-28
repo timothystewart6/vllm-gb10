@@ -1,5 +1,9 @@
 # Repository Agent Instructions
 
+`AGENTS.md` is the canonical repository instruction source. `CLAUDE.md` is a
+compatibility shim that imports this file. Keep shared instructions here and
+do not duplicate them in tool-specific files.
+
 ## Required repository onboarding
 
 Before opening an issue, editing code, or opening a pull request:

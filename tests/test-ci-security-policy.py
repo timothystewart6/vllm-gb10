@@ -70,6 +70,11 @@ def test_bump_workflow_preserves_approval_boundary():
     assert workflow.count("git ls-remote --exit-code origin") == 2
     assert "git checkout --detach \"$APPROVED_SHA\"" in workflow
     assert workflow.count("run: bash scripts/bump.sh") == 1
+    assert workflow.count("core.hooksPath=/dev/null") == 2
+    assert (
+        'git -c core.hooksPath=/dev/null \\\n'
+        '              push origin "HEAD:refs/heads/$APPROVED_BRANCH"'
+    ) in workflow
     assert "gh auth setup-git" not in workflow
     assert "x-access-token:${GH_TOKEN}" not in workflow
 

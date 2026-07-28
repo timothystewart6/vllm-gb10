@@ -189,7 +189,8 @@ jobs:
               'esac' > "$ASKPASS"
             chmod 700 "$ASKPASS"
             GIT_ASKPASS="$ASKPASS" GIT_TERMINAL_PROMPT=0 \
-              git push origin "HEAD:refs/heads/$APPROVED_BRANCH"
+              git -c core.hooksPath=/dev/null \
+              push origin "HEAD:refs/heads/$APPROVED_BRANCH"
           fi
 
       - name: Remove trusted generator worktree

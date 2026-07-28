@@ -60,6 +60,9 @@ jobs:
       - name: Validate versions.env security rules
         run: python3 tests/test-versions-env.py
 
+      - name: Validate GB10 build-number allocation
+        run: python3 tests/test-compute-gb10-build.py
+
       - name: Validate apt input security rules
         run: python3 tests/test-apt-inputs.py
 

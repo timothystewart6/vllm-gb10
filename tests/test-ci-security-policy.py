@@ -62,12 +62,21 @@ def test_bump_workflow_preserves_approval_boundary():
         "versions.env|locks/*",
         "find locks -type l",
         "core.hooksPath=/dev/null",
+        'GIT_ASKPASS="$ASKPASS" GIT_TERMINAL_PROMPT=0',
+        'trap \'rm -f "$ASKPASS"\' EXIT',
     )
     for control in required_controls:
         assert control in workflow, f"run-bump.yaml lost control: {control}"
     assert workflow.count("git ls-remote --exit-code origin") == 2
     assert "git checkout --detach \"$APPROVED_SHA\"" in workflow
     assert workflow.count("run: bash scripts/bump.sh") == 1
+    assert workflow.count("core.hooksPath=/dev/null") == 2
+    assert (
+        'git -c core.hooksPath=/dev/null \\\n'
+        '              push origin "HEAD:refs/heads/$APPROVED_BRANCH"'
+    ) in workflow
+    assert "gh auth setup-git" not in workflow
+    assert "x-access-token:${GH_TOKEN}" not in workflow
 
 
 def test_trusted_builds_checkout_the_exact_event_sha():

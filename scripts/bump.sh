@@ -56,6 +56,8 @@ log "  VLLM_REF=${VLLM_REF}"
 log "  FLASHINFER_REF=${FLASHINFER_REF}"
 log "  NCCL_REF=${NCCL_REF}"
 
+REVIEWED_VLLM_COMMIT="${VLLM_COMMIT}"
+
 # ---------------------------------------------------------------------------
 # 2. Snapshot old values for GB10_BUILD change detection
 # ---------------------------------------------------------------------------
@@ -65,6 +67,7 @@ _MAIN_VERSIONS="$(git show origin/main:versions.env 2>/dev/null \
 _main_get() { printf '%s\n' "${_MAIN_VERSIONS}" | grep "^$1=" | head -1 | cut -d= -f2-; }
 
 OLD_NCCL_COMMIT="$(_main_get NCCL_COMMIT)"
+OLD_VLLM_REF="$(_main_get VLLM_REF)"
 OLD_VLLM_COMMIT="$(_main_get VLLM_COMMIT)"
 OLD_FLASHINFER_COMMIT="$(_main_get FLASHINFER_COMMIT)"
 OLD_CUDA_BASE_DIGEST="$(_main_get CUDA_BASE_DIGEST)"
@@ -174,23 +177,43 @@ log "  CUDA_BASE_DIGEST=${CUDA_BASE_DIGEST}"
 # ---------------------------------------------------------------------------
 # 5. Compute GB10_BUILD
 # Rule: reset to 0 when VLLM_REF changes.
-#       Increment by 1 when any other pinned input changes with the same VLLM_REF.
+#       Increment by 1 when any other pinned input changes with the same VLLM_REF,
+#       including when upstream moves an existing tag to a different commit.
 # ---------------------------------------------------------------------------
-if [[ "${VLLM_COMMIT}" != "${OLD_VLLM_COMMIT}" ]]; then
-  GB10_BUILD=0
-  log "VLLM_COMMIT changed -> GB10_BUILD reset to 0"
-elif [[ "${NCCL_COMMIT}"         != "${OLD_NCCL_COMMIT}"         ||
-        "${FLASHINFER_COMMIT}"   != "${OLD_FLASHINFER_COMMIT}"   ||
-        "${CUDA_BASE_DIGEST}"    != "${OLD_CUDA_BASE_DIGEST}"    ||
-        "${RAY_VERSION}"         != "${OLD_RAY_VERSION}"         ||
-        "${UV_VERSION}"          != "${OLD_UV_VERSION}"          ||
-        "${TORCH_VERSION}"       != "${OLD_TORCH_VERSION}"       ||
-        "${TORCHVISION_VERSION}" != "${OLD_TORCHVISION_VERSION}" ||
-        "${QUACK_KERNELS_VERSION}" != "${OLD_QUACK_KERNELS_VERSION}" ||
-        "${DOCKERFILE_HASH}"     != "${OLD_DOCKERFILE_HASH}"     ||
-        "${APT_SOURCES_HASH}"    != "${OLD_APT_SOURCES_HASH}"    ]]; then
-  GB10_BUILD=$(( OLD_GB10_BUILD + 1 ))
-  log "Non-vLLM input changed -> GB10_BUILD incremented to ${GB10_BUILD}"
+OTHER_INPUT_CHANGED=0
+if [[ "${NCCL_COMMIT}"           != "${OLD_NCCL_COMMIT}"           ||
+      "${FLASHINFER_COMMIT}"     != "${OLD_FLASHINFER_COMMIT}"     ||
+      "${CUDA_BASE_DIGEST}"      != "${OLD_CUDA_BASE_DIGEST}"      ||
+      "${RAY_VERSION}"           != "${OLD_RAY_VERSION}"           ||
+      "${UV_VERSION}"            != "${OLD_UV_VERSION}"            ||
+      "${TORCH_VERSION}"         != "${OLD_TORCH_VERSION}"         ||
+      "${TORCHVISION_VERSION}"   != "${OLD_TORCHVISION_VERSION}"   ||
+      "${QUACK_KERNELS_VERSION}" != "${OLD_QUACK_KERNELS_VERSION}" ||
+      "${DOCKERFILE_HASH}"       != "${OLD_DOCKERFILE_HASH}"       ||
+      "${APT_SOURCES_HASH}"      != "${OLD_APT_SOURCES_HASH}" ]]; then
+  OTHER_INPUT_CHANGED=1
+fi
+
+BUILD_ARGS=(
+  --old-vllm-ref "${OLD_VLLM_REF}"
+  --new-vllm-ref "${VLLM_REF}"
+  --old-vllm-commit "${OLD_VLLM_COMMIT}"
+  --reviewed-vllm-commit "${REVIEWED_VLLM_COMMIT}"
+  --resolved-vllm-commit "${VLLM_COMMIT}"
+  --old-build "${OLD_GB10_BUILD}"
+)
+if [[ "${OTHER_INPUT_CHANGED}" -eq 1 ]]; then
+  BUILD_ARGS+=(--other-input-changed)
+fi
+GB10_BUILD="$(
+  python3 "${REPO_ROOT}/scripts/compute-gb10-build.py" "${BUILD_ARGS[@]}"
+)"
+
+if [[ "${VLLM_REF}" != "${OLD_VLLM_REF}" ]]; then
+  log "VLLM_REF changed -> GB10_BUILD reset to ${GB10_BUILD}"
+elif [[ "${VLLM_COMMIT}" != "${OLD_VLLM_COMMIT}" ||
+        "${OTHER_INPUT_CHANGED}" -eq 1 ]]; then
+  log "Build input changed -> GB10_BUILD incremented to ${GB10_BUILD}"
 else
   log "No pinned inputs changed - GB10_BUILD stays at ${GB10_BUILD}"
 fi

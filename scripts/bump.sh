@@ -96,6 +96,7 @@ OLD_RAY_VERSION="$(_main_get RAY_VERSION)"
 OLD_UV_VERSION="$(_main_get UV_VERSION)"
 OLD_TORCH_VERSION="$(_main_get TORCH_VERSION)"
 OLD_TORCHVISION_VERSION="$(_main_get TORCHVISION_VERSION)"
+OLD_INSTANTTENSOR_VERSION="$(_main_get INSTANTTENSOR_VERSION)"
 # This key may be new in the PR and therefore absent from origin/main.
 OLD_QUACK_KERNELS_VERSION="$(_main_get QUACK_KERNELS_VERSION || true)"
 

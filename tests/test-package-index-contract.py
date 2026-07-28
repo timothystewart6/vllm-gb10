@@ -55,6 +55,21 @@ def test_quack_is_pinned_for_cutlass_dsl_compatibility():
     )
 
 
+def test_instanttensor_supports_vllm_copy_api_and_increments_build():
+    assert env_value("INSTANTTENSOR_VERSION") == "0.1.9"
+
+    bump = read("scripts/bump.sh")
+    assert "instanttensor==${INSTANTTENSOR_VERSION}" in bump
+    assert (
+        'OLD_INSTANTTENSOR_VERSION="$(_main_get INSTANTTENSOR_VERSION)"'
+        in bump
+    )
+    assert (
+        '"${INSTANTTENSOR_VERSION}" != "${OLD_INSTANTTENSOR_VERSION}"'
+        in bump
+    )
+
+
 def test_random_lock_input_paths_are_normalized():
     bump = read("scripts/bump.sh")
     assert bump.count('scripts/normalize-lockfile.py"') == 2
@@ -70,6 +85,7 @@ def test_generated_values_compare_against_trusted_main():
         "FLASHINFER_COMMIT",
         "CUDA_BASE_DIGEST",
         "GB10_BUILD",
+        "INSTANTTENSOR_VERSION",
         "RAY_VERSION",
     ):
         assert f'OLD_{key}="$(_main_get {key})"' in bump
@@ -80,6 +96,7 @@ def main():
         test_flashinfer_index_is_an_explicit_build_input,
         test_lock_generation_and_runtime_use_the_same_indexes,
         test_quack_is_pinned_for_cutlass_dsl_compatibility,
+        test_instanttensor_supports_vllm_copy_api_and_increments_build,
         test_random_lock_input_paths_are_normalized,
         test_generated_values_compare_against_trusted_main,
     ]

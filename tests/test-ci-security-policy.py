@@ -97,10 +97,20 @@ def test_privileged_workflows_reject_untrusted_refs():
     assert "persist-credentials: false" in release
 
 
-def test_monitor_pr_creation_names_detached_checkout_base():
+def test_monitor_pr_creation_is_scoped_and_handles_detached_checkout():
     monitor = read(WORKFLOWS / "monitor-upstream-releases.yaml")
+    workflow_header = monitor.split("\njobs:", 1)[0]
+    create_pr_job = monitor.split("\n  create-pr:", 1)[1]
     create_pr_step = monitor.split("- name: Create Pull Request", 1)[1]
+
+    assert "contents: read" in workflow_header
+    assert "contents: write" not in workflow_header
+    assert "pull-requests: write" not in workflow_header
+    assert "id-token: write" not in workflow_header
+    assert "contents: write" in create_pr_job
+    assert "pull-requests: write" in create_pr_job
     assert "base: main" in create_pr_step
+    assert "add-paths: versions.env" in create_pr_step
 
 
 def test_pr_workflows_are_read_only_and_secret_free():
@@ -159,7 +169,7 @@ def main():
         test_bump_workflow_preserves_approval_boundary,
         test_trusted_builds_checkout_the_exact_event_sha,
         test_privileged_workflows_reject_untrusted_refs,
-        test_monitor_pr_creation_names_detached_checkout_base,
+        test_monitor_pr_creation_is_scoped_and_handles_detached_checkout,
         test_pr_workflows_are_read_only_and_secret_free,
         test_security_policy_runs_for_every_pull_request,
         test_sensitive_paths_have_codeowners,

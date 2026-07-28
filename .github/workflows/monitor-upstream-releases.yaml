@@ -15,9 +15,11 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  pull-requests: write
-  id-token: write
+  contents: read
+
+concurrency:
+  group: monitor-upstream-releases
+  cancel-in-progress: false
 
 jobs:
   check-deps:
@@ -113,5 +115,6 @@ jobs:
           title: 'chore(deps): bump upstream dependencies'
           body-path: /tmp/pr-body.md
           base: main
+          add-paths: versions.env
           branch: deps/bump-${{ github.run_number }}
           delete-branch: true

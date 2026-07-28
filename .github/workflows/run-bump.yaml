@@ -176,8 +176,20 @@ jobs:
           if [[ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]]; then
             echo "Nothing to push."
           else
-            gh auth setup-git
-            git push origin "HEAD:refs/heads/$APPROVED_BRANCH"
+            ASKPASS=$(mktemp "${RUNNER_TEMP}/git-askpass-XXXXXX")
+            trap 'rm -f "$ASKPASS"' EXIT
+            # Preserve these variables for expansion inside the helper.
+            # shellcheck disable=SC2016
+            printf '%s\n' \
+              '#!/bin/sh' \
+              'case "$1" in' \
+              '  *Username*) printf "%s\n" "x-access-token" ;;' \
+              '  *Password*) printf "%s\n" "$GH_TOKEN" ;;' \
+              '  *) exit 1 ;;' \
+              'esac' > "$ASKPASS"
+            chmod 700 "$ASKPASS"
+            GIT_ASKPASS="$ASKPASS" GIT_TERMINAL_PROMPT=0 \
+              git push origin "HEAD:refs/heads/$APPROVED_BRANCH"
           fi
 
       - name: Remove trusted generator worktree

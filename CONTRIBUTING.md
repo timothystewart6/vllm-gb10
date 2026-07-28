@@ -33,6 +33,53 @@ You do not need to SSH into the Spark or run anything locally.
 
 **Do not edit lockfiles by hand.** They are generated outputs.
 
+## Automated release monitor lifecycle
+
+`Monitor Upstream Releases` is complete only when the generated dependency PR
+passes the same hosted checks required for merge. A green monitor workflow run
+proves that detection, validation, artifact transfer, and PR creation worked.
+It does not prove that the repository remains valid after the candidate values
+are applied.
+
+The full lifecycle is:
+
+1. Run the monitor from `main`. Upstream data is processed in the read-only,
+   secret-free job.
+2. A fresh hosted runner validates the candidate `versions.env` against the
+   exact trusted `main` SHA, then creates a PR containing only that file.
+3. Run every hosted test against the generated PR state. This is the first
+   validation of the repository after the candidate has been applied.
+4. Review the generated PR's exact 40-character head SHA.
+5. Dispatch `run-bump.yaml` from `main` with the dependency branch and reviewed
+   SHA. Trusted `main` code resolves commits, increments or resets
+   `GB10_BUILD`, regenerates locks, validates output paths, and pushes the
+   generated commit back to the branch.
+6. Run hosted tests again and review the resolved SHAs, build number, and
+   lockfile changes.
+7. Merge the dependency PR. The `versions.env` or lockfile change triggers the
+   trusted `main` image build, verification, and release jobs.
+
+Tests for monitor detection must use an explicit deterministic baseline for
+every monitored key. They must not inherit mutable production values while
+also asserting fixed mock outputs or update counts. The baseline key set must
+equal the production monitor allowlist so a newly watched key fails closed
+until its fixture and downstream expectations are added.
+
+For a monitor or bump change, test both sides of the transition:
+
+- run the behavior against the current trusted input;
+- apply each allowed generated value change;
+- validate the resulting complete `versions.env`;
+- verify duplicate detection, PR-body labels, build-number behavior, build
+  arguments, release metadata, and workflow handoff order;
+- run the complete hosted suite against at least one representative generated
+  repository state.
+
+If a generated dependency PR exposes an automation-test defect, fix the test
+or trusted automation in a separate PR. Close the generated dependency PR,
+merge the automation fix, and rerun the monitor from the new `main`. Do not add
+unrelated executable changes to the generated dependency PR.
+
 ### Adding or changing a versions.env input
 
 `versions.env` is an integration contract, not only a list of values. Adding,
@@ -55,9 +102,10 @@ Complete this checklist in the same change:
 5. Add a human-readable label in `scripts/versions_diff.py` and include numeric
    version inputs in `scripts/render-metadata.sh`. Update release-note output
    when the component belongs in the published component table.
-6. Update test fixtures and add behavior coverage for the consumer. Do not add
-   a one-off test that only checks for a string when the behavior can be
-   derived from the schema.
+6. Update test fixtures and add behavior coverage for the consumer. If the key
+   is monitored, add it to the deterministic monitor fixture and generated-PR
+   lifecycle coverage. Do not add a one-off test that only checks for a string
+   when the behavior can be derived from the schema.
 7. Run every hosted test with `for test_file in tests/test-*.py; do python3
    "$test_file"; done`, plus shell syntax, ShellCheck, actionlint, and
    `git diff --check`.

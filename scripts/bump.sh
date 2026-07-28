@@ -212,22 +212,13 @@ fi
 # ---------------------------------------------------------------------------
 # 6. Write resolved values back to versions.env
 # ---------------------------------------------------------------------------
-_update_env() {
-  local key="$1" val="$2"
-  if grep -q "^${key}=" "${VERSIONS}"; then
-    # Use | as sed delimiter to safely handle values that contain /
-    sed -i "s|^${key}=.*|${key}=${val}|" "${VERSIONS}"
-  else
-    printf '\n%s=%s\n' "${key}" "${val}" >> "${VERSIONS}"
-  fi
-}
-
-_update_env CUDA_BASE_DIGEST  "${CUDA_BASE_DIGEST}"
-_update_env GB10_BUILD        "${GB10_BUILD}"
-_update_env NCCL_COMMIT       "${NCCL_COMMIT}"
-_update_env VLLM_COMMIT       "${VLLM_COMMIT}"
-_update_env FLASHINFER_COMMIT "${FLASHINFER_COMMIT}"
-_update_env RAY_VERSION       "${RAY_VERSION}"
+python3 "${REPO_ROOT}/scripts/update-versions-env.py" "${VERSIONS}" \
+  "CUDA_BASE_DIGEST=${CUDA_BASE_DIGEST}" \
+  "GB10_BUILD=${GB10_BUILD}" \
+  "NCCL_COMMIT=${NCCL_COMMIT}" \
+  "VLLM_COMMIT=${VLLM_COMMIT}" \
+  "FLASHINFER_COMMIT=${FLASHINFER_COMMIT}" \
+  "RAY_VERSION=${RAY_VERSION}"
 
 log "versions.env updated with resolved SHAs and digest."
 

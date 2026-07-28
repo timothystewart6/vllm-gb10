@@ -85,6 +85,11 @@ This fresh-runner boundary is required even when the upstream parser validates
 its output. It prevents a parser defect or compromised upstream response from
 modifying a repository script and then reaching a later step that has the PAT.
 
+PR creation is not the final monitor acceptance gate. The generated PR must
+pass hosted CI with the candidate already applied, then pass the trusted bump
+handoff before merge. See
+[Automated release monitor lifecycle](../CONTRIBUTING.md#automated-release-monitor-lifecycle).
+
 ## Maintainer runbook
 
 ### 1. Review the fork PR

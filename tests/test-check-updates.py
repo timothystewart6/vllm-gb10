@@ -112,6 +112,10 @@ def setup_case(directory, source_versions=None):
         SOURCE_ROOT / "scripts" / "validate-monitor-update.py",
         root / "scripts",
     )
+    shutil.copy2(
+        SOURCE_ROOT / "scripts" / "update-versions-env.py",
+        root / "scripts",
+    )
     shutil.copy2(SOURCE_ROOT / "scripts" / "versions_env.py", root / "scripts")
     versions = root / "versions.env"
     if source_versions is None:
@@ -189,6 +193,66 @@ def test_repository_version_drift_does_not_change_fixture_results():
 
         assert result.returncode == 0, result.stderr
         assert "7 component(s) updated in versions.env" in result.stdout
+
+
+def test_every_monitored_repository_value_is_normalized():
+    with tempfile.TemporaryDirectory() as directory:
+        source_versions = (SOURCE_ROOT / "versions.env").read_text(
+            encoding="utf-8"
+        )
+        source_values = parse_env(SOURCE_ROOT / "versions.env")
+        for key in MONITOR_POLICY.ALLOWED_UPDATE_KEYS:
+            if key == "CUDA_BASE_DIGEST":
+                drifted = "sha256:" + "9" * 64
+            elif key == "NCCL_REF":
+                drifted = "v88.77.66-1"
+            elif key.endswith("_REF"):
+                drifted = "v88.77.66"
+            else:
+                drifted = "88.77.66"
+            source_versions = source_versions.replace(
+                f"{key}={source_values[key]}",
+                f"{key}={drifted}",
+                1,
+            )
+
+        root, _ = setup_case(directory, source_versions)
+
+        values = parse_env(root / "versions.env")
+        for key, expected in MONITOR_FIXTURE_BASELINE.items():
+            assert values[key] == expected
+
+
+def test_fixture_preserves_non_monitored_values_and_structure():
+    with tempfile.TemporaryDirectory() as directory:
+        source_versions = (SOURCE_ROOT / "versions.env").read_text(
+            encoding="utf-8"
+        )
+        current_ray = parse_env(SOURCE_ROOT / "versions.env")["RAY_VERSION"]
+        source_versions = source_versions.replace(
+            f"RAY_VERSION={current_ray}",
+            "RAY_VERSION=88.77.66",
+            1,
+        )
+        root, _ = setup_case(directory, source_versions)
+        normalized = (root / "versions.env").read_text(encoding="utf-8")
+
+        assert parse_env(root / "versions.env")["RAY_VERSION"] == "88.77.66"
+        source_non_values = [
+            line for line in source_versions.splitlines()
+            if not any(
+                line.startswith(f"{key}=")
+                for key in MONITOR_POLICY.ALLOWED_UPDATE_KEYS
+            )
+        ]
+        normalized_non_values = [
+            line for line in normalized.splitlines()
+            if not any(
+                line.startswith(f"{key}=")
+                for key in MONITOR_POLICY.ALLOWED_UPDATE_KEYS
+            )
+        ]
+        assert normalized_non_values == source_non_values
 
 
 def test_dry_run_does_not_write_versions():
@@ -359,6 +423,8 @@ def main():
     tests = [
         test_target_vllm_requirements_are_applied,
         test_repository_version_drift_does_not_change_fixture_results,
+        test_every_monitored_repository_value_is_normalized,
+        test_fixture_preserves_non_monitored_values_and_structure,
         test_dry_run_does_not_write_versions,
         test_valid_update_crosses_fresh_runner_policy,
         test_current_stack_reports_no_updates,

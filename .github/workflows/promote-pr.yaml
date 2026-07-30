@@ -5,6 +5,8 @@
 # else is resolved from GitHub's API using the workflow definition from trusted
 # main.
 #
+# Implements #65. Follow-up to PR #64 and docs/contributor-ci-security.md.
+#
 # Maintainer runbook: docs/contributor-ci-security.md
 #
 # actions/checkout pinned SHA is allowlisted in tests/test-ci-security-policy.py.
@@ -274,6 +276,63 @@ jobs:
 
           echo "All required checks pass."
 
+      - name: Re-verify PR head and approval before branch creation
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ env.PR_NUMBER }}
+          PR_HEAD_SHA: ${{ env.PR_HEAD_SHA }}
+        run: |
+          set -euo pipefail
+
+          # Re-query the PR head SHA. Fail if it changed after the initial
+          # lookup — any contributor push invalidates the approval.
+          CURRENT_SHA=$(gh api \
+            "/repos/${{ github.repository }}/pulls/${PR_NUMBER}" \
+            --jq '.head.sha')
+
+          if [[ "$CURRENT_SHA" != "${PR_HEAD_SHA}" ]]; then
+            echo "Refusing: PR #${PR_NUMBER} head changed from ${PR_HEAD_SHA} to ${CURRENT_SHA}."
+            echo "A contributor pushed after the approval. A new review is required."
+            exit 1
+          fi
+
+          # Re-verify the approving review still applies. Fetch the reviews
+          # again so a dismissed or stale approval is caught.
+          REVIEWS=$(gh api \
+            "/repos/${{ github.repository }}/pulls/${PR_NUMBER}/reviews")
+
+          printf '%s\n' \
+            'import sys,json' \
+            'for r in json.load(sys.stdin):' \
+            '    s=r["state"]' \
+            '    c=r.get("commit_id","")' \
+            '    u=r["user"]["login"]' \
+            '    print(f"{s}|{c}|{u}")' \
+            > /tmp/reverify-reviews.py
+          printf '%s' "$REVIEWS" | python3 /tmp/reverify-reviews.py > /tmp/reverify-reviews.txt
+
+          REVERIFIED_APPROVED=""
+
+          while IFS='|' read -r state review_commit reviewer; do
+            if [[ "$state" == "CHANGES_REQUESTED" ]]; then
+              echo "Refusing: ${reviewer} requested changes on PR #${PR_NUMBER}."
+              exit 1
+            fi
+
+            if [[ "$state" == "APPROVED" ]] && [[ "$review_commit" == "${PR_HEAD_SHA}" ]]; then
+              REVERIFIED_APPROVED="$reviewer"
+            fi
+          done < /tmp/reverify-reviews.txt
+
+          if [[ -z "$REVERIFIED_APPROVED" ]]; then
+            echo "Refusing: approving review for SHA ${PR_HEAD_SHA} is no longer valid."
+            echo "The approval may have been dismissed or the PR may have changed."
+            exit 1
+          fi
+
+          echo "Re-verified: PR #${PR_NUMBER} head is still ${PR_HEAD_SHA}."
+          echo "Re-verified: approval from ${REVERIFIED_APPROVED} remains valid."
+
       - name: Create integration branch
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -365,6 +424,7 @@ jobs:
             printf '| Author | @%s |\n' "${PR_USER_LOGIN}"
             printf '| Source branch | %s |\n' "${PR_HEAD_REF}"
             printf '| Approved SHA | %s |\n' "${PR_HEAD_SHA}"
+            printf '| Required checks | all passed |\n'
             printf '| Promoted by | @%s |\n' "${GITHUB_ACTOR}"
             printf '\n## Security\n\n'
             printf -- '- Promoted from trusted main workflow: %s\n' "${GITHUB_WORKFLOW_NAME}"

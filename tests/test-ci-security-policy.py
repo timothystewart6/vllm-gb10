@@ -216,6 +216,15 @@ def test_promote_workflow_refuses_same_repo_and_no_approval():
     assert "head SHA" in workflow
     assert "CHANGES_REQUESTED" in workflow
     assert "already exists" in workflow
+    assert "head changed" in workflow, "must catch PR head movement after approval"
+
+
+def test_promote_workflow_reverifies_before_branch_creation():
+    workflow = read(WORKFLOWS / "promote-pr.yaml")
+    assert "Re-verify PR head" in workflow, "must re-verify before creating branch"
+    assert "approving review for SHA" in workflow, "must re-check approval validity"
+    assert "no longer valid" in workflow, "must reject dismissed approval"
+    assert "head changed" in workflow, "must catch PR head movement after approval"
 
 
 def test_promote_workflow_protections():
@@ -258,6 +267,7 @@ def main():
         test_promote_workflow_refuses_same_repo_and_no_approval,
         test_promote_workflow_protections,
         test_promote_workflow_pins_actions,
+        test_promote_workflow_reverifies_before_branch_creation,
     ]
     for test in tests:
         test()

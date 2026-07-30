@@ -43,4 +43,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PROMOTE_PR_NUMBER: ${{ inputs.pr_number }}
+        # Keep security decisions in reviewed, unit-testable code instead of
+        # embedding orchestration in shell that is difficult to exercise.
         run: python3 scripts/promote_pr.py

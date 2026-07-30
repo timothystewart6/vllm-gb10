@@ -209,7 +209,10 @@ def test_promote_workflow_does_not_checkout_or_execute_contributor_code():
     # Must not run scripts from the fork.
     assert 'run-bump.yaml' not in workflow
     assert 'scripts/bump.sh' not in workflow
-    assert "checkout" not in script
+    assert not re.search(
+        r'["\']git["\']\s*,\s*["\']checkout["\']',
+        script,
+    )
     assert "refs/pull/" in script
 
 

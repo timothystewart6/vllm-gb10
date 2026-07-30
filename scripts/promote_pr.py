@@ -16,6 +16,8 @@ from typing import Any, Callable, Sequence
 from urllib.parse import quote, urlparse
 
 
+# Keep the branch-protection identity in reviewed code because the scoped
+# workflow token cannot read branch-protection settings at runtime.
 REQUIRED_CHECK_NAME = "test"
 REQUIRED_CHECK_APP_ID = 15368
 MAINTAINER_PERMISSIONS = {"admin", "write"}
@@ -136,6 +138,8 @@ def require_positive_pr_number(value: str) -> int:
 
 
 def require_trusted_workflow(context: PromotionContext) -> None:
+    # Bind every privileged action to the implementation selected from main,
+    # rather than allowing a caller to supply code from an untrusted ref.
     if context.workflow_ref != "refs/heads/main":
         raise PromotionError("Dispatch this workflow from main.")
     if not SHA_PATTERN.fullmatch(context.workflow_sha):
@@ -143,6 +147,8 @@ def require_trusted_workflow(context: PromotionContext) -> None:
 
 
 def validate_pull_request(pr: PullRequest, repository: str) -> None:
+    # Promotion exists only for fork contributions. Same-repository branches
+    # already have a trusted push path and must not bypass its normal controls.
     if pr.state != "open":
         raise PromotionError(
             f"PR #{pr.number} is {pr.state!r}, not 'open'."
@@ -171,6 +177,8 @@ def validate_pull_request(pr: PullRequest, repository: str) -> None:
 
 
 def flatten_paginated_json(value: Any) -> list[dict[str, Any]]:
+    # Reviews beyond the first API page can replace an earlier approval or
+    # changes request, so dropping a page would evaluate the wrong state.
     if not isinstance(value, list):
         raise PromotionError("Expected a JSON array from the paginated API.")
     if not value:
@@ -190,6 +198,8 @@ def flatten_paginated_json(value: Any) -> list[dict[str, Any]]:
 
 
 def flatten_check_run_pages(value: Any) -> list[dict[str, Any]]:
+    # Apply the check policy only after collecting every page. This prevents an
+    # attacker from relying on API ordering to hide a conflicting check result.
     if isinstance(value, dict):
         pages = [value]
     elif isinstance(value, list):
@@ -213,6 +223,9 @@ def effective_reviews(
     reviews: list[dict[str, Any]],
 ) -> OrderedDict[str, dict[str, str]]:
     effective: OrderedDict[str, dict[str, str]] = OrderedDict()
+    # Later reviews supersede earlier reviews from the same user. This models
+    # the reviewer's current decision instead of treating historical states as
+    # permanent approvals or vetoes.
     for review in reviews:
         try:
             login = review["user"]["login"]
@@ -238,6 +251,8 @@ def validate_maintainer_approval(
 
     approvers: list[str] = []
     for reviewer, review in effective_reviews(reviews).items():
+        # Check authority at promotion time. A review must stop counting when
+        # its author no longer has maintainer access.
         permission = permission_lookup(reviewer)
         if permission not in MAINTAINER_PERMISSIONS:
             print(
@@ -247,6 +262,8 @@ def validate_maintainer_approval(
             continue
 
         state = review["state"]
+        # An effective maintainer change request blocks promotion even when a
+        # different maintainer approved, preserving the unresolved-review gate.
         if state == "CHANGES_REQUESTED":
             raise PromotionError(
                 f"Maintainer {reviewer} has an effective "
@@ -273,6 +290,8 @@ def validate_required_check(check_runs: list[dict[str, Any]]) -> None:
 
     failures: list[str] = []
     for check in matching:
+        # Check names are not unique across GitHub Apps. Pin the producer so an
+        # attacker-controlled integration cannot impersonate the required job.
         app_id = (check.get("app") or {}).get("id")
         if app_id != REQUIRED_CHECK_APP_ID:
             failures.append(f"wrong app ID {app_id!r}")
@@ -294,6 +313,9 @@ def parse_replacement_url(
     output: str,
     repository: str,
 ) -> ReplacementPullRequest | None:
+    # Diagnostic output can contain URL-like contributor-controlled text.
+    # Restrict parsing to the expected repository before treating creation as
+    # successful.
     for line in reversed(output.splitlines()):
         candidate = line.strip()
         match = PR_URL_PATTERN.search(candidate)
@@ -348,6 +370,8 @@ class GitHubClient:
         )
         result = self.runner.run(["gh", "api", path], check=False)
         if result.returncode != 0:
+            # GitHub uses 404 for a user without repository access. Every other
+            # failure leaves authority unknown, so it must stop promotion.
             if re.search(r"\(HTTP 404\)\s*$", result.stdout.strip()):
                 return "none"
             detail = result.stdout.strip() or "no command output"
@@ -385,6 +409,8 @@ class GitHubClient:
         return flatten_check_run_pages(value)
 
     def create_branch(self, branch: str, sha: str) -> None:
+        # Use the API instead of a writable checkout so contributor files never
+        # execute in a process that also has repository write credentials.
         self.runner.run(
             [
                 "gh",
@@ -439,6 +465,8 @@ class GitHubClient:
     def find_open_replacement(
         self, branch: str
     ) -> ReplacementPullRequest | None:
+        # The integration head is unique to this source PR and reviewed SHA, so
+        # it is the authoritative recovery key after ambiguous CLI output.
         owner = self.repository.split("/", 1)[0]
         head = quote(f"{owner}:{branch}", safe="")
         value = self.api_json(
@@ -504,6 +532,8 @@ class GitHubClient:
         if parsed is not None:
             return parsed
 
+        # The server can create a PR even if the CLI loses its response. Query
+        # by the exact head before deciding that the new branch is orphaned.
         try:
             recovered = self.find_open_replacement(branch)
         except PromotionError as error:
@@ -623,6 +653,9 @@ def verify_fetched_pull_ref(
     expected_sha: str,
 ) -> None:
     remote_ref = f"refs/remotes/origin/pr-{pr_number}-head"
+    # Fetch the live pull ref after API re-verification. Comparing this ref,
+    # rather than merely checking that the old object exists locally, closes
+    # the final contributor-push race before branch creation.
     runner.run(
         [
             "git",
@@ -643,6 +676,8 @@ def verify_fetched_pull_ref(
 
 
 def reverify_pull_request(original: PullRequest, current: PullRequest) -> None:
+    # Treat any metadata change as a new review boundary. This avoids having to
+    # decide which concurrent edits are harmless while privileged work runs.
     if current != original:
         raise PromotionError(
             f"PR #{original.number} metadata changed during promotion. "
@@ -667,6 +702,8 @@ def create_replacement_with_cleanup(
     try:
         return github.create_replacement(branch, title, body)
     except ReplacementStateAmbiguousError:
+        # Preserve ambiguous state because deletion could remove the head of a
+        # PR that GitHub accepted despite a lost or malformed CLI response.
         raise
     except Exception:
         github.delete_branch(branch)
@@ -697,6 +734,8 @@ def promote(context: PromotionContext, runner: CommandRunner) -> None:
         f"approved by maintainer {approver}."
     )
 
+    # Repeat mutable authorization inputs immediately before creating state.
+    # The later git ref comparison supplies the final exact-SHA check.
     current = github.pull_request(pr.number)
     validate_pull_request(current, context.repository)
     reverify_pull_request(pr, current)
@@ -709,6 +748,8 @@ def promote(context: PromotionContext, runner: CommandRunner) -> None:
 
     verify_fetched_pull_ref(runner, pr.number, pr.head_sha)
     branch = f"integration/pr-{pr.number}-{pr.head_sha[:12]}"
+    # Never reuse or overwrite an earlier promotion branch. Its contents and
+    # associated review history belong to a separate promotion attempt.
     if github.branch_sha(branch, check=False) is not None:
         raise PromotionError(f"Integration branch {branch!r} already exists.")
 
@@ -737,6 +778,8 @@ def promote(context: PromotionContext, runner: CommandRunner) -> None:
             source_comment(context, pr, branch, replacement),
         )
     except PromotionError as error:
+        # The replacement PR is the durable result. Do not turn a notification
+        # failure into a retry that collides with the branch already created.
         print(
             "WARNING: promotion succeeded, but the source PR comment "
             f"could not be created: {error}",

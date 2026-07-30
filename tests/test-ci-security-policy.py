@@ -271,6 +271,8 @@ def test_promote_workflow_protections():
     assert "REQUIRED_CHECK_APP_ID" in script
     assert "was not found" in script
     assert "wrong app ID" in script
+    # The Checks API denies GITHUB_TOKEN when this explicit scope is omitted.
+    assert "checks: read" in workflow
     # Must verify actor is a maintainer.
     assert "github.permission(context.actor)" in script
 

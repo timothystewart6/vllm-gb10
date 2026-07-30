@@ -23,6 +23,9 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
+  # The promotion gate reads the app identity and conclusion of the required
+  # check before granting the integration branch any repository state.
+  checks: read
   contents: write
   pull-requests: write
 

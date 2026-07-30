@@ -186,6 +186,61 @@ def test_security_runbook_is_linked_from_entry_points():
         assert link in read(path), path
 
 
+def test_promote_workflow_requires_main_dispatch():
+    workflow = read(WORKFLOWS / "promote-pr.yaml")
+    assert 'WORKFLOW_REF: ${{ github.ref }}' in workflow
+    assert '"refs/heads/main"' in workflow
+    assert "Refusing to run: dispatch this workflow from main." in workflow
+    assert "ref: ${{ github.sha }}" in workflow
+    assert "persist-credentials: false" in workflow
+    assert "ubuntu-latest" in workflow, "must run on GitHub-hosted runner"
+    assert "self-hosted" not in workflow, "must not run on persistent runners"
+    assert "\n  pull_request:" not in workflow
+    assert "\n  pull_request_target:" not in workflow
+
+
+def test_promote_workflow_does_not_checkout_or_execute_contributor_code():
+    workflow = read(WORKFLOWS / "promote-pr.yaml")
+    # Must never checkout the fork PR's code.
+    assert 'ref: ${{ github.sha }}' in workflow
+    assert "fetch-depth: 0" in workflow or "fetch-depth: 1" not in workflow
+    # Must not run scripts from the fork.
+    assert 'run-bump.yaml' not in workflow
+    assert 'scripts/bump.sh' not in workflow
+
+
+def test_promote_workflow_refuses_same_repo_and_no_approval():
+    workflow = read(WORKFLOWS / "promote-pr.yaml")
+    assert "not a fork" in workflow
+    assert "approving review" in workflow
+    assert "head SHA" in workflow
+    assert "CHANGES_REQUESTED" in workflow
+    assert "already exists" in workflow
+
+
+def test_promote_workflow_protections():
+    workflow = read(WORKFLOWS / "promote-pr.yaml")
+    # Must not use pull_request_target (github.actor would be the PR author).
+    assert "pull_request_target" not in workflow
+    # Must reject non-main base branches.
+    assert "targets 'main'" in workflow or '"main"' in workflow
+    # Must verify required checks.
+    assert "required checks" in workflow or "required_status_checks" in workflow
+    # Must verify actor is a maintainer.
+    assert "collaborators" in workflow
+
+
+def test_promote_workflow_pins_actions():
+    workflow = read(WORKFLOWS / "promote-pr.yaml")
+    for action, revision in ANY_ACTION.findall(workflow):
+        assert action in APPROVED_ACTIONS, (
+            f"promote-pr.yaml: unreviewed external action {action}"
+        )
+        assert revision == APPROVED_ACTIONS[action], (
+            f"promote-pr.yaml: {action}@{revision} is not the reviewed pin"
+        )
+
+
 def main():
     tests = [
         test_self_hosted_workflows_have_trusted_entry_points,
@@ -198,6 +253,11 @@ def main():
         test_security_policy_runs_for_every_pull_request,
         test_sensitive_paths_have_codeowners,
         test_security_runbook_is_linked_from_entry_points,
+        test_promote_workflow_requires_main_dispatch,
+        test_promote_workflow_does_not_checkout_or_execute_contributor_code,
+        test_promote_workflow_refuses_same_repo_and_no_approval,
+        test_promote_workflow_protections,
+        test_promote_workflow_pins_actions,
     ]
     for test in tests:
         test()

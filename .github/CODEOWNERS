@@ -5,6 +5,7 @@
 /.github/CODEOWNERS @timothystewart6
 /.github/dependabot.yml @timothystewart6
 /.github/workflows/ @timothystewart6
+/.github/workflows/promote-pr.yaml @timothystewart6
 /AGENTS.md @timothystewart6
 /CLAUDE.md @timothystewart6
 /CONTRIBUTING.md @timothystewart6

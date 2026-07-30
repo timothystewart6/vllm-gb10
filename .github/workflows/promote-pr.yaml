@@ -1,0 +1,451 @@
+# .github/workflows/promote-pr.yaml
+#
+# Promotes an approved fork pull request to an integration branch and opens a
+# replacement pull request. Accepts only the pull request number. Everything
+# else is resolved from GitHub's API using the workflow definition from trusted
+# main.
+#
+# Maintainer runbook: docs/contributor-ci-security.md
+#
+# actions/checkout pinned SHA is allowlisted in tests/test-ci-security-policy.py.
+
+name: Promote fork PR
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Fork pull request number to promote
+        required: true
+        type: number
+
+concurrency:
+  group: promote-pr-${{ inputs.pr_number }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Require dispatch from main
+        env:
+          WORKFLOW_REF: ${{ github.ref }}
+        run: |
+          if [[ "$WORKFLOW_REF" != "refs/heads/main" ]]; then
+            echo "Refusing to run: dispatch this workflow from main."
+            exit 1
+          fi
+
+      - name: Validate PR number
+        env:
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
+          if [[ ! "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]; then
+            echo "Refusing to run: pr_number must be a positive integer."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Look up pull request
+        id: pr-lookup
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
+          set -euo pipefail
+
+          # Fetch PR details. Fail closed on any API error.
+          PR_JSON=$(gh api \
+            "/repos/${{ github.repository }}/pulls/$PR_NUMBER" \
+            --jq '{state, title, head_ref: .head.ref, head_sha: .head.sha, head_repo_full_name: .head.repo.full_name, base_ref: .base.ref, base_repo_full_name: .base.repo.full_name, merged, draft, user_login: .user.login, html_url}')
+
+          STATE=$(printf '%s' "$PR_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['state'])")
+          BASE_REF=$(printf '%s' "$PR_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['base_ref'])")
+          HEAD_SHA=$(printf '%s' "$PR_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['head_sha'])")
+          HEAD_REPO=$(printf '%s' "$PR_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['head_repo_full_name'])")
+          BASE_REPO=$(printf '%s' "$PR_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['base_repo_full_name'])")
+          TITLE=$(printf '%s' "$PR_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['title'])")
+          HEAD_REF=$(printf '%s' "$PR_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['head_ref'])")
+          MERGED=$(printf '%s' "$PR_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['merged'])")
+          DRAFT=$(printf '%s' "$PR_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['draft'])")
+          USER_LOGIN=$(printf '%s' "$PR_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['user_login'])")
+          HTML_URL=$(printf '%s' "$PR_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['html_url'])")
+
+          if [[ "$STATE" != "open" ]]; then
+            echo "Refusing: PR #$PR_NUMBER is '$STATE', not 'open'."
+            exit 1
+          fi
+
+          if [[ "$MERGED" == "True" ]]; then
+            echo "Refusing: PR #$PR_NUMBER is already merged."
+            exit 1
+          fi
+
+          if [[ "$DRAFT" == "True" ]]; then
+            echo "Refusing: PR #$PR_NUMBER is a draft."
+            exit 1
+          fi
+
+          if [[ "$BASE_REF" != "main" ]]; then
+            echo "Refusing: PR #$PR_NUMBER targets '$BASE_REF', not 'main'."
+            exit 1
+          fi
+
+          if [[ "$BASE_REPO" != "${{ github.repository }}" ]]; then
+            echo "Refusing: PR #$PR_NUMBER targets a different repository '$BASE_REPO'."
+            exit 1
+          fi
+
+          if [[ "$HEAD_REPO" == "${{ github.repository }}" ]]; then
+            echo "Refusing: PR #$PR_NUMBER is from the same repository, not a fork."
+            echo "Use a direct branch workflow instead."
+            exit 1
+          fi
+
+          if [[ ! "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Refusing: head SHA '$HEAD_SHA' is not a valid 40-character commit SHA."
+            exit 1
+          fi
+
+          # Export for later steps
+          {
+            echo "PR_HEAD_SHA=$HEAD_SHA"
+            echo "PR_TITLE=$TITLE"
+            echo "PR_HEAD_REF=$HEAD_REF"
+            echo "PR_USER_LOGIN=$USER_LOGIN"
+            echo "PR_HTML_URL=$HTML_URL"
+            echo "PR_NUMBER=$PR_NUMBER"
+          } >> "$GITHUB_ENV"
+
+          echo "Found PR #$PR_NUMBER: $TITLE"
+          echo "  Author: $USER_LOGIN"
+          echo "  Head SHA: $HEAD_SHA"
+          echo "  Head repo: $HEAD_REPO"
+
+      - name: Verify actor is maintainer
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+
+          PERMISSION=$(gh api \
+            "/repos/${GITHUB_REPOSITORY}/collaborators/${GITHUB_ACTOR}/permission" \
+            --jq '.permission')
+
+          case "$PERMISSION" in
+            admin|write)
+              echo "Actor ${GITHUB_ACTOR} has '${PERMISSION}' access."
+              ;;
+            *)
+              echo "Refusing: ${GITHUB_ACTOR} has '${PERMISSION}' access, not write or admin."
+              exit 1
+              ;;
+          esac
+
+      - name: Verify pull request has approving review
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ env.PR_NUMBER }}
+          PR_HEAD_SHA: ${{ env.PR_HEAD_SHA }}
+        run: |
+          set -euo pipefail
+
+          REVIEWS=$(gh api \
+            "/repos/${{ github.repository }}/pulls/${PR_NUMBER}/reviews")
+
+          # Write reviews parser to a temp script, then run it.
+          printf '%s\n' \
+            'import sys,json' \
+            'for r in json.load(sys.stdin):' \
+            '    s=r["state"]' \
+            '    c=r.get("commit_id","")' \
+            '    u=r["user"]["login"]' \
+            '    print(f"{s}|{c}|{u}")' \
+            > /tmp/parse-reviews.py
+          printf '%s' "$REVIEWS" | python3 /tmp/parse-reviews.py > /tmp/pr-reviews.txt
+
+          LATEST_APPROVED=""
+
+          while IFS='|' read -r state review_commit reviewer; do
+            if [[ "$state" == "CHANGES_REQUESTED" ]]; then
+              echo "Refusing: ${reviewer} requested changes on PR #${PR_NUMBER}."
+              exit 1
+            fi
+
+            if [[ "$state" == "APPROVED" ]] && [[ "$review_commit" == "${PR_HEAD_SHA}" ]]; then
+              LATEST_APPROVED="$reviewer"
+            fi
+          done < /tmp/pr-reviews.txt
+
+          if [[ -z "$LATEST_APPROVED" ]]; then
+            echo "Refusing: no approving review from a maintainer found for head SHA ${PR_HEAD_SHA}."
+            echo "A maintainer must approve the exact commit before promotion."
+            exit 1
+          fi
+
+          echo "Approving review from ${LATEST_APPROVED} on ${PR_HEAD_SHA}."
+
+      - name: Verify required checks pass
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_HEAD_SHA: ${{ env.PR_HEAD_SHA }}
+        run: |
+          set -euo pipefail
+
+          REQUIRED=$(gh api \
+            "/repos/${{ github.repository }}/branches/main/protection" \
+            --jq '.required_status_checks.contexts // []' 2>/dev/null || echo "[]")
+
+          if [[ "$REQUIRED" == "[]" ]] || [[ "$REQUIRED" == "null" ]]; then
+            echo "No required status checks configured for main. Skipping check."
+            exit 0
+          fi
+
+          CHECKS=$(gh api \
+            "/repos/${{ github.repository }}/commits/${PR_HEAD_SHA}/check-runs" \
+            --jq '.check_runs')
+
+          printf '%s' "$REQUIRED" | python3 -c "import sys,json; [print(ctx) for ctx in json.load(sys.stdin)]" > /tmp/required-checks.txt
+
+          FAILED=""
+          PENDING=""
+
+          while IFS= read -r check_name; do
+            [[ -z "$check_name" ]] && continue
+
+            printf '%s\n' \
+              'import sys,json' \
+              'checks=json.load(sys.stdin)' \
+              'target=sys.argv[1]' \
+              'for c in checks:' \
+              '    if c["name"]==target:' \
+              '        print(json.dumps({"name":c["name"],"conclusion":c.get("conclusion"),"status":c["status"]}))' \
+              '        break' \
+              > /tmp/find-check-run.py
+            printf '%s' "$CHECKS" | python3 /tmp/find-check-run.py "$check_name" > /tmp/check-match.json 2>/dev/null || true
+
+            if [[ ! -s /tmp/check-match.json ]]; then
+              echo "FAIL: required check '$check_name' has no matching check run."
+              FAILED="$FAILED $check_name"
+              continue
+            fi
+
+            CONCLUSION=$(python3 -c "import sys,json; print(json.load(sys.stdin)['conclusion'])" < /tmp/check-match.json)
+            STATUS=$(python3 -c "import sys,json; print(json.load(sys.stdin)['status'])" < /tmp/check-match.json)
+
+            if [[ "$STATUS" != "completed" ]]; then
+              echo "FAIL: required check '$check_name' is '$STATUS', not completed."
+              PENDING="$PENDING $check_name"
+              continue
+            fi
+
+            if [[ "$CONCLUSION" != "success" ]]; then
+              echo "FAIL: required check '$check_name' concluded '$CONCLUSION', not success."
+              FAILED="$FAILED $check_name"
+              continue
+            fi
+
+            echo "PASS: required check '$check_name' concluded 'success'."
+          done < /tmp/required-checks.txt
+
+          if [[ -n "$PENDING" ]]; then
+            echo "Refusing: pending required checks:$PENDING"
+            exit 1
+          fi
+
+          if [[ -n "$FAILED" ]]; then
+            echo "Refusing: failed required checks:$FAILED"
+            exit 1
+          fi
+
+          echo "All required checks pass."
+
+      - name: Create integration branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_HEAD_SHA: ${{ env.PR_HEAD_SHA }}
+          PR_NUMBER: ${{ env.PR_NUMBER }}
+        run: |
+          set -euo pipefail
+
+          SHORT_SHA="${PR_HEAD_SHA:0:12}"
+          BRANCH="integration/pr-${PR_NUMBER}-${SHORT_SHA}"
+
+          # Verify the SHA is reachable by fetching through the pull ref.
+          git fetch --no-tags origin "refs/pull/${PR_NUMBER}/head:refs/remotes/origin/pr-${PR_NUMBER}-head"
+          if ! git rev-parse --verify "${PR_HEAD_SHA}" >/dev/null 2>&1; then
+            echo "Refusing: SHA ${PR_HEAD_SHA} is not a valid commit."
+            exit 1
+          fi
+
+          # Verify the fetched object is exactly the expected SHA.
+          FETCHED_SHA=$(git rev-parse "${PR_HEAD_SHA}")
+          if [[ "$FETCHED_SHA" != "${PR_HEAD_SHA}" ]]; then
+            echo "Refusing: fetched SHA $FETCHED_SHA does not match expected ${PR_HEAD_SHA}."
+            exit 1
+          fi
+
+          # Check if branch already exists. Fail if it does (no overwrite).
+          if git ls-remote --exit-code origin "refs/heads/${BRANCH}" >/dev/null 2>&1; then
+            echo "Refusing: branch '${BRANCH}' already exists."
+            echo ""
+            echo "If the fork PR has a new approved SHA to promote, close the old"
+            echo "integration PR and delete the old integration branch first."
+            exit 1
+          fi
+
+          # Create branch at the exact SHA using the GitHub API so we don't
+          # need a write checkout.
+          gh api \
+            "/repos/${{ github.repository }}/git/refs" \
+            --method POST \
+            --field ref="refs/heads/${BRANCH}" \
+            --field sha="${PR_HEAD_SHA}"
+
+          echo "Created integration branch: ${BRANCH}"
+          echo "  at SHA: ${PR_HEAD_SHA}"
+          {
+            echo "INTEGRATION_BRANCH=${BRANCH}"
+          } >> "$GITHUB_ENV"
+
+      - name: Verify integration branch points to approved SHA
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INTEGRATION_BRANCH: ${{ env.INTEGRATION_BRANCH }}
+          PR_HEAD_SHA: ${{ env.PR_HEAD_SHA }}
+        run: |
+          set -euo pipefail
+
+          VERIFIED_SHA=$(gh api \
+            "/repos/${{ github.repository }}/git/ref/heads/${INTEGRATION_BRANCH}" \
+            --jq '.object.sha')
+
+          if [[ "$VERIFIED_SHA" != "${PR_HEAD_SHA}" ]]; then
+            echo "Refusing: integration branch moved from ${PR_HEAD_SHA} to ${VERIFIED_SHA}."
+            exit 1
+          fi
+
+          echo "Integration branch confirmed at $VERIFIED_SHA."
+
+      - name: Open replacement pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_WORKFLOW_NAME: ${{ github.workflow }}
+          PR_NUMBER: ${{ env.PR_NUMBER }}
+          PR_HTML_URL: ${{ env.PR_HTML_URL }}
+          PR_USER_LOGIN: ${{ env.PR_USER_LOGIN }}
+          PR_HEAD_REF: ${{ env.PR_HEAD_REF }}
+          PR_HEAD_SHA: ${{ env.PR_HEAD_SHA }}
+          PR_TITLE: ${{ env.PR_TITLE }}
+          INTEGRATION_BRANCH: ${{ env.INTEGRATION_BRANCH }}
+        run: |
+          set -euo pipefail
+
+          {
+            printf '## Source pull request\n\n'
+            printf 'This is an integration pull request for fork PR #%s.\n\n' "${PR_NUMBER}"
+            printf '| Detail | Value |\n'
+            printf '|---|---|\n'
+            printf '| Source PR | %s |\n' "${PR_HTML_URL}"
+            printf '| Author | @%s |\n' "${PR_USER_LOGIN}"
+            printf '| Source branch | %s |\n' "${PR_HEAD_REF}"
+            printf '| Approved SHA | %s |\n' "${PR_HEAD_SHA}"
+            printf '| Promoted by | @%s |\n' "${GITHUB_ACTOR}"
+            printf '\n## Security\n\n'
+            printf -- '- Promoted from trusted main workflow: %s\n' "${GITHUB_WORKFLOW_NAME}"
+            printf -- '- No contributor code was executed. The branch was created at the\n'
+            printf '  exact reviewed commit SHA using the GitHub API.\n'
+            printf -- '- Any new push to the source fork PR requires a fresh review and\n'
+            printf "  promotion. This integration PR is stale if the fork PR's head changes.\n"
+            printf '\n## Next steps\n\n'
+            printf '1. Wait for required checks to complete on this PR.\n'
+            printf '2. Review the diff. Include any generated files that the bump\n'
+            printf '   workflow will produce.\n'
+            printf "3. Dispatch **Run bump.sh** from \`main\` with:\n"
+            printf "   - Branch: \`%s\`\n" "${INTEGRATION_BRANCH}"
+            printf "   - SHA: \`%s\`\n" "${PR_HEAD_SHA}"
+            printf '4. Review the generated changes and merge this PR.\n'
+          } > /tmp/pr-body.md
+
+          CREATE_JSON=$(gh pr create \
+            --base main \
+            --head "${INTEGRATION_BRANCH}" \
+            --title "${PR_TITLE}" \
+            --body /tmp/pr-body.md \
+            --label enhancement \
+            --json number,url \
+            2>&1)
+
+          echo "$CREATE_JSON"
+
+          REPLACEMENT_NUMBER=$(printf '%s' "$CREATE_JSON" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("number",""))' 2>/dev/null || echo "")
+
+          if [[ -z "$REPLACEMENT_NUMBER" ]]; then
+            echo "Warning: could not parse replacement PR number. Check actions output."
+          else
+            echo "Created replacement PR #${REPLACEMENT_NUMBER}"
+          fi
+
+      - name: Comment on source fork PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ env.PR_NUMBER }}
+          INTEGRATION_BRANCH: ${{ env.INTEGRATION_BRANCH }}
+          PR_HEAD_SHA: ${{ env.PR_HEAD_SHA }}
+        run: |
+          set -euo pipefail
+
+          {
+            echo ":rocket: This pull request has been promoted to integration PR"
+            echo "[${INTEGRATION_BRANCH}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/tree/${INTEGRATION_BRANCH})"
+            echo "at SHA \`${PR_HEAD_SHA}\` by @${GITHUB_ACTOR}."
+            echo ""
+            echo "Any new push will require a fresh review and promotion. For updates,"
+            echo "push to a new branch and open a new pull request."
+          } > /tmp/pr-comment.md
+
+          gh api \
+            "/repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
+            --method POST \
+            --field body@/tmp/pr-comment.md \
+            --silent
+
+          echo "Commented on source PR #${PR_NUMBER}."
+
+      - name: Summary
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          PR_NUMBER: ${{ env.PR_NUMBER }}
+          PR_HTML_URL: ${{ env.PR_HTML_URL }}
+          PR_USER_LOGIN: ${{ env.PR_USER_LOGIN }}
+          PR_HEAD_SHA: ${{ env.PR_HEAD_SHA }}
+          INTEGRATION_BRANCH: ${{ env.INTEGRATION_BRANCH }}
+        run: |
+          {
+            printf '## Promotion complete\n\n'
+            printf '| Item | Value |\n'
+            printf '|---|---|\n'
+            printf '| Source PR | [#%s](%s) |\n' "${PR_NUMBER}" "${PR_HTML_URL}"
+            printf '| Author | @%s |\n' "${PR_USER_LOGIN}"
+            printf "| Approved SHA | \`%s\` |\n" "${PR_HEAD_SHA}"
+            printf "| Integration branch | \`%s\` |\n" "${INTEGRATION_BRANCH}"
+            printf '| Promoted by | @%s |\n' "${GITHUB_ACTOR}"
+          } >> "$GITHUB_STEP_SUMMARY"

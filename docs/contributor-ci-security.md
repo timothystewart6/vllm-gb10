@@ -31,15 +31,17 @@ flowchart TD
     B --> C[Maintainer reviews exact commit SHA]
     C --> D[Promote SHA to upstream integration branch]
     D --> E[Open replacement integration PR]
-    E --> F[Dispatch Run bump.sh from main]
-    F --> G[Verify branch still equals approved SHA]
-    G --> H[Import four files as data]
-    H --> I[Validate with trusted main code]
-    I --> J[Run trusted bump generator on GX10]
-    J --> K[Validate and commit generated files]
-    K --> L[Review generated integration PR diff]
-    L --> M[Merge integration PR]
-    M --> N[Trusted main build and smoke test]
+    E --> F[Approve hosted run if GitHub requires it]
+    F --> G[Wait for hosted checks]
+    G --> H[Dispatch Run bump.sh from main]
+    H --> I[Verify branch still equals approved SHA]
+    I --> J[Import four files as data]
+    J --> K[Validate with trusted main code]
+    K --> L[Run trusted bump generator on GX10]
+    L --> M[Validate and commit generated files]
+    M --> N[Review generated integration PR diff]
+    N --> O[Merge integration PR]
+    O --> P[Trusted main build and smoke test]
 ```
 
 The original fork PR is not merged after promotion. The integration PR becomes
@@ -101,35 +103,51 @@ GitHub-hosted checks must pass before promotion.
 
 ### 2. Promote the reviewed commit
 
-Fetch the fork PR through the upstream repository and create an integration
-branch at the exact reviewed commit:
+In GitHub Actions:
 
-```bash
-git fetch origin pull/62/head
-git switch -c integration/pr-62 FETCH_HEAD
-git rev-parse HEAD
-git push -u origin integration/pr-62
-```
+1. Open **Promote fork PR**.
+2. Select `main` as the workflow ref.
+3. Enter the source fork pull request number.
+4. Start the workflow.
 
-Confirm that `git rev-parse HEAD` equals the SHA reviewed in step 1.
+The hosted workflow independently resolves the pull request metadata and
+requires all of these conditions:
 
-Open a replacement PR from `integration/pr-62` to `main`. Link the original
-fork PR in its description so authorship and discussion remain discoverable.
+- the dispatch actor currently has write or admin permission;
+- the source is an open, non-draft fork pull request targeting this
+  repository's `main` branch;
+- a current write or admin maintainer approved the exact head SHA;
+- no maintainer's effective current review requests changes;
+- the required `test` check from GitHub Actions app ID `15368` passed;
+- the fetched pull request ref still resolves to the reviewed SHA.
 
-### 3. Dispatch the trusted bump workflow
+The workflow creates `integration/pr-<number>-<short-sha>` at the exact SHA,
+opens the replacement pull request, and comments on the source pull request.
+It deletes the integration branch if pull request creation definitively fails.
+If GitHub's response is ambiguous, it retains the branch for inspection rather
+than risk deleting the head of a pull request that may exist.
+
+### 3. Approve and validate the replacement pull request
+
+Pull requests created by `GITHUB_TOKEN` can have an approval-required hosted
+workflow run. If GitHub displays that state, approve the run, then wait for the
+required `test` check to pass on the replacement pull request.
+
+### 4. Dispatch the trusted bump workflow
 
 In GitHub Actions:
 
 1. Open **Run bump.sh**.
 2. Select `main` as the workflow ref.
-3. Enter `integration/pr-62` as the branch.
+3. Enter the integration branch from the replacement pull request as the
+   branch.
 4. Enter the exact 40-character reviewed SHA.
 5. Start the workflow.
 
 The workflow stops before generation if the branch no longer points to that
 SHA.
 
-### 4. Review generated changes
+### 5. Review generated changes
 
 After the workflow pushes its generated commit, review:
 
@@ -143,7 +161,7 @@ After the workflow pushes its generated commit, review:
 Random temporary filenames are normalized, so path-only lockfile noise should
 not appear.
 
-### 5. Merge the integration PR
+### 6. Merge the integration PR
 
 Merge the integration PR only after required GitHub-hosted checks pass and the
 generated diff has been reviewed. Close the original fork PR with a link to the
@@ -210,6 +228,10 @@ The repository configuration must enforce the controls that files cannot:
 - dismiss stale approvals when new commits are pushed;
 - reserve administrator bypass for maintainer-authored pull requests;
 - limit workflow dispatch and integration-branch pushes to maintainers;
+- set the default `GITHUB_TOKEN` permission to read-only;
+- enable **Allow GitHub Actions to create and approve pull requests**, which
+  permits the narrowly scoped promotion job to open its replacement pull
+  request;
 - never assign public fork jobs to self-hosted runners.
 
 CODEOWNERS has no enforcement effect unless the branch protection rules require

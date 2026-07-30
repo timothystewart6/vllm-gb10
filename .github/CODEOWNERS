@@ -5,6 +5,7 @@
 /.github/CODEOWNERS @timothystewart6
 /.github/dependabot.yml @timothystewart6
 /.github/workflows/ @timothystewart6
+/.github/workflows/promote-pr.yaml @timothystewart6
 /AGENTS.md @timothystewart6
 /CLAUDE.md @timothystewart6
 /CONTRIBUTING.md @timothystewart6
@@ -15,6 +16,7 @@
 /locks/ @timothystewart6
 /scripts/ @timothystewart6
 /tests/test-ci-security-policy.py @timothystewart6
+/tests/test-promote-pr.py @timothystewart6
 /tests/test-monitor-lifecycle.py @timothystewart6
 /tests/test-monitor-update-policy.py @timothystewart6
 /tests/test-update-versions-env.py @timothystewart6

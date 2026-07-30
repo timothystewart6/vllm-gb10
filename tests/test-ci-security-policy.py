@@ -214,9 +214,15 @@ def test_promote_workflow_refuses_same_repo_and_no_approval():
     assert "not a fork" in workflow
     assert "approving review" in workflow
     assert "head SHA" in workflow
-    assert "CHANGES_REQUESTED" in workflow
+    assert "no approving review" in workflow
     assert "already exists" in workflow
-    assert "head changed" in workflow, "must catch PR head movement after approval"
+    assert "head changed" in workflow
+
+
+def test_promote_workflow_checks_reviewer_permission():
+    workflow = read(WORKFLOWS / "promote-pr.yaml")
+    assert "collaborators" in workflow, "must check reviewer permission"
+    assert "not a maintainer" in workflow, "must reject non-maintainer reviews"
 
 
 def test_promote_workflow_reverifies_before_branch_creation():
@@ -225,6 +231,12 @@ def test_promote_workflow_reverifies_before_branch_creation():
     assert "approving review for SHA" in workflow, "must re-check approval validity"
     assert "no longer valid" in workflow, "must reject dismissed approval"
     assert "head changed" in workflow, "must catch PR head movement after approval"
+
+
+def test_verify_checks_fail_closed():
+    workflow = read(WORKFLOWS / "promote-pr.yaml")
+    assert "no check runs found" in workflow, "must fail closed when no checks exist"
+    assert "cannot proceed safely" in workflow, "must explain why check is required"
 
 
 def test_promote_workflow_protections():
@@ -268,6 +280,8 @@ def main():
         test_promote_workflow_protections,
         test_promote_workflow_pins_actions,
         test_promote_workflow_reverifies_before_branch_creation,
+        test_promote_workflow_checks_reviewer_permission,
+        test_verify_checks_fail_closed,
     ]
     for test in tests:
         test()

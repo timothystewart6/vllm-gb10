@@ -8,6 +8,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = ROOT / ".github" / "workflows"
 ANY_ACTION = re.compile(r"^\s*uses:\s*([^#\s]+)@([^#\s]+)\s*$", re.MULTILINE)
+# Reviewed action SHAs. When Dependabot opens a PR that updates an action's SHA
+# and test_all_external_actions_are_pinned_by_full_sha fails, review the
+# upstream release notes between the old and new SHA. If the change is safe,
+# update this dict to match the new SHA and push to the PR branch. See
+# docs/contributor-ci-security.md "Expected failure modes" for the full
+# procedure.
 APPROVED_ACTIONS = {
     "actions/checkout": "3d3c42e5aac5ba805825da76410c181273ba90b1",
     "actions/download-artifact": "3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",

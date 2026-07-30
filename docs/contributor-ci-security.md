@@ -198,6 +198,7 @@ smoke test run after merge from trusted `main`.
 | Lockfile policy failure | Resolver produced an unsafe requirement form | Investigate upstream input before proceeding |
 | Unexpected generated path | Generator changed something outside its output allowlist | Treat as a workflow bug or compromise signal |
 | Push rejected | Branch moved while generation was running | Review the new branch head and rerun |
+| Action SHA not approved | `test_all_external_actions_are_pinned_by_full_sha` failed because `tests/test-ci-security-policy.py` has a different SHA for the action | Review the upstream action's release notes between the old and new SHA. If the change is safe (e.g., a routine upstream maintenance release from the official publisher), update the `APPROVED_ACTIONS` entry in `tests/test-ci-security-policy.py` to match the new SHA and push to the PR branch. Dependabot opens these PRs automatically; the test is the review gate. Never approve a new SHA without understanding what changed. |
 
 ## Required repository settings
 

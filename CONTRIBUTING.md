@@ -24,12 +24,15 @@ aarch64 DGX Spark** (it compiles and resolves platform-specific dependencies).
 2. Open a PR. GitHub-hosted checks validate the change without executing
    contributor code on a persistent DGX Spark runner.
 3. A maintainer reviews an exact commit SHA. For a fork PR, the maintainer
-   copies that SHA to an upstream branch such as `integration/pr-62` and opens
-   a replacement PR from that integration branch.
-4. The maintainer dispatches `run-bump.yaml` from `main` with the upstream
+   dispatches **Promote fork PR** from `main`. The workflow verifies the review,
+   required check, and fetched SHA before creating the upstream integration
+   branch and replacement PR.
+4. If GitHub marks the replacement PR's hosted run as approval-required, a
+   maintainer approves it and waits for the required check to pass.
+5. The maintainer dispatches `run-bump.yaml` from `main` with the upstream
    branch and reviewed 40-character SHA. The workflow refuses to run if the
    branch moved after review.
-5. Review the generated `_COMMIT` SHAs, `GB10_BUILD`, and lockfile diff on the
+6. Review the generated `_COMMIT` SHAs, `GB10_BUILD`, and lockfile diff on the
    integration PR, then merge that PR. Do not merge the original fork PR after
    promotion.
 
@@ -140,10 +143,13 @@ from the exact trusted `main` workflow revision. Before manual dispatch:
 
 1. Review every changed executable file at the exact SHA, especially
    workflows, shell scripts, Python scripts, the Dockerfile, and build inputs.
-2. Copy fork changes to an upstream integration branch without modifying them,
-   then open a replacement PR from that branch.
-3. Confirm the integration branch head equals the reviewed SHA.
-4. In Actions, select **Run bump.sh**, choose the `main` workflow ref, and
+2. Dispatch **Promote fork PR** from `main` with the fork pull request number.
+   The workflow creates the integration branch and replacement pull request
+   only after re-verifying the reviewed SHA.
+3. Approve the replacement pull request's hosted workflow run if GitHub
+   requires it, then wait for the required check.
+4. Confirm the integration branch head equals the reviewed SHA.
+5. In Actions, select **Run bump.sh**, choose the `main` workflow ref, and
    enter the integration branch and exact SHA.
 
 The workflow checks the SHA before execution and again before pushing. Any new

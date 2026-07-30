@@ -168,6 +168,7 @@ def test_sensitive_paths_have_codeowners():
         "/scripts/",
         "/tests/test-monitor-lifecycle.py",
         "/tests/test-monitor-update-policy.py",
+        "/tests/test-promote-pr.py",
         "/tests/test-update-versions-env.py",
         "/tests/test-versions-contract.py",
     ):
@@ -188,9 +189,9 @@ def test_security_runbook_is_linked_from_entry_points():
 
 def test_promote_workflow_requires_main_dispatch():
     workflow = read(WORKFLOWS / "promote-pr.yaml")
-    assert 'WORKFLOW_REF: ${{ github.ref }}' in workflow
-    assert '"refs/heads/main"' in workflow
-    assert "Refusing to run: dispatch this workflow from main." in workflow
+    script = read(ROOT / "scripts" / "promote_pr.py")
+    assert 'workflow_ref != "refs/heads/main"' in script
+    assert "Dispatch this workflow from main." in script
     assert "ref: ${{ github.sha }}" in workflow
     assert "persist-credentials: false" in workflow
     assert "ubuntu-latest" in workflow, "must run on GitHub-hosted runner"
@@ -201,72 +202,83 @@ def test_promote_workflow_requires_main_dispatch():
 
 def test_promote_workflow_does_not_checkout_or_execute_contributor_code():
     workflow = read(WORKFLOWS / "promote-pr.yaml")
+    script = read(ROOT / "scripts" / "promote_pr.py")
     # Must never checkout the fork PR's code.
     assert 'ref: ${{ github.sha }}' in workflow
-    assert "fetch-depth: 0" in workflow or "fetch-depth: 1" not in workflow
+    assert "fetch-depth: 0" in workflow
     # Must not run scripts from the fork.
     assert 'run-bump.yaml' not in workflow
     assert 'scripts/bump.sh' not in workflow
+    assert "checkout" not in script
+    assert "refs/pull/" in script
 
 
 def test_promote_workflow_refuses_same_repo_and_no_approval():
-    workflow = read(WORKFLOWS / "promote-pr.yaml")
-    assert "not a fork" in workflow
-    assert "approving review" in workflow
-    assert "head SHA" in workflow
-    assert "no approving review" in workflow
-    assert "already exists" in workflow
-    assert "head changed" in workflow
+    script = read(ROOT / "scripts" / "promote_pr.py")
+    assert "not a fork pull request" in script
+    assert "No current maintainer approval" in script
+    assert "head SHA" in script
+    assert "already exists" in script
+    assert "fetched head changed" in script
 
 
 def test_promote_workflow_checks_reviewer_permission():
-    workflow = read(WORKFLOWS / "promote-pr.yaml")
-    assert "collaborators" in workflow, "must check reviewer permission"
-    assert "not a maintainer" in workflow, "must reject non-maintainer reviews"
+    script = read(ROOT / "scripts" / "promote_pr.py")
+    assert "collaborators" in script, "must check reviewer permission"
+    assert "MAINTAINER_PERMISSIONS" in script
 
 
 def test_promote_workflow_paginates_reviews():
-    workflow = read(WORKFLOWS / "promote-pr.yaml")
-    assert "--paginate" in workflow, "must paginate review API calls"
-    assert "combine-pages.py" in workflow, "must combine paginated results"
-    assert "REVIEWS" in workflow, "must capture combined reviews"
+    script = read(ROOT / "scripts" / "promote_pr.py")
+    assert '"--paginate"' in script, "must paginate review API calls"
+    assert '"--slurp"' in script, "must combine paginated results"
+    assert "flatten_paginated_json" in script
 
 
 def test_comment_uses_correct_syntax():
-    workflow = read(WORKFLOWS / "promote-pr.yaml")
-    assert 'body=@/tmp/pr-comment.md' in workflow, "must use body=@file syntax"
+    script = read(ROOT / "scripts" / "promote_pr.py")
+    assert '"--field"' in script
+    assert 'f"body={body}"' in script
 
 
 def test_promote_workflow_reverifies_before_branch_creation():
-    workflow = read(WORKFLOWS / "promote-pr.yaml")
-    assert "Re-verify PR head" in workflow, "must re-verify before creating branch"
-    assert "approving review for SHA" in workflow, "must re-check approval validity"
-    assert "no longer valid" in workflow, "must reject dismissed approval"
-    assert "head changed" in workflow, "must catch PR head movement after approval"
+    script = read(ROOT / "scripts" / "promote_pr.py")
+    assert "reverify_pull_request(pr, current)" in script
+    assert script.count("validate_maintainer_approval(") >= 3
+    assert "verify_fetched_pull_ref" in script
 
 
 def test_verify_checks_fail_closed():
-    workflow = read(WORKFLOWS / "promote-pr.yaml")
-    assert 'REQUIRED_CHECK_NAME="test"' in workflow, "must define required check name"
-    assert 'REQUIRED_APP_ID="15368"' in workflow, "must define required app ID"
-    assert '[[ "$CHECKS" == "[]" ]]' in workflow, "must handle empty JSON array"
-    assert "no check runs found" in workflow, "must fail closed when no checks exist"
-    assert "cannot proceed safely" in workflow, "must explain why check is required"
+    script = read(ROOT / "scripts" / "promote_pr.py")
+    assert 'REQUIRED_CHECK_NAME = "test"' in script
+    assert "REQUIRED_CHECK_APP_ID = 15368" in script
+    assert "validate_required_check" in script
+    assert "was not found" in script
 
 
 def test_promote_workflow_protections():
     workflow = read(WORKFLOWS / "promote-pr.yaml")
+    script = read(ROOT / "scripts" / "promote_pr.py")
     # Must not use pull_request_target (github.actor would be the PR author).
     assert "pull_request_target" not in workflow
     # Must reject non-main base branches.
-    assert "targets 'main'" in workflow or '"main"' in workflow
+    assert 'base_ref != "main"' in script
     # Must verify required checks.
-    assert "REQUIRED_CHECK_NAME" in workflow, "must define a required check name"
-    assert "REQUIRED_APP_ID" in workflow, "must define a required app ID"
-    assert "was not found" in workflow, "must reject missing required check"
-    assert "wrong_app" in workflow, "must reject wrong app identity"
+    assert "REQUIRED_CHECK_NAME" in script
+    assert "REQUIRED_CHECK_APP_ID" in script
+    assert "was not found" in script
+    assert "wrong app ID" in script
     # Must verify actor is a maintainer.
-    assert "collaborators" in workflow
+    assert "github.permission(context.actor)" in script
+
+
+def test_promote_workflow_delegates_to_testable_script():
+    workflow = read(WORKFLOWS / "promote-pr.yaml")
+    assert "run: python3 scripts/promote_pr.py" in workflow
+    assert "run: |" not in workflow
+    assert "gh api" not in workflow
+    assert "git fetch" not in workflow
+    assert len(workflow.splitlines()) < 60
 
 
 def test_promote_workflow_pins_actions():
@@ -296,6 +308,7 @@ def main():
         test_promote_workflow_does_not_checkout_or_execute_contributor_code,
         test_promote_workflow_refuses_same_repo_and_no_approval,
         test_promote_workflow_protections,
+        test_promote_workflow_delegates_to_testable_script,
         test_promote_workflow_pins_actions,
         test_promote_workflow_reverifies_before_branch_creation,
         test_promote_workflow_checks_reviewer_permission,

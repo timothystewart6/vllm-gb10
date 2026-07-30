@@ -74,10 +74,11 @@ bumps. There is intentionally no bare `v0.24.0` tag - it would be mutable.
 2. Open a pull request. GitHub-hosted checks validate the proposed changes
    without running contributor code on the DGX Spark
 3. After reviewing an exact commit SHA, a maintainer promotes fork changes to
-   an upstream integration branch, opens a replacement PR, and manually
-   dispatches `run-bump.yaml` from `main`. The workflow imports validated build
-   inputs as data, runs trusted `main` scripts, and commits generated files to
-   the integration branch
+   an upstream integration branch by dispatching **Promote fork PR** from
+   `main`. After the replacement PR's hosted checks pass, the maintainer
+   dispatches `run-bump.yaml` from `main`. The workflow imports validated
+   build inputs as data, runs trusted `main` scripts, and commits generated
+   files to the integration branch
 4. Review the generated diff, then merge
 5. A green build on `main` publishes updated image tags to GHCR and creates
    a GitHub Release automatically

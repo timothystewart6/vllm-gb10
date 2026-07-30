@@ -166,12 +166,23 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Fetch all reviews with a generous per-page limit.
-          # Pagination across multiple pages can be added if reviews regularly
-          # exceed 100.
+          # Fetch ALL reviews across every page by combining page arrays.
+          printf '%s\n' \
+            'import sys,json' \
+            'combined=[]' \
+            'for line in sys.stdin:' \
+            '    line=line.strip()' \
+            '    if not line: continue' \
+            '    try:' \
+            '        page=json.loads(line)' \
+            '        if isinstance(page,list): combined.extend(page)' \
+            '    except json.JSONDecodeError: pass' \
+            'print(json.dumps(combined))' \
+            > /tmp/combine-pages.py
           REVIEWS=$(gh api \
+            --paginate \
             "/repos/${{ github.repository }}/pulls/${PR_NUMBER}/reviews?per_page=100" \
-            --jq '.')
+            --jq '.' | python3 /tmp/combine-pages.py)
 
           if [[ -z "$REVIEWS" ]]; then
             echo "Refusing: no reviews found on PR #${PR_NUMBER}."
@@ -242,73 +253,81 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Query the check runs for the PR head SHA. The branch protection
-          # endpoint requires Administration: read which GITHUB_TOKEN cannot
-          # grant, so we instead enumerate check runs and look up required
-          # checks from a known repository policy file.
-          # We require all check runs that have the conclusion "action_required"
-          # or are pending. However, we cannot distinguish required from
-          # optional check runs without branch protection admin access.
-          #
-          # As a conservative alternative: verify every check run on the PR
-          # head SHA has completed successfully. If any check is failing or
-          # pending, refuse promotion.
           CHECKS=$(gh api \
             "/repos/${{ github.repository }}/commits/${PR_HEAD_SHA}/check-runs?per_page=100" \
             --jq '.check_runs')
 
-          if [[ -z "$CHECKS" ]]; then
+          # Fail closed on empty or absent check result.
+          if [[ -z "$CHECKS" ]] || [[ "$CHECKS" == "[]" ]]; then
             echo "Refusing: no check runs found for ${PR_HEAD_SHA}."
             echo "Without check results, promotion cannot proceed safely."
             exit 1
           fi
 
+          # The repository requires the check named "test" from GitHub
+          # App ID 15368 (GitHub Actions). This identity is defined as a
+          # trusted declarative constant in the workflow definition because
+          # GITHUB_TOKEN cannot read branch protection settings.
+          #
+          # If the required check identity changes, update this constant
+          # and the corresponding policy test.
+          REQUIRED_CHECK_NAME="test"
+          REQUIRED_APP_ID="15368"
+
+          REQUIRED_FOUND=false
           FAILED=""
-          PENDING=""
 
-          # De-duplicate by check run name (latest conclusion wins per name).
-          printf '%s\n' 'import sys,json' \
-            'from collections import OrderedDict' \
+          # Write check-run parser to a temp script.
+          printf '%s\n' \
+            'import sys,json' \
             'checks=json.load(sys.stdin)' \
-            'if not isinstance(checks, list):' \
-            '    checks=[checks]' \
-            'dedup=OrderedDict()' \
             'for c in checks:' \
-            '    dedup[c["name"]]={"conclusion":c.get("conclusion",""),"status":c.get("status",""),"app_slug":c.get("app",{}).get("slug","")}' \
-            'for n,info in dedup.items():' \
-            '    print(f"{info[\"conclusion\"]}|{info[\"status\"]}|{info[\"app_slug\"]}|{n}")' \
-            > /tmp/parse-checks.py
-          printf '%s' "$CHECKS" | python3 /tmp/parse-checks.py > /tmp/all-checks.txt
+            '    name=c["name"]' \
+            '    conclusion=c.get("conclusion","")' \
+            '    status=c.get("status","")' \
+            '    app_id=str(c.get("app",{}).get("id",""))' \
+            '    print(f"{name}\t{conclusion}\t{status}\t{app_id}")' \
+            > /tmp/parse-check-runs.py
 
-          while IFS='|' read -r conclusion status app_slug name; do
+          while IFS=$'\t' read -r name conclusion status app_id; do
             [[ -z "$name" ]] && continue
 
-            if [[ "$status" != "completed" ]]; then
-              echo "FAIL: check '$name' is '$status', not completed."
-              PENDING="$PENDING $name"
-              continue
+            if [[ "$name" == "$REQUIRED_CHECK_NAME" ]]; then
+              REQUIRED_FOUND=true
+
+              if [[ "$app_id" != "$REQUIRED_APP_ID" ]]; then
+                echo "FAIL: required check '$REQUIRED_CHECK_NAME' is from app ID $app_id, expected $REQUIRED_APP_ID."
+                FAILED="$FAILED $REQUIRED_CHECK_NAME(wrong_app)"
+                continue
+              fi
+
+              if [[ "$status" != "completed" ]]; then
+                echo "FAIL: required check '$REQUIRED_CHECK_NAME' is '$status', not completed."
+                FAILED="$FAILED $REQUIRED_CHECK_NAME(pending)"
+                continue
+              fi
+
+              if [[ "$conclusion" != "success" ]] && [[ "$conclusion" != "neutral" ]]; then
+                echo "FAIL: required check '$REQUIRED_CHECK_NAME' concluded '$conclusion'."
+                FAILED="$FAILED $REQUIRED_CHECK_NAME(failed)"
+                continue
+              fi
+
+              echo "PASS: required check '$REQUIRED_CHECK_NAME' concluded '$conclusion' (app ID $app_id)."
             fi
+          done < <(printf '%s' "$CHECKS" | python3 /tmp/parse-check-runs.py)
 
-            if [[ "$conclusion" != "success" ]] && [[ "$conclusion" != "neutral" ]]; then
-              echo "FAIL: check '$name' concluded '$conclusion', not success or neutral."
-              FAILED="$FAILED $name"
-              continue
-            fi
-
-            echo "PASS: check '$name' concluded '$conclusion' (app: $app_slug)."
-          done < /tmp/all-checks.txt
-
-          if [[ -n "$PENDING" ]]; then
-            echo "Refusing: pending checks:$PENDING"
+          if [[ "$REQUIRED_FOUND" != "true" ]]; then
+            echo "Refusing: required check '$REQUIRED_CHECK_NAME' was not found on ${PR_HEAD_SHA}."
             exit 1
           fi
 
           if [[ -n "$FAILED" ]]; then
-            echo "Refusing: failed checks:$FAILED"
+            echo "Refusing: required check failures:$FAILED"
             exit 1
           fi
 
-          echo "All checks pass for ${PR_HEAD_SHA}."
+          echo "Required check '$REQUIRED_CHECK_NAME' passed for ${PR_HEAD_SHA}."
 
       - name: Re-verify PR head and approval before branch creation
         env:
@@ -334,8 +353,9 @@ jobs:
           # paginated, effective-state, and reviewer-permission logic as the
           # initial check.
           REVIEWS=$(gh api \
+            --paginate \
             "/repos/${{ github.repository }}/pulls/${PR_NUMBER}/reviews?per_page=100" \
-            --jq '.')
+            --jq '.' | python3 /tmp/combine-pages.py)
 
           if [[ -z "$REVIEWS" ]]; then
             echo "Refusing: no reviews found on re-verify."
@@ -512,9 +532,15 @@ jobs:
           REPLACEMENT_NUMBER=$(printf '%s' "$PR_URL" | grep -oE '/pull/[0-9]+$' | grep -oE '[0-9]+')
 
           if [[ -z "$REPLACEMENT_NUMBER" ]]; then
-            echo "Warning: could not determine replacement PR number from output."
-            echo "Integration branch ${INTEGRATION_BRANCH} was created."
-            echo "Verify replacement PR status manually."
+            echo "Error: could not determine replacement PR number from output."
+            echo "Removing integration branch ${INTEGRATION_BRANCH} to avoid orphan state."
+            # Use a separate temporary token helper to push-delete the branch
+            # since the checkout uses persist-credentials: false.
+            gh api \
+              "/repos/${{ github.repository }}/git/refs/heads/${INTEGRATION_BRANCH}" \
+              --method DELETE \
+              --silent || true
+            exit 1
           else
             echo "Created replacement PR #${REPLACEMENT_NUMBER}"
             echo "REPLACEMENT_NUMBER=${REPLACEMENT_NUMBER}" >> "$GITHUB_ENV"
@@ -544,7 +570,7 @@ jobs:
           gh api \
             "/repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
             --method POST \
-            --field body@/tmp/pr-comment.md \
+            --field body=@/tmp/pr-comment.md \
             --silent
 
           echo "Commented on source PR #${PR_NUMBER}."

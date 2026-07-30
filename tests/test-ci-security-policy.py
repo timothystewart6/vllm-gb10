@@ -225,6 +225,18 @@ def test_promote_workflow_checks_reviewer_permission():
     assert "not a maintainer" in workflow, "must reject non-maintainer reviews"
 
 
+def test_promote_workflow_paginates_reviews():
+    workflow = read(WORKFLOWS / "promote-pr.yaml")
+    assert "--paginate" in workflow, "must paginate review API calls"
+    assert "combine-pages.py" in workflow, "must combine paginated results"
+    assert "REVIEWS" in workflow, "must capture combined reviews"
+
+
+def test_comment_uses_correct_syntax():
+    workflow = read(WORKFLOWS / "promote-pr.yaml")
+    assert 'body=@/tmp/pr-comment.md' in workflow, "must use body=@file syntax"
+
+
 def test_promote_workflow_reverifies_before_branch_creation():
     workflow = read(WORKFLOWS / "promote-pr.yaml")
     assert "Re-verify PR head" in workflow, "must re-verify before creating branch"
@@ -235,6 +247,9 @@ def test_promote_workflow_reverifies_before_branch_creation():
 
 def test_verify_checks_fail_closed():
     workflow = read(WORKFLOWS / "promote-pr.yaml")
+    assert 'REQUIRED_CHECK_NAME="test"' in workflow, "must define required check name"
+    assert 'REQUIRED_APP_ID="15368"' in workflow, "must define required app ID"
+    assert '[[ "$CHECKS" == "[]" ]]' in workflow, "must handle empty JSON array"
     assert "no check runs found" in workflow, "must fail closed when no checks exist"
     assert "cannot proceed safely" in workflow, "must explain why check is required"
 
@@ -246,7 +261,10 @@ def test_promote_workflow_protections():
     # Must reject non-main base branches.
     assert "targets 'main'" in workflow or '"main"' in workflow
     # Must verify required checks.
-    assert "required checks" in workflow or "required_status_checks" in workflow
+    assert "REQUIRED_CHECK_NAME" in workflow, "must define a required check name"
+    assert "REQUIRED_APP_ID" in workflow, "must define a required app ID"
+    assert "was not found" in workflow, "must reject missing required check"
+    assert "wrong_app" in workflow, "must reject wrong app identity"
     # Must verify actor is a maintainer.
     assert "collaborators" in workflow
 
@@ -282,6 +300,8 @@ def main():
         test_promote_workflow_reverifies_before_branch_creation,
         test_promote_workflow_checks_reviewer_permission,
         test_verify_checks_fail_closed,
+        test_promote_workflow_paginates_reviews,
+        test_comment_uses_correct_syntax,
     ]
     for test in tests:
         test()

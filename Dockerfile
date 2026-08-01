@@ -236,12 +236,13 @@ COPY locks/python-runtime.txt /tmp/python-runtime.txt
 
 WORKDIR /workspace
 
-# Tiktoken encodings - static blobs from OpenAI, verified against committed
-# checksums so the build fails loudly if upstream ever changes the bytes.
+# Tiktoken encodings - static blobs mirrored in Microsoft's official ML.NET
+# repository at a pinned commit, verified against committed checksums so the
+# build fails loudly if the mirror ever changes the bytes.
 COPY checksums/tiktoken.sha256 /tmp/tiktoken.sha256
 RUN mkdir -p tiktoken_encodings \
- && wget -O tiktoken_encodings/o200k_base.tiktoken  https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken \
- && wget -O tiktoken_encodings/cl100k_base.tiktoken https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken \
+ && wget -O tiktoken_encodings/o200k_base.tiktoken  https://raw.githubusercontent.com/dotnet/machinelearning/efefa92f4486a43047c5b47618885a71bf7f0967/src/Microsoft.ML.Tokenizers.Data.O200kBase/Data/o200k_base.tiktoken \
+ && wget -O tiktoken_encodings/cl100k_base.tiktoken https://raw.githubusercontent.com/dotnet/machinelearning/efefa92f4486a43047c5b47618885a71bf7f0967/src/Microsoft.ML.Tokenizers.Data.Cl100kBase/Data/cl100k_base.tiktoken \
  && cd tiktoken_encodings && sha256sum -c /tmp/tiktoken.sha256
 ENV TIKTOKEN_ENCODINGS_BASE=/workspace/tiktoken_encodings
 

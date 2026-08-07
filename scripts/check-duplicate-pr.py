@@ -83,6 +83,22 @@ def diff_has_substantive_changes(diff_text):
     return False
 
 
+def resolve_base_ref():
+    """Pick the ref each PR branch is diffed against.
+
+    The create-pr workflow checks out main with fetch-depth 1, so the
+    detached HEAD is the main head but origin/main is not a local ref. Prefer
+    origin/main when it exists for full clones, then fall back to HEAD so the
+    comparison still works in a shallow checkout. Both resolve to the same
+    commit in the create-pr workflow.
+    """
+    for ref in ("origin/main", "HEAD"):
+        result = run_git(["rev-parse", "--verify", "--quiet", ref], check=False)
+        if result.returncode == 0:
+            return ref
+    raise RuntimeError("Could not resolve a base ref (origin/main or HEAD) to diff against")
+
+
 def check_for_duplicate():
     """Check for existing PRs with matching versions.env, return True if duplicate."""
     # First check if versions.env actually has uncommitted changes
@@ -123,18 +139,26 @@ def check_for_duplicate():
     else:
         prs = [json.loads(line) for line in lines]
 
+    # Pick the base ref once so every PR branch and the working tree are
+    # compared against the same commit. The create-pr checkout is shallow, so
+    # fall back from origin/main to HEAD when the remote ref is not present.
+    base_ref = resolve_base_ref()
+
     for pr in prs:
         number = pr["number"]
         branch = pr["headRefName"]
         print(f"Checking PR #{number} ({branch})...")
 
-        # Fetch the branch
-        run_git(["fetch", "origin", branch])
+        # Fetch the branch pinned to its remote-tracking ref. A plain
+        # "git fetch origin <branch>" only updates FETCH_HEAD and never creates
+        # refs/remotes/origin/<branch>, so the diff target below would not
+        # resolve in a fresh shallow checkout.
+        run_git(["fetch", "origin", f"{branch}:refs/remotes/origin/{branch}"])
 
-        # Compare the substantive changes between the PR branch and origin/main
-        # vs the working tree and origin/main. This way we compare what each
-        # changes relative to the common base, ignoring GB10_BUILD.
-        branch_diff_vs_main = get_versions_diff(branch, "origin/main")
+        # Compare the substantive changes between the PR branch and the base
+        # ref vs the working tree and the base ref. This way we compare what
+        # each changes relative to the common base, ignoring GB10_BUILD.
+        branch_diff_vs_main = get_versions_diff(branch, base_ref)
         if diff_has_substantive_changes(branch_diff_vs_main) != diff_has_substantive_changes(working_diff):
             print(f"PR #{number} has different versions.env -- not a match")
             continue

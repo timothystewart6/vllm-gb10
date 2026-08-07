@@ -193,6 +193,33 @@ if __name__ == "__main__":
             10,  # proceed (different substantive content under HEAD base)
         ),
         (
+            "git diff fails for a PR branch (fail closed, not a silent duplicate)",
+            '{"number": 42, "headRefName": "deps/bump-42"}',
+            {"working_diff": UV_AND_GB10_DIFF,
+             "branch_diffs_vs_base": {"deps/bump-42": UV_AND_GB10_DIFF},
+             "branch_diff_errors": ["deps/bump-42"],
+             "fetch_exit": 0},
+            2,  # error (duplicate check could not be completed)
+        ),
+        (
+            "git diff fails for the working tree (fail closed, not a silent skip)",
+            '{"number": 42, "headRefName": "deps/bump-42"}',
+            {"working_diff": UV_AND_GB10_DIFF,
+             "branch_diffs_vs_base": {"deps/bump-42": UV_AND_GB10_DIFF},
+             "working_diff_error": True,
+             "fetch_exit": 0},
+            2,  # error (duplicate check could not be completed)
+        ),
+        (
+            "Two open PRs, first (identical change) diff errors, second differs (fail closed)",
+            '{"number": 41, "headRefName": "deps/bump-41"}\n{"number": 42, "headRefName": "deps/bump-42"}',
+            {"working_diff": UV_AND_GB10_DIFF,
+             "branch_diffs_vs_base": {"deps/bump-41": UV_AND_GB10_DIFF, "deps/bump-42": VLLM_AND_GB10_DIFF},
+             "branch_diff_errors": ["deps/bump-41"],
+             "fetch_exit": 0},
+            2,  # error (one branch could not be compared, so no decision)
+        ),
+        (
             "Multiple PRs, none matching",
             '{"number": 41, "headRefName": "deps/bump-41"}\n{"number": 42, "headRefName": "deps/bump-42"}',
             {"working_diff": UV_AND_GB10_DIFF,
@@ -280,6 +307,8 @@ if __name__ == "__main__":
             fetch_exit = fake_git_behaviors.get("fetch_exit", 0)
             gh_exit = fake_git_behaviors.get("gh_exit", 0)
             origin_main_available = fake_git_behaviors.get("origin_main_available", True)
+            error_branches = set(fake_git_behaviors.get("branch_diff_errors", []))
+            working_diff_error = fake_git_behaviors.get("working_diff_error", False)
             # The script prefers origin/main when the ref resolves, otherwise
             # falls back to HEAD (the shallow create-pr checkout case).
             base_ref = "origin/main" if origin_main_available else "HEAD"
@@ -288,6 +317,11 @@ if __name__ == "__main__":
             mock_gh = os.path.join(tmpdir, "gh")
             with open(mock_gh, "w") as f:
                 f.write("#!/usr/bin/env bash\n")
+                # Require the head-branch search qualifier so a regression back
+                # to a broad "deps/bump" text search is caught (exit 3 becomes
+                # a script error / workflow failure).
+                f.write('search_ok=0; for a in "$@"; do [ "$a" = "head:deps/bump" ] && search_ok=1; done\n')
+                f.write("[ $search_ok -eq 1 ] || exit 3\n")
                 if fake_gh_stdout:
                     f.write(f'cat << \'ENDJSON\'\n{fake_gh_stdout}\nENDJSON\n')
                 f.write(f"exit {gh_exit}\n")
@@ -301,7 +335,10 @@ if __name__ == "__main__":
 
                 # Handle "git diff --exit-code HEAD -- versions.env" (working tree vs HEAD)
                 f.write('if [ "$1" = "diff" ] && [ "$2" = "--exit-code" ] && [ "$3" = "HEAD" ] && [ "$4" = "--" ] && [ "$5" = "versions.env" ] && [ $# -eq 5 ]; then\n')
-                if working_diff is not None:
+                if working_diff_error:
+                    f.write('  echo "fatal: not a git repository" >&2\n')
+                    f.write("  exit 128\n")
+                elif working_diff is not None:
                     f.write(f'  cat << \'ENDDIFF\'\n{working_diff}\nENDDIFF\n')
                     f.write("  exit 1\n")
                 else:
@@ -329,7 +366,11 @@ if __name__ == "__main__":
                     for br, diff_content in branch_diffs_vs_base.items():
                         prefix = "elif" if i > 0 else "if"
                         i+=1
-                        if diff_content is not None:
+                        if br in error_branches:
+                            f.write(f'  {prefix} [ "$4" = "origin/{br}" ]; then\n')
+                            f.write('    echo "fatal: ambiguous argument" >&2\n')
+                            f.write("    exit 128\n")
+                        elif diff_content is not None:
                             f.write(f'  {prefix} [ "$4" = "origin/{br}" ]; then\n')
                             f.write(f'    cat << \'ENDDIFF\'\n{diff_content}\nENDDIFF\n')
                             f.write("    exit 1\n")

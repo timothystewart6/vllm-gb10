@@ -64,6 +64,13 @@ def get_versions_diff(ref=None, base=None):
     result = run_git(args, check=False)
     if result.returncode == 0:
         return None
+    if result.returncode != 1:
+        # git diff --exit-code returns 0 (no differences), 1 (differences), or
+        # a higher code on an actual failure. Any failure must fail closed
+        # rather than be mistaken for "no substantive change", which would let
+        # a duplicate PR slip through.
+        detail = result.stderr.strip() or result.stdout.strip() or f"git diff exited with code {result.returncode}"
+        raise RuntimeError(f"git diff failed: {detail}")
     return result.stdout
 
 
@@ -113,7 +120,11 @@ def check_for_duplicate():
             "pr", "list",
             "--state", "OPEN",
             "--author", "@me",
-            "--search", "deps/bump",
+            # Match the deps/bump head branch namespace precisely. A plain text
+            # search for "deps/bump" also matches unrelated PRs whose title or
+            # body mentions "deps/bump", which is noisy and can mask a missing
+            # real candidate.
+            "--search", "head:deps/bump",
             "--json", "number,headRefName",
             "--jq", ".[]",
         ],

@@ -10,10 +10,12 @@
 #
 # Job layout (split so re-runs of cheap stages don't require a 1-hour rebuild):
 #
-#   build    -> compile + push image to GHCR (the expensive job; cached to
-#               ghcr.io/.../:buildcache so re-runs are near-instant cache hits)
-#   verify   -> needs: build. Pull image, smoke test, extract artifacts.
-#   release  -> needs: verify. Push git release tag, mirror image to Docker Hub.
+#   stop-model  -> stop the existing two-node model engine to release RAM.
+#   build       -> compile + push image to GHCR (the expensive job; cached to
+#                  ghcr.io/.../:buildcache so re-runs are near-instant hits).
+#   start-model -> restart both model-engine containers, even after failure.
+#   verify      -> pull image, smoke test, extract artifacts.
+#   release     -> push git release tag, mirror image to Docker Hub.
 #
 # Re-run "verify" or "release" from the Actions UI to retry without rebuilding.
 
@@ -32,15 +34,41 @@ on:
       - checksums/**
       - tests/**
 
-# No workflow-level concurrency limit: each self-hosted runner handles exactly
-# one job at a time (GitHub enforces this), so two Sparks can build in parallel.
+concurrency:
+  group: build-image-model-lifecycle
+  cancel-in-progress: false
 
 permissions:
   contents: write
   packages: write
 
 jobs:
+  stop-model:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: gb10-1
+            container: vllm-ray-head
+          - runner: gb10-2
+            container: vllm-ray-worker
+    runs-on: [self-hosted, linux, ARM64, "${{ matrix.runner }}"]
+
+    steps:
+      - name: Require main
+        env:
+          WORKFLOW_REF: ${{ github.ref }}
+        run: |
+          if [[ "$WORKFLOW_REF" != "refs/heads/main" ]]; then
+            echo "Refusing to run GX10 jobs from a non-main workflow ref."
+            exit 1
+          fi
+
+      - name: Stop model container
+        run: docker stop "${{ matrix.container }}"
+
   build:
+    needs: stop-model
     runs-on: [self-hosted, linux, ARM64, dgx-spark]
     outputs:
       vllm_ref: ${{ steps.vars.outputs.vllm_ref }}
@@ -60,9 +88,6 @@ jobs:
             echo "Refusing to run GX10 jobs from a non-main workflow ref."
             exit 1
           fi
-
-      - name: Stop vLLM containers
-        run: docker stop vllm-ray-head vllm-ray-worker 2>/dev/null || true
 
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -206,12 +231,34 @@ jobs:
             FLASHINFER_CUDA_ARCH_LIST=${{ env.FLASHINFER_CUDA_ARCH_LIST }}
             SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }}
 
-      - name: Start vLLM containers
-        if: always()
-        run: docker start vllm-ray-head vllm-ray-worker 2>/dev/null || true
+  start-model:
+    needs: build
+    if: always()
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: gb10-1
+            container: vllm-ray-head
+          - runner: gb10-2
+            container: vllm-ray-worker
+    runs-on: [self-hosted, linux, ARM64, "${{ matrix.runner }}"]
+
+    steps:
+      - name: Require main
+        env:
+          WORKFLOW_REF: ${{ github.ref }}
+        run: |
+          if [[ "$WORKFLOW_REF" != "refs/heads/main" ]]; then
+            echo "Refusing to run GX10 jobs from a non-main workflow ref."
+            exit 1
+          fi
+
+      - name: Start model container
+        run: docker start "${{ matrix.container }}"
 
   verify:
-    needs: build
+    needs: [build, start-model]
     runs-on: [self-hosted, linux, ARM64, dgx-spark]
     env:
       CANONICAL_IMAGE: ghcr.io/timothystewart6/vllm-gb10:${{ needs.build.outputs.canonical_tag }}

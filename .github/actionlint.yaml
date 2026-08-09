@@ -1,3 +1,5 @@
 self-hosted-runner:
   labels:
     - dgx-spark
+    - gb10-1
+    - gb10-2

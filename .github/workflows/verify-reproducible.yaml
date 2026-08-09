@@ -36,14 +36,39 @@ on:
 
 # No packages: write needed - both builds are local only, never pushed.
 concurrency:
-  group: dgx-spark
+  group: build-image-model-lifecycle
   cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
+  stop-model:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: gb10-1
+            container: vllm-ray-head
+          - runner: gb10-2
+            container: vllm-ray-worker
+    runs-on: [self-hosted, linux, ARM64, "${{ matrix.runner }}"]
+
+    steps:
+      - name: Require main
+        env:
+          WORKFLOW_REF: ${{ github.ref }}
+        run: |
+          if [[ "$WORKFLOW_REF" != "refs/heads/main" ]]; then
+            echo "Refusing to run GX10 jobs from a non-main workflow ref."
+            exit 1
+          fi
+
+      - name: Stop model container
+        run: docker stop "${{ matrix.container }}"
+
   verify:
+    needs: stop-model
     runs-on: [self-hosted, linux, ARM64, dgx-spark]
 
     steps:
@@ -229,3 +254,29 @@ jobs:
           name: verify-reproducible-${{ github.run_id }}
           path: /tmp/verify/
           if-no-files-found: error
+
+  start-model:
+    needs: verify
+    if: always()
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: gb10-1
+            container: vllm-ray-head
+          - runner: gb10-2
+            container: vllm-ray-worker
+    runs-on: [self-hosted, linux, ARM64, "${{ matrix.runner }}"]
+
+    steps:
+      - name: Require main
+        env:
+          WORKFLOW_REF: ${{ github.ref }}
+        run: |
+          if [[ "$WORKFLOW_REF" != "refs/heads/main" ]]; then
+            echo "Refusing to run GX10 jobs from a non-main workflow ref."
+            exit 1
+          fi
+
+      - name: Start model container
+        run: docker start "${{ matrix.container }}"

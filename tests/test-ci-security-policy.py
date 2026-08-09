@@ -129,6 +129,36 @@ def test_build_coordinates_model_lifecycle_across_both_gb10_nodes():
     assert "needs: [build, start-model]" in verify_job
 
 
+def test_reproducibility_build_coordinates_model_lifecycle():
+    workflow = read(WORKFLOWS / "verify-reproducible.yaml")
+    stop_job = workflow.split("\n  stop-model:", 1)[1].split(
+        "\n  verify:", 1
+    )[0]
+    verify_job = workflow.split("\n  verify:", 1)[1].split(
+        "\n  start-model:", 1
+    )[0]
+    start_job = workflow.split("\n  start-model:", 1)[1]
+
+    assert "group: build-image-model-lifecycle" in workflow
+    assert "cancel-in-progress: false" in workflow
+    for job in (stop_job, start_job):
+        assert "runner: gb10-1" in job
+        assert "container: vllm-ray-head" in job
+        assert "runner: gb10-2" in job
+        assert "container: vllm-ray-worker" in job
+        assert 'runs-on: [self-hosted, linux, ARM64, "${{ matrix.runner }}"]' in job
+        assert "fail-fast: false" in job
+        assert "Require main" in job
+        assert "|| true" not in job
+    assert 'docker stop "${{ matrix.container }}"' in stop_job
+    assert "needs: stop-model" in verify_job
+    assert "docker stop" not in verify_job
+    assert "docker start" not in verify_job
+    assert "needs: verify" in start_job
+    assert "if: always()" in start_job
+    assert 'docker start "${{ matrix.container }}"' in start_job
+
+
 def test_privileged_workflows_reject_untrusted_refs():
     monitor = read(WORKFLOWS / "monitor-upstream-releases.yaml")
     assert 'WORKFLOW_REF: ${{ github.ref }}' in monitor
@@ -341,6 +371,7 @@ def main():
         test_bump_workflow_preserves_approval_boundary,
         test_trusted_builds_checkout_the_exact_event_sha,
         test_build_coordinates_model_lifecycle_across_both_gb10_nodes,
+        test_reproducibility_build_coordinates_model_lifecycle,
         test_privileged_workflows_reject_untrusted_refs,
         test_monitor_pr_creation_is_scoped_and_handles_detached_checkout,
         test_pr_workflows_are_read_only_and_secret_free,

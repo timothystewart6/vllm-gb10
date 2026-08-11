@@ -67,6 +67,8 @@ def test_every_monitored_change_survives_pr_contracts():
             key: (BASE_VALUES[key], candidate_values[key])
         }
         assert key in DIFF.COMPONENT_LABELS
+        if key != "CUDA_BASE_DIGEST":
+            assert key in {name for name, _ in DIFF.COMPONENTS}
         assert DIFF.format_change_lines(changes) == [
             f"- **{DIFF.COMPONENT_LABELS[key]}**: "
             f"{BASE_VALUES[key]} -> {candidate_values[key]}"
@@ -180,6 +182,15 @@ def test_workflows_preserve_generated_pr_handoff_order():
     build = read(".github/workflows/build-image.yaml")
     trigger = build.split("\npermissions:", 1)[0]
     assert "- versions.env" in trigger
+    assert "- tests/**" not in trigger
+    for required_path in (
+        "- Dockerfile",
+        "- locks/**",
+        "- scripts/render-metadata.sh",
+        "- scripts/build-args.sh",
+        "- checksums/**",
+    ):
+        assert required_path in trigger
     assert build.index("Validate versions.env") < build.index(
         "Source versions.env into GITHUB_ENV"
     )

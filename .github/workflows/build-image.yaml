@@ -32,7 +32,6 @@ on:
       - scripts/render-metadata.sh
       - scripts/build-args.sh
       - checksums/**
-      - tests/**
 
 concurrency:
   group: build-image-model-lifecycle

@@ -56,6 +56,10 @@ def validate_monitor_update(base_text: str, candidate_text: str) -> set[str]:
             "release monitor changed disallowed keys: "
             + ", ".join(sorted(unexpected))
         )
+    if "TRITON_VERSION" in changed_keys and "TORCH_VERSION" not in changed_keys:
+        raise VersionsEnvError(
+            "release monitor cannot change Triton without changing Torch"
+        )
     expected_text = render_expected_candidate(
         base_text,
         candidate_values,

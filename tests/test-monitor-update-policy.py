@@ -53,8 +53,29 @@ def assert_rejected(candidate, reason):
 def test_every_monitor_key_is_individually_allowed():
     assert set(VALID_REPLACEMENTS) == VALIDATOR.ALLOWED_UPDATE_KEYS
     for key, value in VALID_REPLACEMENTS.items():
+        if key == "TRITON_VERSION":
+            continue
         candidate = replace_value(BASE_TEXT, key, value)
         assert VALIDATOR.validate_monitor_update(BASE_TEXT, candidate) == {key}
+
+
+def test_triton_change_requires_torch_change():
+    candidate = replace_value(
+        BASE_TEXT,
+        "TRITON_VERSION",
+        VALID_REPLACEMENTS["TRITON_VERSION"],
+    )
+    assert_rejected(candidate, "standalone Triton update")
+
+    candidate = replace_value(
+        candidate,
+        "TORCH_VERSION",
+        VALID_REPLACEMENTS["TORCH_VERSION"],
+    )
+    assert VALIDATOR.validate_monitor_update(BASE_TEXT, candidate) == {
+        "TORCH_VERSION",
+        "TRITON_VERSION",
+    }
 
 
 def test_multiple_approved_values_are_allowed_together():
@@ -151,6 +172,7 @@ def test_shell_and_python_payloads_are_rejected():
 def main():
     tests = [
         test_every_monitor_key_is_individually_allowed,
+        test_triton_change_requires_torch_change,
         test_multiple_approved_values_are_allowed_together,
         test_policy_covers_every_scripted_monitor_update,
         test_every_other_schema_key_is_rejected,

@@ -509,7 +509,7 @@ fi
 # ---------------------------------------------------------------------------
 # apt snapshot age - locks/apt-sources.list
 # Flag stale snapshots so noble-security patches don't go unnoticed.
-# Threshold: INFO >= 30 days, UPDATE >= 60 days.
+# Threshold: INFO >= 7 days, UPDATE >= 60 days.
 # Use --bump-apt-snapshot (locally, never in CI) to advance the date.
 # ---------------------------------------------------------------------------
 
@@ -536,7 +536,7 @@ print((datetime.now(timezone.utc) - snap).days)
     if [[ "${DO_BUMP_APT}" -eq 1 ]]; then
       update_apt_snapshot "${TODAY_STAMP}"
     fi
-  elif [[ "${APT_SNAPSHOT_AGE}" -ge 30 ]]; then
+  elif [[ "${APT_SNAPSHOT_AGE}" -ge 7 ]]; then
     printf 'INFO    %-30s age=%d days (snapshot=%s) - consider refreshing soon\n' \
       "apt snapshot" "${APT_SNAPSHOT_AGE}" "${APT_SNAPSHOT_DISPLAY}"
     if [[ "${DO_BUMP_APT}" -eq 1 ]]; then
@@ -595,7 +595,7 @@ else
   else
     printf '%d component(s) have updates available.\n' "${UPDATES}"
     echo "Run with --update to write changes to versions.env."
-    if [[ "${APT_SNAPSHOT_AGE:-0}" -ge 60 ]]; then
+    if [[ "${APT_SNAPSHOT_AGE:-0}" -ge 7 ]]; then
       echo "Run with --bump-apt-snapshot to advance locks/apt-sources.list to today."
       echo "  NOTE: this busts the apt-base Docker layer cache (full rebuild). Open a"
       echo "  dedicated PR so the cache bust is intentional and isolated."

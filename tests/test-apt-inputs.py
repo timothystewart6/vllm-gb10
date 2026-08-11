@@ -41,7 +41,7 @@ def main():
 
         temporary.write_text(
             sources.read_text().replace(
-                "20260714T000000Z", "20260715T123456Z"
+                "20260811T000000Z", "20260811T123456Z"
             )
         )
         expect_rejected(VALIDATOR.validate_sources, temporary, "mutable timestamp")

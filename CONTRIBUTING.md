@@ -48,6 +48,11 @@ proves that detection, validation, artifact transfer, and PR creation worked.
 It does not prove that the repository remains valid after the candidate values
 are applied.
 
+The PyTorch companion set is one compatibility unit: Torch, TorchVision,
+TorchAudio, and the exact Triton dependency declared by the selected Torch
+release must be updated together. The monitor must never select Triton's
+independent PyPI latest release.
+
 The full lifecycle is:
 
 1. Run the monitor from `main`. Upstream data is processed in the read-only,

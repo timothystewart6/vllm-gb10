@@ -169,6 +169,106 @@ pypi_latest() {
     | python3 -c "import json,sys; print(json.load(sys.stdin)['info']['version'])"
 }
 
+torch_triton_pin() {
+  # Returns the exact Triton dependency for Torch's Python 3.12 arm64 wheel.
+  local torch_version="$1"
+  local torch_index="${PYTORCH_INDEX_URL%/}/torch/"
+  local torch_variant="${PYTORCH_INDEX_URL%/}"
+  torch_variant="${torch_variant##*/}"
+  local metadata_url
+  metadata_url=$(curl -fsSL "${torch_index}" \
+  | python3 -c '
+import html.parser
+import sys
+import urllib.parse
+
+base_url, version, variant = sys.argv[1:]
+wheel_fragment = f"torch-{version}%2B{variant}-cp312-cp312-"
+
+class WheelIndexParser(html.parser.HTMLParser):
+  def handle_starttag(self, tag, attrs):
+    attributes = dict(attrs)
+    href = attributes.get("href", "")
+    if (
+      tag == "a"
+      and wheel_fragment in href
+      and "aarch64.whl" in href
+      and (
+        "data-core-metadata" in attributes
+        or "data-dist-info-metadata" in attributes
+      )
+    ):
+      print(urllib.parse.urljoin(base_url, href.split("#", 1)[0]) + ".metadata")
+
+parser = WheelIndexParser()
+parser.feed(sys.stdin.read())
+' "${torch_index}" "${torch_version}" "${torch_variant}")
+  if [[ -z "${metadata_url}" ]] || [[ "$(printf '%s\n' "${metadata_url}" | wc -l)" -ne 1 ]]; then
+  log "Could not identify one Python 3.12 arm64 Torch wheel for ${torch_version}."
+  return 1
+  fi
+  curl -fsSL "${metadata_url}" \
+    | python3 -c '
+import re
+import sys
+
+environment = {
+  "platform_machine": "aarch64",
+  "platform_system": "Linux",
+  "python_full_version": "3.12.0",
+  "python_version": "3.12",
+  "sys_platform": "linux",
+}
+
+def comparable(variable, value):
+  if variable.startswith("python_"):
+    return tuple(int(part) for part in value.split("."))
+  return value.lower()
+
+def marker_applies(marker):
+  if not marker:
+    return True
+  for clause in re.split(r"\s+and\s+", marker, flags=re.IGNORECASE):
+    match = re.fullmatch(
+      r"\s*([a-z_]+)\s*(==|!=|<=|>=|<|>)\s*([\x22\x27])(.*?)\3\s*",
+      clause,
+      re.IGNORECASE,
+    )
+    if not match or match.group(1) not in environment:
+      return False
+    variable, operator, _, expected = match.groups()
+    actual = comparable(variable, environment[variable])
+    expected = comparable(variable, expected)
+    comparisons = {
+      "==": actual == expected,
+      "!=": actual != expected,
+      "<": actual < expected,
+      "<=": actual <= expected,
+      ">": actual > expected,
+      ">=": actual >= expected,
+    }
+    if not comparisons[operator]:
+      return False
+  return True
+
+pins = set()
+for line in sys.stdin:
+  match = re.match(
+    r"^Requires-Dist:\s*triton\s*==\s*([^\s;]+)(?:\s*;\s*(.*))?$",
+    line.strip(),
+    re.IGNORECASE,
+  )
+  if match and marker_applies(match.group(2)):
+    pins.add(match.group(1))
+
+if len(pins) != 1:
+  raise SystemExit(
+    "arm64 Torch metadata must have one applicable exact Triton dependency"
+  )
+print(pins.pop())
+'
+}
+
 # ---------------------------------------------------------------------------
 # vLLM pins lookup
 # Many of the runtime/build deps must exactly match what vLLM declares at the
@@ -331,13 +431,20 @@ report "TorchVision (TORCHVISION_VERSION)" "TORCHVISION_VERSION" "${TORCHVISION_
 TORCHAUDIO_LATEST=$(vllm_or_pypi "torchaudio")
 report "TorchAudio (TORCHAUDIO_VERSION)" "TORCHAUDIO_VERSION" "${TORCHAUDIO_VERSION}" "${TORCHAUDIO_LATEST}"
 
-# Triton is transitively pinned by torch (e.g. torch 2.11.0 requires triton 3.6.0).
-# vLLM doesn't pin it directly, so we leave it at current and let bump.sh's
-# resolver enforce the torch-coupled version - never auto-bump from PyPI here.
-TRITON_LATEST_PYPI=$(pypi_latest "triton")
-if [ "${TRITON_VERSION}" != "${TRITON_LATEST_PYPI}" ]; then
-  printf '%s %-30s current=%-20s pypi=%s (locked by torch - not auto-bumped)\n' \
-    "INFO   " "Triton (TRITON_VERSION)" "${TRITON_VERSION}" "${TRITON_LATEST_PYPI}"
+# Triton is transitively pinned by Torch. Derive it from the selected Torch
+# release instead of tracking its independent PyPI latest version.
+TRITON_TARGET=$(torch_triton_pin "${TORCH_LATEST}")
+if [ "${TRITON_VERSION}" != "${TRITON_TARGET}" ]; then
+  printf '%s %-30s current=%-20s torch=%s\n' \
+    "${OUT}" "Triton (TRITON_VERSION)" "${TRITON_VERSION}" "${TRITON_TARGET}"
+  UPDATES=$((UPDATES + 1))
+  if [ "${DO_UPDATE}" -eq 1 ]; then
+    if [ "${TORCH_VERSION}" = "${TORCH_LATEST}" ]; then
+      log "Refusing to update Triton without a Torch update."
+      exit 1
+    fi
+    update_env "TRITON_VERSION" "${TRITON_TARGET}"
+  fi
 else
   printf '%s %-30s current=%-20s\n' "${OK}" "Triton (TRITON_VERSION)" "${TRITON_VERSION}"
 fi

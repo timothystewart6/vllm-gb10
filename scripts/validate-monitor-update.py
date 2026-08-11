@@ -18,6 +18,7 @@ ALLOWED_UPDATE_KEYS = {
     "TORCHAUDIO_VERSION",
     "TORCHVISION_VERSION",
     "TORCH_VERSION",
+    "TRITON_VERSION",
     "TVM_FFI_VERSION",
     "UV_VERSION",
     "VLLM_REF",
@@ -54,6 +55,10 @@ def validate_monitor_update(base_text: str, candidate_text: str) -> set[str]:
         raise VersionsEnvError(
             "release monitor changed disallowed keys: "
             + ", ".join(sorted(unexpected))
+        )
+    if "TRITON_VERSION" in changed_keys and "TORCH_VERSION" not in changed_keys:
+        raise VersionsEnvError(
+            "release monitor cannot change Triton without changing Torch"
         )
     expected_text = render_expected_candidate(
         base_text,

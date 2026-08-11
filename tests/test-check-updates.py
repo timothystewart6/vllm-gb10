@@ -40,6 +40,7 @@ MONITOR_FIXTURE_BASELINE = {
     "TORCHAUDIO_VERSION": "2.11.0",
     "TORCHVISION_VERSION": "0.26.0",
     "TORCH_VERSION": "2.11.0",
+    "TRITON_VERSION": "3.6.0",
     "TVM_FFI_VERSION": "0.1.10",
     "UV_VERSION": "0.11.32",
     "VLLM_REF": "v0.26.0",
@@ -82,6 +83,25 @@ elif "astral-sh/uv/releases/latest" in url:
     print(json.dumps({"tag_name": os.environ.get("FAKE_UV_TAG", "0.11.32")}))
 elif "flashinfer-ai/flashinfer/releases/latest" in url:
     print(json.dumps({"tag_name": "v0.6.13"}))
+elif "/whl/" in url and url.endswith("/torch/"):
+    if os.environ.get("FAKE_TORCH_INDEX_HTML"):
+        print(os.environ["FAKE_TORCH_INDEX_HTML"])
+    else:
+        print("""<a href="torch-9.9.0%2Bcu130-cp312-cp312-manylinux_2_28_x86_64.whl" data-core-metadata="sha256:x">x86</a>
+<a href="torch-9.9.0%2Bcu130-cp312-cp312-manylinux_2_28_aarch64.whl" data-core-metadata="sha256:a">arm64</a>
+<a href="torch-2.11.0%2Bcu130-cp312-cp312-manylinux_2_28_aarch64.whl" data-core-metadata="sha256:b">current</a>""")
+elif url.endswith("aarch64.whl.metadata"):
+    if os.environ.get("FAKE_FAIL_TORCH_METADATA") == "1":
+        sys.exit(22)
+    triton_version = "9.6.0" if "torch-9.9.0" in url else "3.6.0"
+    metadata = os.environ.get("FAKE_TORCH_METADATA")
+    if metadata is None:
+        requirement = os.environ.get(
+            "FAKE_TRITON_REQUIREMENT",
+            f'triton=={triton_version}; platform_system == "Linux" and python_version < "3.15"',
+        )
+        metadata = f"Requires-Dist: {requirement}"
+    print(metadata)
 elif "/pypi/triton/json" in url:
     print(json.dumps({"info": {"version": "3.6.0"}}))
 elif "/pypi/nvidia-nvshmem-cu13/json" in url:
@@ -175,11 +195,12 @@ def test_target_vllm_requirements_are_applied():
         assert values["TORCH_VERSION"] == "9.9.0"
         assert values["TORCHVISION_VERSION"] == "9.8.0"
         assert values["TORCHAUDIO_VERSION"] == "9.7.0"
+        assert values["TRITON_VERSION"] == "9.6.0"
         assert values["TVM_FFI_VERSION"] == "9.6.0"
         assert values["TILELANG_VERSION"] == "9.5.0"
         assert values["NUMBA_VERSION"] == "9.4.0"
         assert (root / "versions.env").stat().st_mode & 0o777 == 0o644
-        assert "7 component(s) updated in versions.env" in result.stdout
+        assert "8 component(s) updated in versions.env" in result.stdout
 
 
 def test_repository_version_drift_does_not_change_fixture_results():
@@ -199,7 +220,7 @@ def test_repository_version_drift_does_not_change_fixture_results():
         result = run_check(root, env, "--update")
 
         assert result.returncode == 0, result.stderr
-        assert "7 component(s) updated in versions.env" in result.stdout
+        assert "8 component(s) updated in versions.env" in result.stdout
 
 
 def test_every_monitored_repository_value_is_normalized():
@@ -422,6 +443,138 @@ def test_current_stack_reports_no_updates():
         assert "All components are current" in result.stdout
 
 
+def test_x86_only_triton_requirement_is_rejected_for_arm64():
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory)
+        env["FAKE_VLLM_TAG"] = "v0.26.0"
+        env["FAKE_CURRENT_REQUIREMENTS"] = "1"
+        env["FAKE_TRITON_REQUIREMENT"] = (
+            'triton==3.6.0; platform_system == "Linux" and '
+            'platform_machine == "x86_64"'
+        )
+        result = run_check(root, env, "--update")
+        assert result.returncode != 0
+        assert "must have one applicable exact Triton dependency" in result.stderr
+
+
+def test_torch_wheel_selection_fails_closed():
+    scenarios = {
+        "missing arm64 wheel": (
+            '<a href="torch-2.11.0%2Bcu130-cp312-cp312-manylinux_2_28_x86_64.whl" '
+            'data-core-metadata="sha256:x">x86</a>'
+        ),
+        "missing PEP 658 metadata": (
+            '<a href="torch-2.11.0%2Bcu130-cp312-cp312-manylinux_2_28_aarch64.whl">'
+            "arm64</a>"
+        ),
+        "duplicate arm64 wheels": (
+            '<a href="torch-2.11.0%2Bcu130-cp312-cp312-manylinux_2_28_aarch64.whl" '
+            'data-core-metadata="sha256:a">first</a>\n'
+            '<a href="mirror/torch-2.11.0%2Bcu130-cp312-cp312-manylinux_2_28_aarch64.whl" '
+            'data-core-metadata="sha256:b">second</a>'
+        ),
+    }
+    for reason, index_html in scenarios.items():
+        with tempfile.TemporaryDirectory() as directory:
+            root, env = setup_case(directory)
+            env["FAKE_VLLM_TAG"] = "v0.26.0"
+            env["FAKE_CURRENT_REQUIREMENTS"] = "1"
+            env["FAKE_TORCH_INDEX_HTML"] = index_html
+            result = run_check(root, env)
+            assert result.returncode != 0, reason
+            assert "Could not identify one Python 3.12 arm64 Torch wheel" in result.stderr
+
+
+def test_torch_metadata_failures_are_fatal():
+    scenarios = {
+        "missing Triton dependency": "Metadata-Version: 2.4",
+        "non-exact Triton dependency": "Requires-Dist: triton>=3.6.0",
+        "wrong architecture": (
+            'Requires-Dist: triton==3.6.0; platform_machine == "x86_64"'
+        ),
+        "excluded Python": (
+            'Requires-Dist: triton==3.6.0; python_version >= "3.15"'
+        ),
+        "unsupported marker expression": (
+            'Requires-Dist: triton==3.6.0; platform_system == "Linux" or '
+            'platform_machine == "aarch64"'
+        ),
+        "conflicting applicable pins": (
+            "Requires-Dist: triton==3.6.0\n"
+            "Requires-Dist: triton==3.7.1"
+        ),
+    }
+    for reason, metadata in scenarios.items():
+        with tempfile.TemporaryDirectory() as directory:
+            root, env = setup_case(directory)
+            env["FAKE_VLLM_TAG"] = "v0.26.0"
+            env["FAKE_CURRENT_REQUIREMENTS"] = "1"
+            env["FAKE_TORCH_METADATA"] = metadata
+            result = run_check(root, env)
+            assert result.returncode != 0, reason
+            assert "must have one applicable exact Triton dependency" in result.stderr
+
+
+def test_torch_metadata_fetch_failure_is_fatal():
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory)
+        env["FAKE_VLLM_TAG"] = "v0.26.0"
+        env["FAKE_CURRENT_REQUIREMENTS"] = "1"
+        env["FAKE_FAIL_TORCH_METADATA"] = "1"
+        result = run_check(root, env)
+        assert result.returncode != 0
+
+
+def test_one_applicable_triton_pin_is_selected():
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory)
+        env["FAKE_VLLM_TAG"] = "v0.26.0"
+        env["FAKE_CURRENT_REQUIREMENTS"] = "1"
+        env["FAKE_TORCH_METADATA"] = (
+            'Requires-Dist: triton==99.0.0; platform_machine == "x86_64"\n'
+            'Requires-Dist: triton==3.6.0; platform_machine == "aarch64"\n'
+            'Requires-Dist: triton==3.6.0; platform_system == "Linux"'
+        )
+        result = run_check(root, env)
+        assert result.returncode == 0, result.stderr
+        assert "All components are current" in result.stdout
+
+
+def test_configured_pytorch_index_variant_selects_matching_wheel():
+    with tempfile.TemporaryDirectory() as directory:
+        source_versions = (SOURCE_ROOT / "versions.env").read_text(encoding="utf-8")
+        source_versions = source_versions.replace(
+            "PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cu130",
+            "PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cu131",
+        )
+        root, env = setup_case(directory, source_versions)
+        env["FAKE_VLLM_TAG"] = "v0.26.0"
+        env["FAKE_CURRENT_REQUIREMENTS"] = "1"
+        env["FAKE_TORCH_INDEX_HTML"] = (
+            '<a href="torch-2.11.0%2Bcu131-cp312-cp312-manylinux_2_28_aarch64.whl" '
+            'data-core-metadata="sha256:a">arm64</a>'
+        )
+        result = run_check(root, env)
+        assert result.returncode == 0, result.stderr
+        assert "All components are current" in result.stdout
+
+
+def test_standalone_triton_update_is_rejected():
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory)
+        env["FAKE_VLLM_TAG"] = "v0.26.0"
+        env["FAKE_CURRENT_REQUIREMENTS"] = "1"
+        env["FAKE_TRITON_REQUIREMENT"] = (
+            'triton==3.7.1; platform_system == "Linux" and '
+            'platform_machine == "aarch64"'
+        )
+        before = (root / "versions.env").read_bytes()
+        result = run_check(root, env, "--update")
+        assert result.returncode != 0
+        assert "Refusing to update Triton without a Torch update" in result.stderr
+        assert (root / "versions.env").read_bytes() == before
+
+
 def test_newer_prerelease_remains_the_dependency_target():
     with tempfile.TemporaryDirectory() as directory:
         root, env = setup_case(directory)
@@ -551,6 +704,13 @@ def main():
         test_valid_update_crosses_fresh_runner_policy,
         test_detected_updates_are_published_in_release_notes,
         test_current_stack_reports_no_updates,
+        test_x86_only_triton_requirement_is_rejected_for_arm64,
+        test_torch_wheel_selection_fails_closed,
+        test_torch_metadata_failures_are_fatal,
+        test_torch_metadata_fetch_failure_is_fatal,
+        test_one_applicable_triton_pin_is_selected,
+        test_configured_pytorch_index_variant_selects_matching_wheel,
+        test_standalone_triton_update_is_rejected,
         test_newer_prerelease_remains_the_dependency_target,
         test_apt_snapshot_bump_only_updates_snapshot,
         test_requirement_fetch_failure_is_fatal,

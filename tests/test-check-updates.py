@@ -20,6 +20,13 @@ MONITOR_POLICY_SPEC = importlib.util.spec_from_file_location(
 MONITOR_POLICY = importlib.util.module_from_spec(MONITOR_POLICY_SPEC)
 assert MONITOR_POLICY_SPEC.loader is not None
 MONITOR_POLICY_SPEC.loader.exec_module(MONITOR_POLICY)
+VERSIONS_DIFF_SPEC = importlib.util.spec_from_file_location(
+    "versions_diff",
+    SOURCE_ROOT / "scripts" / "versions_diff.py",
+)
+VERSIONS_DIFF = importlib.util.module_from_spec(VERSIONS_DIFF_SPEC)
+assert VERSIONS_DIFF_SPEC.loader is not None
+VERSIONS_DIFF_SPEC.loader.exec_module(VERSIONS_DIFF)
 
 MONITOR_FIXTURE_BASELINE = {
     "CUDA_BASE_DIGEST": (
@@ -290,6 +297,121 @@ def test_valid_update_crosses_fresh_runner_policy():
         assert "Validated release monitor changes" in validation.stdout
 
 
+def test_detected_updates_are_published_in_release_notes():
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory)
+        release_note_keys = {
+            key for key, _ in VERSIONS_DIFF.COMPONENTS
+        }
+        assert MONITOR_POLICY.ALLOWED_UPDATE_KEYS <= release_note_keys
+        shutil.copy2(
+            SOURCE_ROOT / "scripts" / "generate-release-notes.sh",
+            root / "scripts" / "generate-release-notes.sh",
+        )
+        shutil.copy2(
+            SOURCE_ROOT / "scripts" / "versions_diff.py",
+            root / "scripts" / "versions_diff.py",
+        )
+
+        def git(*arguments):
+            result = subprocess.run(
+                ["git", *arguments],
+                cwd=root,
+                capture_output=True,
+                text=True,
+            )
+            assert result.returncode == 0, result.stderr
+            return result
+
+        git("init", "-b", "main")
+        git("config", "user.name", "Integration Test")
+        git("config", "user.email", "test@example.invalid")
+        git("add", ".")
+        git("commit", "-m", "previous release")
+        git("tag", "v0.26.0-gb10.0")
+        previous = parse_env(root / "versions.env")
+
+        result = run_check(root, env, "--update")
+        assert result.returncode == 0, result.stderr
+
+        current = parse_env(root / "versions.env")
+        changes = VERSIONS_DIFF.diff_env_dicts(previous, current)
+        monitored_changes = {
+            key: change
+            for key, change in changes.items()
+            if key in MONITOR_POLICY.ALLOWED_UPDATE_KEYS
+        }
+        assert monitored_changes
+        assert set(monitored_changes) <= {
+            key for key, _ in VERSIONS_DIFF.COMPONENTS
+        }
+
+        git("add", "versions.env")
+        git("commit", "-m", "detected update")
+        current_sha = git("rev-parse", "HEAD").stdout.strip()
+        git("tag", "v0.26.0-gb10.1")
+
+        release_env = env.copy()
+        release_env.update({
+            "TAG": "v0.26.0-gb10.1",
+            "GITHUB_SHA": current_sha,
+        })
+        notes = subprocess.run(
+            ["bash", str(root / "scripts" / "generate-release-notes.sh")],
+            cwd=root,
+            env=release_env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert notes.returncode == 0, notes.stderr
+        for key, (old_value, new_value) in monitored_changes.items():
+            label = VERSIONS_DIFF.COMPONENT_LABELS[key]
+            assert f"**{label}**: {old_value} -> {new_value}" in notes.stdout
+
+        scenario_values = {
+            "CUDA_BASE_DIGEST": "sha256:" + "2" * 64,
+            "FLASHINFER_REF": "v0.6.16.post3",
+            "NCCL_REF": "v2.30.8-1",
+            "VLLM_REF": "v0.27.0",
+        }
+        for scenario_number, key in enumerate(
+            sorted(MONITOR_POLICY.ALLOWED_UPDATE_KEYS), start=2
+        ):
+            if key not in scenario_values:
+                scenario_values[key] = "99.99.99"
+            old_value = current[key]
+            new_value = scenario_values[key]
+            assert old_value != new_value
+            versions = root / "versions.env"
+            replace = f"{key}={old_value}"
+            assert replace in versions.read_text()
+            versions.write_text(
+                versions.read_text().replace(
+                    replace, f"{key}={new_value}", 1
+                )
+            )
+            git("add", "versions.env")
+            git("commit", "-m", f"change {key}")
+            current_sha = git("rev-parse", "HEAD").stdout.strip()
+            tag = f"v0.26.0-gb10.{scenario_number}"
+            git("tag", tag)
+
+            release_env.update({"TAG": tag, "GITHUB_SHA": current_sha})
+            notes = subprocess.run(
+                ["bash", str(root / "scripts" / "generate-release-notes.sh")],
+                cwd=root,
+                env=release_env,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            assert notes.returncode == 0, notes.stderr
+            label = VERSIONS_DIFF.COMPONENT_LABELS[key]
+            assert f"**{label}**: {old_value} -> {new_value}" in notes.stdout
+            current[key] = new_value
+
+
 def test_current_stack_reports_no_updates():
     with tempfile.TemporaryDirectory() as directory:
         root, env = setup_case(directory)
@@ -427,6 +549,7 @@ def main():
         test_fixture_preserves_non_monitored_values_and_structure,
         test_dry_run_does_not_write_versions,
         test_valid_update_crosses_fresh_runner_policy,
+        test_detected_updates_are_published_in_release_notes,
         test_current_stack_reports_no_updates,
         test_newer_prerelease_remains_the_dependency_target,
         test_apt_snapshot_bump_only_updates_snapshot,

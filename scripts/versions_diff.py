@@ -42,7 +42,7 @@ COMPONENT_LABELS = {
 
 # Versions.env components (variable, label) list for release notes ordering.
 COMPONENTS = [(k, v) for k, v in COMPONENT_LABELS.items()
-              if k not in ("CUDA_BASE_DIGEST", "GB10_BUILD")]
+              if k != "GB10_BUILD"]
 
 # Lockfile change tracking for release notes.
 LOCKFILES = [

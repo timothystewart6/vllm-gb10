@@ -52,30 +52,47 @@ def replacement_for(key):
 
 
 def candidate_for(key):
-    old = f"{key}={BASE_VALUES[key]}"
-    assert old in BASE_TEXT
-    return BASE_TEXT.replace(old, f"{key}={replacement_for(key)}", 1)
+    keys = {key}
+    if key == "TRITON_VERSION":
+        keys.add("TORCH_VERSION")
+    candidate = BASE_TEXT
+    for changed_key in keys:
+        old = f"{changed_key}={BASE_VALUES[changed_key]}"
+        assert old in candidate
+        candidate = candidate.replace(
+            old,
+            f"{changed_key}={replacement_for(changed_key)}",
+            1,
+        )
+    return candidate, keys
 
 
 def test_every_monitored_change_survives_pr_contracts():
     for key in MONITOR.ALLOWED_UPDATE_KEYS:
-        candidate = candidate_for(key)
-        assert MONITOR.validate_monitor_update(BASE_TEXT, candidate) == {key}
+        candidate, expected_keys = candidate_for(key)
+        assert MONITOR.validate_monitor_update(BASE_TEXT, candidate) == expected_keys
         candidate_values = VERSIONS.parse_versions_env(candidate)
         changes = DIFF.diff_env_dicts(BASE_VALUES, candidate_values)
         assert changes == {
-            key: (BASE_VALUES[key], candidate_values[key])
+            changed_key: (
+                BASE_VALUES[changed_key],
+                candidate_values[changed_key],
+            )
+            for changed_key in expected_keys
         }
-        assert key in DIFF.COMPONENT_LABELS
-        if key != "CUDA_BASE_DIGEST":
-            assert key in {name for name, _ in DIFF.COMPONENTS}
-        assert DIFF.format_change_lines(changes) == [
-            f"- **{DIFF.COMPONENT_LABELS[key]}**: "
-            f"{BASE_VALUES[key]} -> {candidate_values[key]}"
-        ]
-        unified = (
-            f"-{key}={BASE_VALUES[key]}\n"
-            f"+{key}={candidate_values[key]}\n"
+        formatted = DIFF.format_change_lines(changes)
+        for changed_key in expected_keys:
+            assert changed_key in DIFF.COMPONENT_LABELS
+            if changed_key != "CUDA_BASE_DIGEST":
+                assert changed_key in {name for name, _ in DIFF.COMPONENTS}
+            assert (
+                f"- **{DIFF.COMPONENT_LABELS[changed_key]}**: "
+                f"{BASE_VALUES[changed_key]} -> {candidate_values[changed_key]}"
+            ) in formatted
+        unified = "".join(
+            f"-{changed_key}={BASE_VALUES[changed_key]}\n"
+            f"+{changed_key}={candidate_values[changed_key]}\n"
+            for changed_key in expected_keys
         )
         assert DUPLICATES.diff_has_substantive_changes(unified)
 

@@ -169,6 +169,25 @@ pypi_latest() {
     | python3 -c "import json,sys; print(json.load(sys.stdin)['info']['version'])"
 }
 
+torch_triton_pin() {
+  # Returns Torch's exact Linux Triton dependency for the target Torch release.
+  local torch_version="$1"
+  curl -fsSL "https://pypi.org/pypi/torch/${torch_version}/json" \
+    | python3 -c '
+import json
+import re
+import sys
+
+for requirement in json.load(sys.stdin)["info"].get("requires_dist") or []:
+    match = re.match(r"^triton\s*==\s*([^\s;]+)", requirement, re.IGNORECASE)
+    if match and ("sys_platform" not in requirement or "linux" in requirement):
+        print(match.group(1))
+        break
+else:
+    raise SystemExit("torch metadata has no exact Linux Triton dependency")
+'
+}
+
 # ---------------------------------------------------------------------------
 # vLLM pins lookup
 # Many of the runtime/build deps must exactly match what vLLM declares at the
@@ -331,13 +350,16 @@ report "TorchVision (TORCHVISION_VERSION)" "TORCHVISION_VERSION" "${TORCHVISION_
 TORCHAUDIO_LATEST=$(vllm_or_pypi "torchaudio")
 report "TorchAudio (TORCHAUDIO_VERSION)" "TORCHAUDIO_VERSION" "${TORCHAUDIO_VERSION}" "${TORCHAUDIO_LATEST}"
 
-# Triton is transitively pinned by torch (e.g. torch 2.11.0 requires triton 3.6.0).
-# vLLM doesn't pin it directly, so we leave it at current and let bump.sh's
-# resolver enforce the torch-coupled version - never auto-bump from PyPI here.
-TRITON_LATEST_PYPI=$(pypi_latest "triton")
-if [ "${TRITON_VERSION}" != "${TRITON_LATEST_PYPI}" ]; then
-  printf '%s %-30s current=%-20s pypi=%s (locked by torch - not auto-bumped)\n' \
-    "INFO   " "Triton (TRITON_VERSION)" "${TRITON_VERSION}" "${TRITON_LATEST_PYPI}"
+# Triton is transitively pinned by Torch. Derive it from the selected Torch
+# release instead of tracking its independent PyPI latest version.
+TRITON_TARGET=$(torch_triton_pin "${TORCH_LATEST}")
+if [ "${TRITON_VERSION}" != "${TRITON_TARGET}" ]; then
+  printf '%s %-30s current=%-20s torch=%s\n' \
+    "${OUT}" "Triton (TRITON_VERSION)" "${TRITON_VERSION}" "${TRITON_TARGET}"
+  UPDATES=$((UPDATES + 1))
+  if [ "${DO_UPDATE}" -eq 1 ]; then
+    update_env "TRITON_VERSION" "${TRITON_TARGET}"
+  fi
 else
   printf '%s %-30s current=%-20s\n' "${OK}" "Triton (TRITON_VERSION)" "${TRITON_VERSION}"
 fi

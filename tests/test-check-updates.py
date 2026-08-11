@@ -40,6 +40,7 @@ MONITOR_FIXTURE_BASELINE = {
     "TORCHAUDIO_VERSION": "2.11.0",
     "TORCHVISION_VERSION": "0.26.0",
     "TORCH_VERSION": "2.11.0",
+    "TRITON_VERSION": "3.6.0",
     "TVM_FFI_VERSION": "0.1.10",
     "UV_VERSION": "0.11.32",
     "VLLM_REF": "v0.26.0",
@@ -82,6 +83,11 @@ elif "astral-sh/uv/releases/latest" in url:
     print(json.dumps({"tag_name": os.environ.get("FAKE_UV_TAG", "0.11.32")}))
 elif "flashinfer-ai/flashinfer/releases/latest" in url:
     print(json.dumps({"tag_name": "v0.6.13"}))
+elif "/pypi/torch/" in url:
+    triton_version = "9.6.0" if "/9.9.0/" in url else "3.6.0"
+    print(json.dumps({"info": {"requires_dist": [
+        f"triton=={triton_version}; python_full_version < '3.15' and sys_platform == 'linux'"
+    ]}}))
 elif "/pypi/triton/json" in url:
     print(json.dumps({"info": {"version": "3.6.0"}}))
 elif "/pypi/nvidia-nvshmem-cu13/json" in url:
@@ -175,11 +181,12 @@ def test_target_vllm_requirements_are_applied():
         assert values["TORCH_VERSION"] == "9.9.0"
         assert values["TORCHVISION_VERSION"] == "9.8.0"
         assert values["TORCHAUDIO_VERSION"] == "9.7.0"
+        assert values["TRITON_VERSION"] == "9.6.0"
         assert values["TVM_FFI_VERSION"] == "9.6.0"
         assert values["TILELANG_VERSION"] == "9.5.0"
         assert values["NUMBA_VERSION"] == "9.4.0"
         assert (root / "versions.env").stat().st_mode & 0o777 == 0o644
-        assert "7 component(s) updated in versions.env" in result.stdout
+        assert "8 component(s) updated in versions.env" in result.stdout
 
 
 def test_repository_version_drift_does_not_change_fixture_results():
@@ -199,7 +206,7 @@ def test_repository_version_drift_does_not_change_fixture_results():
         result = run_check(root, env, "--update")
 
         assert result.returncode == 0, result.stderr
-        assert "7 component(s) updated in versions.env" in result.stdout
+        assert "8 component(s) updated in versions.env" in result.stdout
 
 
 def test_every_monitored_repository_value_is_normalized():

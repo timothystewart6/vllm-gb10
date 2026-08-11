@@ -32,4 +32,4 @@ pkg-config=1.8.1-2build1
 python3-dev=3.12.3-0ubuntu2.1
 python3-pip=24.0+dfsg-1ubuntu1.3
 unzip=6.0-28ubuntu4.1
-wget=1.21.4-1ubuntu4.1
+wget=1.21.4-1ubuntu4.4

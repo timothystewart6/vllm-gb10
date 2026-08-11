@@ -540,6 +540,7 @@ print((datetime.now(timezone.utc) - snap).days)
     printf 'INFO    %-30s age=%d days (snapshot=%s) - consider refreshing soon\n' \
       "apt snapshot" "${APT_SNAPSHOT_AGE}" "${APT_SNAPSHOT_DISPLAY}"
     if [[ "${DO_BUMP_APT}" -eq 1 ]]; then
+      UPDATES=$((UPDATES + 1))
       update_apt_snapshot "${TODAY_STAMP}"
     fi
   else

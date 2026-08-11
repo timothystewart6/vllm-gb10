@@ -7,7 +7,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 
@@ -594,8 +594,11 @@ def test_apt_snapshot_bump_only_updates_snapshot():
         env["FAKE_VLLM_TAG"] = "v0.26.0"
         env["FAKE_CURRENT_REQUIREMENTS"] = "1"
         sources = root / "locks" / "apt-sources.list"
-        stale = sources.read_text().replace("20260714T000000Z", "20200101T000000Z")
-        stale = stale.replace("2026-07-14T00:00:00Z", "2020-01-01T00:00:00Z")
+        stale_date = datetime.now(timezone.utc) - timedelta(days=8)
+        stale_stamp = stale_date.strftime("%Y%m%dT000000Z")
+        stale_display = stale_date.strftime("%Y-%m-%dT00:00:00Z")
+        stale = sources.read_text().replace("20260811T000000Z", stale_stamp)
+        stale = stale.replace("2026-08-11T00:00:00Z", stale_display)
         sources.write_text(stale)
         versions_before = (root / "versions.env").read_bytes()
 

@@ -58,7 +58,7 @@ torchaudio==9.7.0
 apache-tvm-ffi==9.6.0
 tilelang==9.5.0
 numba==9.4.0
-flashinfer-python==9.3.0""")
+flashinfer-python==9.3.0.post2""")
     else:
         print("""torch==2.11.0
 torchvision==0.26.0
@@ -164,7 +164,7 @@ def test_target_vllm_requirements_are_applied():
         assert result.returncode == 0, result.stderr
         values = parse_env(root / "versions.env")
         assert values["VLLM_REF"] == "v0.26.0"
-        assert values["FLASHINFER_REF"] == "v9.3.0"
+        assert values["FLASHINFER_REF"] == "v9.3.0.post2"
         assert values["TORCH_VERSION"] == "9.9.0"
         assert values["TORCHVISION_VERSION"] == "9.8.0"
         assert values["TORCHAUDIO_VERSION"] == "9.7.0"

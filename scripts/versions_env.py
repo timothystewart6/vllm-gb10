@@ -26,7 +26,7 @@ MAX_VALUE_LENGTH = 2048
 HEX_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 VERSION_RE = re.compile(r"^[0-9]+(?:\.[0-9]+)+(?:[.-][A-Za-z0-9]+)*$")
-REF_RE = re.compile(r"^v[0-9]+(?:\.[0-9]+)+(?:-[0-9]+)?$")
+REF_RE = re.compile(r"^v[0-9]+(?:\.[0-9]+)+(?:\.post[0-9]+)?(?:-[0-9]+)?$")
 CUDA_IMAGE_RE = re.compile(
     r"^nvidia/cuda:[0-9]+\.[0-9]+\.[0-9]+-devel-ubuntu24\.04$"
 )

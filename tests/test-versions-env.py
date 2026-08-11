@@ -103,6 +103,13 @@ def main():
         replace_value(valid, "TORCH_CUDA_ARCH_LIST", "12.1a+9.0"),
         "unexpected GPU architecture",
     )
+    VERSIONS_ENV.parse_versions_env(
+        replace_value(valid, "FLASHINFER_REF", "v0.6.16.post3")
+    )
+    expect_rejected(
+        replace_value(valid, "FLASHINFER_REF", "v0.6.17rc5"),
+        "pre-release ref",
+    )
     print("All versions.env security tests passed!")
 
 

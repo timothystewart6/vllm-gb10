@@ -21,7 +21,7 @@ APPROVED_ACTIONS = {
     "docker/build-push-action": "53b7df96c91f9c12dcc8a07bcb9ccacbed38856a",
     "docker/login-action": "dbcb813823bdd20940b903addbd779551569679f",
     "docker/metadata-action": "dc802804100637a589fabce1cb79ff13a1411302",
-    "docker/setup-buildx-action": "bb05f3f5519dd87d3ba754cc423b652a5edd6d2c",
+    "docker/setup-buildx-action": "37fe631027851001ddb9b187196cc803df7f5f0e",
     "peter-evans/create-pull-request": "5f6978faf089d4d20b00c7766989d076bb2fc7f1",
     "softprops/action-gh-release": "3d0d9888cb7fd7b750713d6e236d1fcb99157228",
 }

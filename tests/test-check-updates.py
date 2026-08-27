@@ -36,6 +36,7 @@ MONITOR_FIXTURE_BASELINE = {
     "FLASHINFER_REF": "v0.6.14",
     "NCCL_REF": "v2.30.7-1",
     "NUMBA_VERSION": "0.65.0",
+    "QUACK_KERNELS_VERSION": "0.6.1",
     "TILELANG_VERSION": "0.1.9",
     "TORCHAUDIO_VERSION": "2.11.0",
     "TORCHVISION_VERSION": "0.26.0",
@@ -66,7 +67,8 @@ torchaudio==9.7.0
 apache-tvm-ffi==9.6.0
 tilelang==9.5.0
 numba==9.4.0
-flashinfer-python==9.3.0.post2""")
+flashinfer-python==9.3.0.post2
+quack-kernels==9.3.0""")
     else:
         print("""torch==2.11.0
 torchvision==0.26.0
@@ -74,7 +76,8 @@ torchaudio==2.11.0
 apache-tvm-ffi==0.1.10
 tilelang==0.1.9
 numba==0.65.0
-flashinfer-python==0.6.14""")
+flashinfer-python==0.6.14
+quack-kernels==0.6.1""")
 elif "vllm-project/vllm/releases/latest" in url:
     print(json.dumps({"tag_name": os.environ.get("FAKE_VLLM_TAG", "v0.26.0")}))
 elif "NVIDIA/nccl/releases/latest" in url:
@@ -199,8 +202,9 @@ def test_target_vllm_requirements_are_applied():
         assert values["TVM_FFI_VERSION"] == "9.6.0"
         assert values["TILELANG_VERSION"] == "9.5.0"
         assert values["NUMBA_VERSION"] == "9.4.0"
+        assert values["QUACK_KERNELS_VERSION"] == "9.3.0"
         assert (root / "versions.env").stat().st_mode & 0o777 == 0o644
-        assert "8 component(s) updated in versions.env" in result.stdout
+        assert "9 component(s) updated in versions.env" in result.stdout
 
 
 def test_repository_version_drift_does_not_change_fixture_results():
@@ -220,7 +224,7 @@ def test_repository_version_drift_does_not_change_fixture_results():
         result = run_check(root, env, "--update")
 
         assert result.returncode == 0, result.stderr
-        assert "8 component(s) updated in versions.env" in result.stdout
+        assert "9 component(s) updated in versions.env" in result.stdout
 
 
 def test_every_monitored_repository_value_is_normalized():

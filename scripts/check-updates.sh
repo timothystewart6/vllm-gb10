@@ -18,6 +18,7 @@
 #   TVM FFI      - PyPI (tvm-ffi)
 #   TileLang     - PyPI (tilelang)
 #   Numba        - PyPI (numba)
+#   QuACK kernels - vLLM requirements pin (requirements/cuda.txt)
 #   apt snapshot - age of the Ubuntu snapshot in locks/apt-sources.list
 #
 # PREREQUISITES
@@ -469,6 +470,27 @@ report "TileLang (TILELANG_VERSION)" "TILELANG_VERSION" "${TILELANG_VERSION}" "$
 
 NUMBA_LATEST=$(vllm_or_pypi "numba")
 report "Numba (NUMBA_VERSION)" "NUMBA_VERSION" "${NUMBA_VERSION}" "${NUMBA_LATEST}"
+
+# QuACK kernels is pinned by vLLM's requirements (cutlass DSL / FA4 MSA) and
+# must stay aligned with the selected VLLM_REF, or the runtime lock resolution
+# in bump.sh fails. Always align to vLLM's pin, never PyPI 'latest'.
+QUACK_PIN=$(vllm_pin "quack-kernels")
+if [[ -n "${QUACK_PIN}" ]]; then
+  if [[ "${QUACK_KERNELS_VERSION}" != "${QUACK_PIN}" ]]; then
+    printf '%s %-30s current=%-20s vLLM=%s (mismatch!)\n' \
+      "${OUT}" "QuACK kernels (QUACK_KERNELS_VERSION)" "${QUACK_KERNELS_VERSION}" "${QUACK_PIN}"
+    UPDATES=$((UPDATES + 1))
+    if [[ "${DO_UPDATE}" -eq 1 ]]; then
+      update_env "QUACK_KERNELS_VERSION" "${QUACK_PIN}"
+    fi
+  else
+    printf '%s %-30s current=%-20s (aligned to VLLM %s pin)\n' \
+      "${OK}" "QuACK kernels (QUACK_KERNELS_VERSION)" "${QUACK_KERNELS_VERSION}" "${VLLM_TARGET}"
+  fi
+else
+  printf 'INFO   %-30s current=%-20s (no vLLM pin - not tracked)\n' \
+    "QuACK kernels (QUACK_KERNELS_VERSION)" "${QUACK_KERNELS_VERSION}"
+fi
 
 # ---------------------------------------------------------------------------
 # CUDA base image - check if the pinned digest is still current for this tag

@@ -41,10 +41,17 @@ def test_lock_generation_and_runtime_use_the_same_indexes():
 
 
 def test_quack_is_pinned_for_cutlass_dsl_compatibility():
-    assert env_value("QUACK_KERNELS_VERSION") == "0.6.1"
+    # QuACK must stay aligned to vLLM's quack-kernels pin for the CUTLASS DSL
+    # / FA4 MSA. The release monitor keeps QUACK_KERNELS_VERSION in sync with
+    # VLLM_REF, so this enforces that wiring rather than a snapshot version.
+    assert env_value("QUACK_KERNELS_VERSION")
 
     bump = read("scripts/bump.sh")
     assert "quack-kernels==${QUACK_KERNELS_VERSION}" in bump
+
+    monitor = read("scripts/check-updates.sh")
+    assert 'vllm_pin "quack-kernels"' in monitor
+    assert 'update_env "QUACK_KERNELS_VERSION"' in monitor
 
 
 def test_instanttensor_supports_vllm_copy_api():

@@ -207,6 +207,28 @@ def test_target_vllm_requirements_are_applied():
         assert "9 component(s) updated in versions.env" in result.stdout
 
 
+def test_quack_aligns_to_vllm_pin_on_update():
+    # Regression: when VLLM_REF bumps, vLLM's quack-kernels pin can change. If
+    # QUACK_KERNELS_VERSION stays stale, bump.sh's runtime lock resolution
+    # becomes unsatisfiable (quack-kernels==X vs the stale seed). The monitor
+    # must align QUACK_KERNELS_VERSION to vLLM's pin.
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory)
+        env["FAKE_REQUIREMENTS"] = """torch==2.11.0
+torchvision==0.26.0
+torchaudio==2.11.0
+apache-tvm-ffi==0.1.10
+tilelang==0.1.9
+numba==0.65.0
+flashinfer-python==0.6.14
+quack-kernels==0.6.2"""
+        result = run_check(root, env, "--update")
+        assert result.returncode == 0, result.stderr
+        values = parse_env(root / "versions.env")
+        assert values["QUACK_KERNELS_VERSION"] == "0.6.2"
+        assert "QuACK kernels (QUACK_KERNELS_VERSION)" in result.stdout
+
+
 def test_repository_version_drift_does_not_change_fixture_results():
     with tempfile.TemporaryDirectory() as directory:
         source_versions = (SOURCE_ROOT / "versions.env").read_text(

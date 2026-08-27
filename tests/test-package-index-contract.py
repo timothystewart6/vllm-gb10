@@ -54,6 +54,23 @@ def test_quack_is_pinned_for_cutlass_dsl_compatibility():
     assert 'update_env "QUACK_KERNELS_VERSION"' in monitor
 
 
+def test_transformers_is_a_monitored_runtime_seed():
+    # transformers is a floor-only vLLM dep (transformers>=X) with no
+    # authoritative pin, so a stale runtime-lock seed is invisible to the
+    # monitor and the image drifts behind newer model-architecture support
+    # (see issues 97 and 105). Wiring it as an explicit monitored seed means
+    # check-updates detects a newer PyPI release and run-bump regenerates the
+    # runtime lock, preventing silent model-loading breakage.
+    assert env_value("TRANSFORMERS_VERSION")
+
+    bump = read("scripts/bump.sh")
+    assert "transformers==${TRANSFORMERS_VERSION}" in bump
+
+    monitor = read("scripts/check-updates.sh")
+    assert 'pypi_latest "transformers"' in monitor
+    assert 'report "Transformers (TRANSFORMERS_VERSION)"' in monitor
+
+
 def test_instanttensor_supports_vllm_copy_api():
     assert env_value("INSTANTTENSOR_VERSION") == "0.1.9"
 
@@ -87,6 +104,7 @@ def main():
         test_flashinfer_index_is_an_explicit_build_input,
         test_lock_generation_and_runtime_use_the_same_indexes,
         test_quack_is_pinned_for_cutlass_dsl_compatibility,
+        test_transformers_is_a_monitored_runtime_seed,
         test_instanttensor_supports_vllm_copy_api,
         test_random_lock_paths_are_normalized,
         test_build_revision_comparison_uses_trusted_main_schema_roles,

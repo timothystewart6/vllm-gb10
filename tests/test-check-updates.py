@@ -42,6 +42,7 @@ MONITOR_FIXTURE_BASELINE = {
     "TORCHVISION_VERSION": "0.26.0",
     "TORCH_VERSION": "2.11.0",
     "TRITON_VERSION": "3.6.0",
+    "TRANSFORMERS_VERSION": "5.8.1",
     "TVM_FFI_VERSION": "0.1.10",
     "UV_VERSION": "0.11.32",
     "VLLM_REF": "v0.26.0",
@@ -109,6 +110,8 @@ elif "/pypi/triton/json" in url:
     print(json.dumps({"info": {"version": "3.6.0"}}))
 elif "/pypi/nvidia-nvshmem-cu13/json" in url:
     print(json.dumps({"info": {"version": "3.4.5"}}))
+elif "/pypi/transformers/json" in url:
+    print(json.dumps({"info": {"version": os.environ.get("FAKE_TRANSFORMERS_VERSION", "5.8.1")}}))
 elif "/pypi/" in url:
     print(json.dumps({"info": {"version": "0.0.0"}}))
 elif "hub.docker.com" in url:
@@ -227,6 +230,26 @@ quack-kernels==0.6.2"""
         values = parse_env(root / "versions.env")
         assert values["QUACK_KERNELS_VERSION"] == "0.6.2"
         assert "QuACK kernels (QUACK_KERNELS_VERSION)" in result.stdout
+
+
+def test_transformers_drift_is_detected_and_bumped():
+    # Root-cause regression for issue 105/97: transformers is a floor-only vLLM
+    # dep (transformers>=X) with no authoritative pin, so a stale runtime-lock
+    # seed was invisible to the monitor and the image drifted behind newer
+    # model-architecture config support (gemma4_unified). With transformers as
+    # an explicit monitored seed, a newer PyPI release must be detected and
+    # written to versions.env so run-bump regenerates the runtime lock.
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory)
+        env["FAKE_VLLM_TAG"] = "v0.26.0"
+        env["FAKE_CURRENT_REQUIREMENTS"] = "1"
+        assert parse_env(root / "versions.env")["TRANSFORMERS_VERSION"] == "5.8.1"
+        env["FAKE_TRANSFORMERS_VERSION"] = "5.16.1"
+        result = run_check(root, env, "--update")
+        assert result.returncode == 0, result.stderr
+        values = parse_env(root / "versions.env")
+        assert values["TRANSFORMERS_VERSION"] == "5.16.1"
+        assert "Transformers (TRANSFORMERS_VERSION)" in result.stdout
 
 
 def test_repository_version_drift_does_not_change_fixture_results():
@@ -749,6 +772,8 @@ def main():
         test_requirement_value_metacharacters_are_rejected,
         test_upstream_failure_is_fatal,
         test_mutating_modes_are_mutually_exclusive,
+        test_quack_aligns_to_vllm_pin_on_update,
+        test_transformers_drift_is_detected_and_bumped,
     ]
     for test in tests:
         test()

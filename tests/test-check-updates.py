@@ -623,8 +623,8 @@ def test_apt_snapshot_bump_only_updates_snapshot():
         stale_date = datetime.now(timezone.utc) - timedelta(days=8)
         stale_stamp = stale_date.strftime("%Y%m%dT000000Z")
         stale_display = stale_date.strftime("%Y-%m-%dT00:00:00Z")
-        stale = sources.read_text().replace("20260811T000000Z", stale_stamp)
-        stale = stale.replace("2026-08-11T00:00:00Z", stale_display)
+        stale = sources.read_text().replace("20260827T000000Z", stale_stamp)
+        stale = stale.replace("2026-08-27T00:00:00Z", stale_display)
         sources.write_text(stale)
         versions_before = (root / "versions.env").read_bytes()
 

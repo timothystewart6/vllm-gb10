@@ -65,8 +65,9 @@ Each build publishes four tags:
 | `sha-<short_sha>` | Immutable, tied to the exact Git commit that produced it. |
 
 `gb10.<N>` increments when any non-vLLM input changes (CUDA, PyTorch, NCCL,
-FlashInfer, etc.) on the same vLLM version. It resets to `0` when `VLLM_REF`
-bumps. There is intentionally no bare `v0.24.0` tag - it would be mutable.
+FlashInfer, etc.) or when lock generation changes a lockfile on the same vLLM
+version. It resets to `0` when `VLLM_REF` bumps. There is intentionally no bare
+`v0.24.0` tag - it would be mutable.
 
 ## Bumping versions
 

@@ -71,6 +71,24 @@ def test_transformers_is_a_monitored_runtime_seed():
     assert 'report "Transformers (TRANSFORMERS_VERSION)"' in monitor
 
 
+def test_vllm_audio_extra_is_a_runtime_seed():
+    # vLLM publishes these as its audio extra. Keep them in the runtime seed
+    # so the generated lock installs the modules used to decode and resample
+    # audio request inputs.
+    bump = read("scripts/bump.sh")
+    runtime_section = bump.split("# 9. Generate locks/python-runtime.txt", 1)[1]
+    runtime_section = runtime_section.split("uv pip compile", 1)[0]
+    expected = (
+        "av",
+        "scipy",
+        "soundfile",
+        "soxr",
+        "mistral_common[audio]",
+    )
+    for requirement in expected:
+        assert f"\n{requirement}\n" in runtime_section
+
+
 def test_instanttensor_supports_vllm_copy_api():
     assert env_value("INSTANTTENSOR_VERSION") == "0.1.9"
 
@@ -105,6 +123,7 @@ def main():
         test_lock_generation_and_runtime_use_the_same_indexes,
         test_quack_is_pinned_for_cutlass_dsl_compatibility,
         test_transformers_is_a_monitored_runtime_seed,
+        test_vllm_audio_extra_is_a_runtime_seed,
         test_instanttensor_supports_vllm_copy_api,
         test_random_lock_paths_are_normalized,
         test_build_revision_comparison_uses_trusted_main_schema_roles,

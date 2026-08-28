@@ -44,7 +44,9 @@ Each release page lists the exact versions of every component. Key stack:
 | NCCL | git commit SHA (built from source) |
 | FlashInfer | git commit SHA (built from source) |
 | vllm-rs Rust frontend | built from source (axum HTTP server + PyO3 tool-parser module) |
+| NVSHMEM, TVM-FFI, TileLang, Numba | exact version (CUDA companion packages) |
 | bitsandbytes, accelerate | exact version (4-bit/8-bit quantization and HuggingFace model loading) |
+| transformers, quack-kernels, fastsafetensors, instanttensor | exact version (runtime) |
 | Ray, uv, and other runtime deps | lockfile hash |
 
 All pins live in [`versions.env`](versions.env). All lockfiles live in [`locks/`](locks/).

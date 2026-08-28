@@ -23,6 +23,7 @@ APPROVED_ACTIONS = {
     "docker/metadata-action": "dc802804100637a589fabce1cb79ff13a1411302",
     "docker/setup-buildx-action": "37fe631027851001ddb9b187196cc803df7f5f0e",
     "peter-evans/create-pull-request": "5f6978faf089d4d20b00c7766989d076bb2fc7f1",
+    "peter-evans/dockerhub-description": "1b9a80c056b620d92cedb9d9b5a223409c68ddfa",
     "softprops/action-gh-release": "3d0d9888cb7fd7b750713d6e236d1fcb99157228",
 }
 

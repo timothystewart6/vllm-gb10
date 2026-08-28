@@ -1,0 +1,43 @@
+# .github/workflows/dockerhub-description.yaml
+#
+# Keeps the Docker Hub repository description in sync with README.md.
+# Docker Hub does not pull the README automatically, so this workflow
+# PATCHes the full description whenever the README changes or a release
+# is created.
+#
+# Runs on a GitHub-hosted runner (no GPU or aarch64 needed) and only
+# needs the Docker Hub credentials, which are already used by the
+# build-image.yaml release job.
+#
+# Action SHAs are reviewed and allowlisted in tests/test-ci-security-policy.py.
+
+name: Sync Docker Hub description
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - README.md
+      - .github/workflows/dockerhub-description.yaml
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  dockerhub-description:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Update Docker Hub description
+        uses: peter-evans/dockerhub-description@1b9a80c056b620d92cedb9d9b5a223409c68ddfa
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: timothystewart6/vllm-gb10
+          short-description: ${{ github.event.repository.description }}
+          enable-url-completion: true

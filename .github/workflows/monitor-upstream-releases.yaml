@@ -61,6 +61,7 @@ jobs:
 
       - name: Upload update candidate
         if: steps.check.outputs.has-update == 'true'
+        # actions/upload-artifact v7
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: release-monitor-versions-${{ github.run_id }}
@@ -82,6 +83,7 @@ jobs:
           persist-credentials: false
 
       - name: Download update candidate
+        # actions/download-artifact v8
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: release-monitor-versions-${{ github.run_id }}
@@ -128,6 +130,7 @@ jobs:
 
       - name: Create Pull Request
         if: steps.changes.outputs.has-changes == 'true' && steps.existing-pr.outputs.skip-pr == 'false'
+        # peter-evans/create-pull-request v8
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1
         with:
           token: ${{ secrets.RELEASE_MONITOR_PAT }}

@@ -381,6 +381,21 @@ quack-kernels==${QUACK_KERNELS_VERSION}
 transformers==${TRANSFORMERS_VERSION}
 REQS
 
+# vLLM's "audio" extra, as declared by extras_require["audio"] in vLLM's
+# setup.py at VLLM_COMMIT. Unversioned here because vLLM does not pin them
+# either - uv resolves and hashes them like the rest of common.txt/cuda.txt.
+# mistral_common is already requested as mistral_common[image] by vLLM's
+# common.txt; naming it again with [audio] merges the extras in resolution.
+# Without this block, vllm[audio] is unmet and audio inputs fail at request
+# time with "Please install vllm[audio] for audio support".
+cat >> "${TMP_RUNTIME}" <<REQS
+av
+scipy
+soundfile
+soxr
+mistral_common[audio]
+REQS
+
 uv pip compile \
   --generate-hashes \
   --python-version 3.12 \

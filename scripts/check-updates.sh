@@ -492,6 +492,14 @@ else
     "QuACK kernels (QUACK_KERNELS_VERSION)" "${QUACK_KERNELS_VERSION}"
 fi
 
+# Transformers supplies configuration support for newer model checkpoints
+# (e.g. gemma4_unified). vLLM only declares a floor (transformers>=X), so there
+# is no authoritative vLLM pin to align to. Track PyPI latest like uv so a
+# stale runtime-lock seed becomes a visible, reviewable update. The exact seed
+# is pinned in versions.env and fed into bump.sh's runtime lock.
+TRANSFORMERS_LATEST=$(pypi_latest "transformers")
+report "Transformers (TRANSFORMERS_VERSION)" "TRANSFORMERS_VERSION" "${TRANSFORMERS_VERSION}" "${TRANSFORMERS_LATEST}"
+
 # ---------------------------------------------------------------------------
 # CUDA base image - check if the pinned digest is still current for this tag
 # ---------------------------------------------------------------------------

@@ -104,6 +104,7 @@ runtime_seeds:
   bitsandbytes: "${BITSANDBYTES_VERSION}"
   accelerate: "${ACCELERATE_VERSION}"
   quack_kernels: "${QUACK_KERNELS_VERSION}"
+  transformers: "${TRANSFORMERS_VERSION}"
 
 arch:
   torch_cuda_arch_list: "${TORCH_CUDA_ARCH_LIST}"

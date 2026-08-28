@@ -375,6 +375,10 @@ numba==${NUMBA_VERSION}
 bitsandbytes==${BITSANDBYTES_VERSION}
 accelerate==${ACCELERATE_VERSION}
 quack-kernels==${QUACK_KERNELS_VERSION}
+# vLLM only declares a floor for transformers, so a fresh lock can silently
+# drift several releases behind (e.g. missing gemma4_unified config support).
+# Seed it explicitly so check-updates.sh can detect and bump the version.
+transformers==${TRANSFORMERS_VERSION}
 REQS
 
 uv pip compile \

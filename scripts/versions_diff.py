@@ -36,6 +36,7 @@ COMPONENT_LABELS = {
     "BITSANDBYTES_VERSION": "bitsandbytes",
     "ACCELERATE_VERSION": "Accelerate",
     "QUACK_KERNELS_VERSION": "QuACK kernels",
+    "TRANSFORMERS_VERSION": "Transformers",
     "TORCH_CUDA_ARCH_LIST": "Target arch",
     "GB10_BUILD": "GB10_BUILD",
 }

@@ -34,6 +34,11 @@ when they exist. Do not open a pull request until the failure is reproduced by
 a test or a documented manual check. A regression test must fail for the
 original reason and pass after the fix.
 
+Every behavior change must ship with a test. A pull request that changes
+behavior without adding or updating a test will not be merged. When a change
+has no testable behavior, say so explicitly in the pull request instead of
+leaving the test gap unaddressed.
+
 Before finalizing a pull request, inspect the complete diff and changed-file
 list, run every applicable validation command, test the state produced by
 automation when generated files are involved, and update documentation and

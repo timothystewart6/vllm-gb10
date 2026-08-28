@@ -190,8 +190,14 @@ If the issue is upstream, please file it there directly:
 - Search open and closed issues and pull requests before starting.
 - Explain the invariant that failed, the root cause or bounded hypothesis, and
   every upstream and downstream stage inspected.
-- Include a regression that fails for the original reason and passes with the
-  fix. For generated changes, test the resulting repository state.
+- Add a test for every behavior change. A regression must fail for the
+  original reason and pass with the fix. For generated changes, test the
+  resulting repository state. A PR that changes behavior without a test will
+  not be merged. If a change has no testable behavior, state that explicitly
+  in the PR.
+- Run the hosted test suite with `for test_file in tests/test-*.py; do python3
+  "$test_file"; done`, plus shell syntax, ShellCheck, actionlint, and
+  `git diff --check`, and include the results.
 - Complete the reasoning, lifecycle, security, and validation sections in the
   pull request template.
 - Include the output of the smoke test (`tests/smoke-test.sh`) if you changed

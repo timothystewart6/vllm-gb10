@@ -82,6 +82,7 @@ jobs:
           fi
 
       - name: Checkout
+        # actions/checkout v7
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.sha }}
@@ -114,10 +115,12 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
+        # docker/setup-buildx-action v4
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e
 
       # ── Build 1 of 2 (warm BuildKit cache) ─────────────────────────────────
       - name: Build 1 of 2 (warm cache)
+        # docker/build-push-action v7
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
         with:
           context: .
@@ -159,6 +162,7 @@ jobs:
 
       # ── Build 2 of 2 (no-cache - full rebuild from scratch) ────────────────
       - name: Build 2 of 2 (no-cache)
+        # docker/build-push-action v7
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
         with:
           context: .
@@ -249,6 +253,7 @@ jobs:
 
       - name: Upload artifacts and diffs
         if: always()
+        # actions/upload-artifact v7
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: verify-reproducible-${{ github.run_id }}

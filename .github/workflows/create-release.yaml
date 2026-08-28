@@ -28,6 +28,7 @@ jobs:
 
     steps:
       - name: Checkout
+        # actions/checkout v7
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           # Release notes compare the current tag with the previous release.
@@ -54,6 +55,7 @@ jobs:
         # action-gh-release is idempotent: if the release for this tag
         # already exists (e.g. created inline by build-image.yaml), it
         # updates it in place rather than failing.
+        # softprops/action-gh-release v3
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228
         with:
           tag_name: ${{ github.ref_name }}

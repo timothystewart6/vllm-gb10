@@ -80,7 +80,7 @@ def test_bump_script_passes_reviewed_and_resolved_commits_to_policy():
     ):
         assert argument in bump
     input_detection = bump.split("OTHER_INPUT_CHANGED=0", 1)[1].split(
-        "# Helper: fetch a vLLM requirements file", 1
+        "compute_gb10_build() {", 1
     )[0]
     assert "VLLM_COMMIT" not in input_detection
 
@@ -92,7 +92,18 @@ def test_generated_lock_changes_advance_the_build_number():
     assert bump.index('log "  Done -> ${LOCKS}/python-runtime.txt"') < bump.index(
         lock_diff
     )
-    assert bump.index(lock_diff) < bump.index("BUILD_ARGS=(")
+    assert bump.index(lock_diff) < bump.index('GB10_BUILD="$(compute_gb10_build)"')
+
+
+def test_bump_script_rejects_moved_tags_before_lock_generation():
+    bump = (ROOT / "scripts" / "bump.sh").read_text(encoding="utf-8")
+    preflight = "compute_gb10_build >/dev/null"
+    lock_generation = "_fetch_vllm_req()"
+    final_allocation = 'GB10_BUILD="$(compute_gb10_build)"'
+    lock_diff = 'git diff --quiet "${LOCK_DIFF_BASE}" -- "${LOCKS}"'
+
+    assert bump.index(preflight) < bump.index(lock_generation)
+    assert bump.index(lock_diff) < bump.index(final_allocation)
 
 
 def main():
@@ -104,6 +115,7 @@ def main():
         test_no_change_preserves_build_number,
         test_bump_script_passes_reviewed_and_resolved_commits_to_policy,
         test_generated_lock_changes_advance_the_build_number,
+        test_bump_script_rejects_moved_tags_before_lock_generation,
     )
     for test in tests:
         test()

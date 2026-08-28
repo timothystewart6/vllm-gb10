@@ -184,6 +184,24 @@ if [[ "${DOCKERFILE_HASH}" != "${OLD_DOCKERFILE_HASH}" ||
   OTHER_INPUT_CHANGED=1
 fi
 
+compute_gb10_build() {
+  local build_args=(
+    --old-vllm-ref "${OLD_VLLM_REF}"
+    --new-vllm-ref "${VLLM_REF}"
+    --old-vllm-commit "${OLD_VLLM_COMMIT}"
+    --reviewed-vllm-commit "${REVIEWED_VLLM_COMMIT}"
+    --resolved-vllm-commit "${VLLM_COMMIT}"
+    --old-build "${OLD_GB10_BUILD}"
+  )
+  if [[ "${OTHER_INPUT_CHANGED}" -eq 1 ]]; then
+    build_args+=(--other-input-changed)
+  fi
+  python3 "${REPO_ROOT}/scripts/compute-gb10-build.py" "${build_args[@]}"
+}
+
+# Reject a moved vLLM tag before fetching its requirements or generating locks.
+compute_gb10_build >/dev/null
+
 # ---------------------------------------------------------------------------
 # Helper: fetch a vLLM requirements file from the pinned commit.
 # Strips -r (include) and -c (constraint) directives - caller inlines each
@@ -455,20 +473,7 @@ if [[ -n "${LOCK_DIFF_BASE}" ]]; then
   fi
 fi
 
-BUILD_ARGS=(
-  --old-vllm-ref "${OLD_VLLM_REF}"
-  --new-vllm-ref "${VLLM_REF}"
-  --old-vllm-commit "${OLD_VLLM_COMMIT}"
-  --reviewed-vllm-commit "${REVIEWED_VLLM_COMMIT}"
-  --resolved-vllm-commit "${VLLM_COMMIT}"
-  --old-build "${OLD_GB10_BUILD}"
-)
-if [[ "${OTHER_INPUT_CHANGED}" -eq 1 ]]; then
-  BUILD_ARGS+=(--other-input-changed)
-fi
-GB10_BUILD="$(
-  python3 "${REPO_ROOT}/scripts/compute-gb10-build.py" "${BUILD_ARGS[@]}"
-)"
+GB10_BUILD="$(compute_gb10_build)"
 
 if [[ "${VLLM_REF}" != "${OLD_VLLM_REF}" ]]; then
   log "VLLM_REF changed -> GB10_BUILD reset to ${GB10_BUILD}"

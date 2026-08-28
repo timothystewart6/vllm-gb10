@@ -163,10 +163,9 @@ for m in data.get('manifests', []):
 log "  CUDA_BASE_DIGEST=${CUDA_BASE_DIGEST}"
 
 # ---------------------------------------------------------------------------
-# 5. Compute GB10_BUILD
-# Rule: reset to 0 when VLLM_REF changes.
-#       Require explicit review when the same ref resolves to a new commit.
-#       Increment by 1 when any other build input changes with the same VLLM_REF.
+# 5. Detect declared GB10_BUILD inputs.
+# Generated lockfiles are checked after generation, before the build number is
+# allocated. This keeps every changed image input on a new immutable tag.
 # ---------------------------------------------------------------------------
 OTHER_INPUT_CHANGED=0
 while IFS= read -r key; do
@@ -184,49 +183,6 @@ if [[ "${DOCKERFILE_HASH}" != "${OLD_DOCKERFILE_HASH}" ||
       "${APT_SOURCES_HASH}" != "${OLD_APT_SOURCES_HASH}" ]]; then
   OTHER_INPUT_CHANGED=1
 fi
-
-BUILD_ARGS=(
-  --old-vllm-ref "${OLD_VLLM_REF}"
-  --new-vllm-ref "${VLLM_REF}"
-  --old-vllm-commit "${OLD_VLLM_COMMIT}"
-  --reviewed-vllm-commit "${REVIEWED_VLLM_COMMIT}"
-  --resolved-vllm-commit "${VLLM_COMMIT}"
-  --old-build "${OLD_GB10_BUILD}"
-)
-if [[ "${OTHER_INPUT_CHANGED}" -eq 1 ]]; then
-  BUILD_ARGS+=(--other-input-changed)
-fi
-GB10_BUILD="$(
-  python3 "${REPO_ROOT}/scripts/compute-gb10-build.py" "${BUILD_ARGS[@]}"
-)"
-
-if [[ "${VLLM_REF}" != "${OLD_VLLM_REF}" ]]; then
-  log "VLLM_REF changed -> GB10_BUILD reset to ${GB10_BUILD}"
-elif [[ "${VLLM_COMMIT}" != "${OLD_VLLM_COMMIT}" ||
-        "${OTHER_INPUT_CHANGED}" -eq 1 ]]; then
-  log "Build input changed -> GB10_BUILD incremented to ${GB10_BUILD}"
-else
-  log "No pinned inputs changed - GB10_BUILD stays at ${GB10_BUILD}"
-fi
-
-# ---------------------------------------------------------------------------
-# 6. Write resolved values back to versions.env
-# ---------------------------------------------------------------------------
-python3 "${REPO_ROOT}/scripts/update-versions-env.py" "${VERSIONS}" \
-  "CUDA_BASE_DIGEST=${CUDA_BASE_DIGEST}" \
-  "GB10_BUILD=${GB10_BUILD}" \
-  "NCCL_COMMIT=${NCCL_COMMIT}" \
-  "VLLM_COMMIT=${VLLM_COMMIT}" \
-  "FLASHINFER_COMMIT=${FLASHINFER_COMMIT}" \
-  "RAY_VERSION=${RAY_VERSION}"
-
-log "versions.env updated with resolved SHAs and digest."
-
-# Re-source to pick up the freshly written values
-set -a
-# shellcheck disable=SC1090
-source "${VERSIONS}"
-set +a
 
 # ---------------------------------------------------------------------------
 # Helper: fetch a vLLM requirements file from the pinned commit.
@@ -474,6 +430,64 @@ for pkg, ver in sorted(seen.items()):
     log "  apt-packages.txt was NOT updated. Check Docker platform support for linux/arm64."
   fi
 fi
+
+# ---------------------------------------------------------------------------
+# 11. Allocate GB10_BUILD and write resolved values.
+# ---------------------------------------------------------------------------
+LOCK_DIFF_BASE=""
+if git cat-file -e origin/main:locks/python-runtime.txt 2>/dev/null; then
+  LOCK_DIFF_BASE="origin/main"
+elif git cat-file -e HEAD~1:locks/python-runtime.txt 2>/dev/null; then
+  LOCK_DIFF_BASE="HEAD~1"
+fi
+
+if [[ -n "${LOCK_DIFF_BASE}" ]]; then
+  if git diff --quiet "${LOCK_DIFF_BASE}" -- "${LOCKS}"; then
+    :
+  else
+    lock_diff_status=$?
+    if [[ "${lock_diff_status}" -eq 1 ]]; then
+      log "Generated lockfiles differ from ${LOCK_DIFF_BASE}."
+      OTHER_INPUT_CHANGED=1
+    else
+      die "Cannot compare generated lockfiles with ${LOCK_DIFF_BASE}."
+    fi
+  fi
+fi
+
+BUILD_ARGS=(
+  --old-vllm-ref "${OLD_VLLM_REF}"
+  --new-vllm-ref "${VLLM_REF}"
+  --old-vllm-commit "${OLD_VLLM_COMMIT}"
+  --reviewed-vllm-commit "${REVIEWED_VLLM_COMMIT}"
+  --resolved-vllm-commit "${VLLM_COMMIT}"
+  --old-build "${OLD_GB10_BUILD}"
+)
+if [[ "${OTHER_INPUT_CHANGED}" -eq 1 ]]; then
+  BUILD_ARGS+=(--other-input-changed)
+fi
+GB10_BUILD="$(
+  python3 "${REPO_ROOT}/scripts/compute-gb10-build.py" "${BUILD_ARGS[@]}"
+)"
+
+if [[ "${VLLM_REF}" != "${OLD_VLLM_REF}" ]]; then
+  log "VLLM_REF changed -> GB10_BUILD reset to ${GB10_BUILD}"
+elif [[ "${VLLM_COMMIT}" != "${OLD_VLLM_COMMIT}" ||
+        "${OTHER_INPUT_CHANGED}" -eq 1 ]]; then
+  log "Build input changed -> GB10_BUILD incremented to ${GB10_BUILD}"
+else
+  log "No pinned inputs changed - GB10_BUILD stays at ${GB10_BUILD}"
+fi
+
+python3 "${REPO_ROOT}/scripts/update-versions-env.py" "${VERSIONS}" \
+  "CUDA_BASE_DIGEST=${CUDA_BASE_DIGEST}" \
+  "GB10_BUILD=${GB10_BUILD}" \
+  "NCCL_COMMIT=${NCCL_COMMIT}" \
+  "VLLM_COMMIT=${VLLM_COMMIT}" \
+  "FLASHINFER_COMMIT=${FLASHINFER_COMMIT}" \
+  "RAY_VERSION=${RAY_VERSION}"
+
+log "versions.env updated with resolved SHAs and digest."
 
 # ---------------------------------------------------------------------------
 log ""

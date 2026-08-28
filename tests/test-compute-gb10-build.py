@@ -80,9 +80,19 @@ def test_bump_script_passes_reviewed_and_resolved_commits_to_policy():
     ):
         assert argument in bump
     input_detection = bump.split("OTHER_INPUT_CHANGED=0", 1)[1].split(
-        "BUILD_ARGS=(", 1
+        "# Helper: fetch a vLLM requirements file", 1
     )[0]
     assert "VLLM_COMMIT" not in input_detection
+
+
+def test_generated_lock_changes_advance_the_build_number():
+    bump = (ROOT / "scripts" / "bump.sh").read_text(encoding="utf-8")
+    lock_diff = 'git diff --quiet "${LOCK_DIFF_BASE}" -- "${LOCKS}"'
+    assert lock_diff in bump
+    assert bump.index('log "  Done -> ${LOCKS}/python-runtime.txt"') < bump.index(
+        lock_diff
+    )
+    assert bump.index(lock_diff) < bump.index("BUILD_ARGS=(")
 
 
 def main():
@@ -93,6 +103,7 @@ def main():
         test_other_input_change_advances_existing_build_series,
         test_no_change_preserves_build_number,
         test_bump_script_passes_reviewed_and_resolved_commits_to_policy,
+        test_generated_lock_changes_advance_the_build_number,
     )
     for test in tests:
         test()

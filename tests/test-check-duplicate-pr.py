@@ -13,8 +13,12 @@ Scenario coverage:
   - Single PR with different substantive changes (proceed)
   - Single PR with same UV but different GB10_BUILD (skip - same substantive, GB10 ignored)
   - Dependabot PR with matching versions.env change (skip)
+  - Dependabot PR with no versions.env change (proceed - action-only PR does not cover the update)
   - Larger PR includes the candidate update as a subset (skip)
   - PR changes the same variable to a different value (proceed)
+  - Candidate has more changes than the PR (partial coverage, proceed)
+  - Multiple PRs, each partially covers, none fully (proceed)
+  - PR superset but shared variable has a different value (proceed)
   - Multiple PRs, none matching (proceed)
   - Multiple PRs, second one matches (skip)
   - Multiple PRs, all match (skip - first match short-circuits)
@@ -122,6 +126,22 @@ index abc1234..def5678 100644
 +UV_VERSION=0.12.0
 """
 
+# Diff that bumps UV_VERSION to a different value AND changes VLLM_REF. Used to
+# prove a superset PR does not suppress the candidate when the shared variable
+# is changed to a different target version.
+UV_DIFFERENT_AND_VLLM_DIFF = """\
+diff --git a/versions.env b/versions.env
+index abc1234..def5678 100644
+--- a/versions.env
++++ b/versions.env
+@@ -20,6 +20,6 @@ GB10_BUILD=2
+-UV_VERSION=0.11.29
++UV_VERSION=0.12.0
+@@ -28,6 +28,6 @@ GB10_BUILD=2
+-VLLM_REF=v0.24.0
++VLLM_REF=v0.25.1
+"""
+
 if __name__ == "__main__":
     import os
     import subprocess
@@ -212,6 +232,14 @@ if __name__ == "__main__":
             0,  # skip (update already in a dependabot PR)
         ),
         (
+            "Dependabot PR with no versions.env change (does not suppress, proceed)",
+            '{"number": 118, "headRefName": "dependabot/github_actions/softprops/action-gh-release-3.0.3"}',
+            {"working_diff": UV_AND_GB10_DIFF,
+             "branch_diffs_vs_base": {"dependabot/github_actions/softprops/action-gh-release-3.0.3": None},
+             "fetch_exit": 0},
+            10,  # proceed (an action-only dependabot PR does not cover the uv update)
+        ),
+        (
             "Larger PR includes the candidate update as a subset (skip)",
             '{"number": 42, "headRefName": "deps/bump-42"}',
             {"working_diff": UV_AND_GB10_DIFF,
@@ -226,6 +254,30 @@ if __name__ == "__main__":
              "branch_diffs_vs_base": {"deps/bump-42": UV_DIFFERENT_DIFF},
              "fetch_exit": 0},
             10,  # proceed (same variable but a different target version)
+        ),
+        (
+            "Candidate has more changes than the PR (partial coverage, proceed)",
+            '{"number": 42, "headRefName": "deps/bump-42"}',
+            {"working_diff": UV_AND_VLLM_DIFF,
+             "branch_diffs_vs_base": {"deps/bump-42": SIMPLE_UV_DIFF},
+             "fetch_exit": 0},
+            10,  # proceed (the PR only covers UV, not the VLLM change)
+        ),
+        (
+            "Multiple PRs, each partially covers, none fully (proceed)",
+            '{"number": 41, "headRefName": "deps/bump-41"}\n{"number": 42, "headRefName": "deps/bump-42"}',
+            {"working_diff": UV_AND_VLLM_DIFF,
+             "branch_diffs_vs_base": {"deps/bump-41": SIMPLE_UV_DIFF, "deps/bump-42": VLLM_AND_GB10_DIFF},
+             "fetch_exit": 0},
+            10,  # proceed (no single PR covers both UV and VLLM)
+        ),
+        (
+            "PR superset but shared variable has a different value (proceed)",
+            '{"number": 42, "headRefName": "deps/bump-42"}',
+            {"working_diff": UV_AND_GB10_DIFF,
+             "branch_diffs_vs_base": {"deps/bump-42": UV_DIFFERENT_AND_VLLM_DIFF},
+             "fetch_exit": 0},
+            10,  # proceed (PR changes UV to a different version, so it does not cover the candidate)
         ),
         (
             "Shallow checkout: origin/main not a local ref, matching change (skip duplicate)",
@@ -373,9 +425,10 @@ if __name__ == "__main__":
                 # Require the query to scan all open PRs. A regression back to
                 # an author or branch-namespace filter (which would miss
                 # dependabot PRs and PRs from other authors) is caught (exit 3
-                # becomes a script error / workflow failure).
-                f.write('bad=0; for a in "$@"; do [ "$a" = "--author" ] && bad=1; [ "$a" = "--search" ] && bad=1; done\n')
-                f.write("[ $bad -eq 0 ] || exit 3\n")
+                # becomes a script error / workflow failure). Also require the
+                # query to be scoped to open PRs only.
+                f.write('state_ok=0; bad=0; for a in "$@"; do [ "$a" = "--state" ] && state_ok=1; [ "$a" = "--author" ] && bad=1; [ "$a" = "--search" ] && bad=1; done\n')
+                f.write("[ $state_ok -eq 1 ] && [ $bad -eq 0 ] || exit 3\n")
                 if fake_gh_stdout:
                     f.write(f'cat << \'ENDJSON\'\n{fake_gh_stdout}\nENDJSON\n')
                 f.write(f"exit {gh_exit}\n")
@@ -498,6 +551,28 @@ if __name__ == "__main__":
     check(
         "cancel-in-progress: false" in workflow,
         "Workflow must let the active monitor run finish before starting another",
+    )
+
+    # Static regression guards on the script source. These protect the core
+    # invariant that the duplicate check scans all open PRs regardless of
+    # author or branch namespace, and that it only considers open PRs.
+    with open(script_path) as script_file:
+        source = script_file.read()
+    check(
+        '"--state", "OPEN"' in source,
+        "Script must scope the PR query to open PRs only",
+    )
+    check(
+        '"--author"' not in source,
+        "Script must not filter PRs by author (would miss dependabot and other authors)",
+    )
+    check(
+        '"--search"' not in source,
+        "Script must not filter PRs by branch namespace (would miss dependabot PRs)",
+    )
+    check(
+        "<= substantive_lines(branch_diff_vs_main)" in source,
+        "Script must use subset matching so an update already included in a larger PR is recognized",
     )
 
     print(f"FAIL: {failed}")

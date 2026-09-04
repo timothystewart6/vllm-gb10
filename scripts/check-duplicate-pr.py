@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """
-Check if an open deps/bump PR already exists with identical versions.env changes.
+Check if any open PR already includes the same versions.env changes.
+
+The check scans every open PR (any author, any branch) and compares its
+substantive versions.env changes against the working tree. It skips when an
+open PR already includes the candidate update, so the release monitor does not
+create a duplicate when the update is already covered by a dependabot PR or any
+other open PR.
 
 Returns exit code 0 (skip), 10 (proceed), or 2 (known error) and prints a
 user-facing message.
@@ -12,7 +18,7 @@ Environment:
   GH_TOKEN: GitHub token for gh CLI authentication
 
 Exit codes:
-  0 - Skip: an existing open PR already has the same versions.env changes
+  0 - Skip: an existing open PR already includes the same versions.env changes
       (or no changes to versions.env in working tree)
  10 - Proceed: no matching PR found, caller should create a new one
   2 - Error: the duplicate check could not be completed reliably
@@ -114,17 +120,15 @@ def check_for_duplicate():
         print("No substantive changes to versions.env in working tree")
         return True
 
-    # Find all open deps/bump PRs by this actor
+    # Find all open PRs. We deliberately do not filter by author or branch
+    # namespace: the update may already be included in a dependabot PR, a PR
+    # from another author, or a PR outside the deps/bump namespace. The
+    # versions.env diff comparison below is the real signal, so a broad query
+    # is safe and catches updates that are already covered elsewhere.
     result = run_gh(
         [
             "pr", "list",
             "--state", "OPEN",
-            "--author", "@me",
-            # Match the deps/bump head branch namespace precisely. A plain text
-            # search for "deps/bump" also matches unrelated PRs whose title or
-            # body mentions "deps/bump", which is noisy and can mask a missing
-            # real candidate.
-            "--search", "head:deps/bump",
             "--json", "number,headRefName",
             "--jq", ".[]",
         ],
@@ -136,7 +140,7 @@ def check_for_duplicate():
 
     prs_text = result.stdout.strip()
     if not prs_text:
-        print("No open deps/bump PRs by this actor")
+        print("No open PRs")
         return False
 
     # gh --jq '.[]' outputs one JSON object per line (NDJSON) when there are
@@ -183,11 +187,15 @@ def check_for_duplicate():
                         lines.add(line)
             return lines
 
-        if substantive_lines(branch_diff_vs_main) == substantive_lines(working_diff):
-            print(f"PR #{number} has matching versions.env -- skipping duplicate")
+        # Skip when the candidate update is a subset of the PR's changes. This
+        # recognizes an update that is already included in a larger PR (for
+        # example a dependabot PR that also carries a versions.env bump), not
+        # just a PR that changes exactly the same set of lines.
+        if substantive_lines(working_diff) <= substantive_lines(branch_diff_vs_main):
+            print(f"PR #{number} already includes the update -- skipping duplicate")
             return True
         else:
-            print(f"PR #{number} has different versions.env -- not a match")
+            print(f"PR #{number} does not include the update -- not a match")
 
     print("No matching PR found -- will create new one")
     return False

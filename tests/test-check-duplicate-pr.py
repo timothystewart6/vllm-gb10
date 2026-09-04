@@ -12,6 +12,9 @@ Scenario coverage:
   - Single PR with only GB10_BUILD diff, working tree has UV (proceed - different substantive)
   - Single PR with different substantive changes (proceed)
   - Single PR with same UV but different GB10_BUILD (skip - same substantive, GB10 ignored)
+  - Dependabot PR with matching versions.env change (skip)
+  - Larger PR includes the candidate update as a subset (skip)
+  - PR changes the same variable to a different value (proceed)
   - Multiple PRs, none matching (proceed)
   - Multiple PRs, second one matches (skip)
   - Multiple PRs, all match (skip - first match short-circuits)
@@ -91,6 +94,32 @@ index abc1234..def5678 100644
 @@ -14,6 +14,6 @@ CUDA_BASE_DIGEST=sha256:a5b6256e470196fc1d5f8f62139d57d3662867746dfe1cb352d76
 -GB10_BUILD=2
 +GB10_BUILD=3
+"""
+
+# Diff with BOTH UV_VERSION and VLLM_REF change (a larger PR that includes the
+# UV bump as a subset of its changes)
+UV_AND_VLLM_DIFF = """\
+diff --git a/versions.env b/versions.env
+index abc1234..def5678 100644
+--- a/versions.env
++++ b/versions.env
+@@ -20,6 +20,6 @@ GB10_BUILD=2
+-UV_VERSION=0.11.29
++UV_VERSION=0.11.30
+@@ -28,6 +28,6 @@ GB10_BUILD=2
+-VLLM_REF=v0.24.0
++VLLM_REF=v0.25.1
+"""
+
+# Diff that bumps UV_VERSION to a different value than the candidate
+UV_DIFFERENT_DIFF = """\
+diff --git a/versions.env b/versions.env
+index abc1234..def5678 100644
+--- a/versions.env
++++ b/versions.env
+@@ -20,6 +20,6 @@ GB10_BUILD=2
+-UV_VERSION=0.11.29
++UV_VERSION=0.12.0
 """
 
 if __name__ == "__main__":
@@ -173,6 +202,30 @@ if __name__ == "__main__":
              "branch_diffs_vs_base": {"deps/bump-42": SIMPLE_UV_DIFF},
              "fetch_exit": 0},
             0,  # skip (same UV change, GB10_BUILD differs but ignored)
+        ),
+        (
+            "Dependabot PR with matching versions.env change (skip)",
+            '{"number": 118, "headRefName": "dependabot/github_actions/softprops/action-gh-release-3.0.3"}',
+            {"working_diff": UV_AND_GB10_DIFF,
+             "branch_diffs_vs_base": {"dependabot/github_actions/softprops/action-gh-release-3.0.3": UV_AND_GB10_DIFF},
+             "fetch_exit": 0},
+            0,  # skip (update already in a dependabot PR)
+        ),
+        (
+            "Larger PR includes the candidate update as a subset (skip)",
+            '{"number": 42, "headRefName": "deps/bump-42"}',
+            {"working_diff": UV_AND_GB10_DIFF,
+             "branch_diffs_vs_base": {"deps/bump-42": UV_AND_VLLM_DIFF},
+             "fetch_exit": 0},
+            0,  # skip (candidate UV change is a subset of the PR's changes)
+        ),
+        (
+            "PR changes the same variable to a different value (proceed)",
+            '{"number": 42, "headRefName": "deps/bump-42"}',
+            {"working_diff": UV_AND_GB10_DIFF,
+             "branch_diffs_vs_base": {"deps/bump-42": UV_DIFFERENT_DIFF},
+             "fetch_exit": 0},
+            10,  # proceed (same variable but a different target version)
         ),
         (
             "Shallow checkout: origin/main not a local ref, matching change (skip duplicate)",
@@ -317,11 +370,12 @@ if __name__ == "__main__":
             mock_gh = os.path.join(tmpdir, "gh")
             with open(mock_gh, "w") as f:
                 f.write("#!/usr/bin/env bash\n")
-                # Require the head-branch search qualifier so a regression back
-                # to a broad "deps/bump" text search is caught (exit 3 becomes
-                # a script error / workflow failure).
-                f.write('search_ok=0; for a in "$@"; do [ "$a" = "head:deps/bump" ] && search_ok=1; done\n')
-                f.write("[ $search_ok -eq 1 ] || exit 3\n")
+                # Require the query to scan all open PRs. A regression back to
+                # an author or branch-namespace filter (which would miss
+                # dependabot PRs and PRs from other authors) is caught (exit 3
+                # becomes a script error / workflow failure).
+                f.write('bad=0; for a in "$@"; do [ "$a" = "--author" ] && bad=1; [ "$a" = "--search" ] && bad=1; done\n')
+                f.write("[ $bad -eq 0 ] || exit 3\n")
                 if fake_gh_stdout:
                     f.write(f'cat << \'ENDJSON\'\n{fake_gh_stdout}\nENDJSON\n')
                 f.write(f"exit {gh_exit}\n")

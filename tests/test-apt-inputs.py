@@ -2,6 +2,7 @@
 """Security tests for declarative apt inputs."""
 
 import importlib.util
+import re
 import tempfile
 from pathlib import Path
 
@@ -28,21 +29,19 @@ def main():
     packages = ROOT / "locks" / "apt-packages.txt"
     VALIDATOR.validate_sources(sources)
     VALIDATOR.validate_packages(packages)
+    source_text = sources.read_text()
+    timestamp = re.search(r"\d{8}T000000Z", source_text)
+    assert timestamp, "apt sources must contain a snapshot timestamp"
 
     with tempfile.TemporaryDirectory() as directory:
         temporary = Path(directory) / "input.txt"
         temporary.write_text(
-            sources.read_text().replace(
-                "https://snapshot.ubuntu.com/ubuntu/",
-                "https://attacker.example/ubuntu/",
-            )
+            source_text.replace("https://snapshot.ubuntu.com/ubuntu/", "https://attacker.example/ubuntu/")
         )
         expect_rejected(VALIDATOR.validate_sources, temporary, "unapproved host")
 
         temporary.write_text(
-            sources.read_text().replace(
-                "20260827T000000Z", "20260827T123456Z"
-            )
+            source_text.replace(timestamp.group(), timestamp.group().replace("000000Z", "123456Z"))
         )
         expect_rejected(VALIDATOR.validate_sources, temporary, "mutable timestamp")
 

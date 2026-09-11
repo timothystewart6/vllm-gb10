@@ -1023,11 +1023,11 @@ filelock==3.29.0 \
     #   ray
     #   torch
     #   virtualenv
-flashinfer-cubin==0.6.16.post3 \
-    --hash=sha256:c79fba990aee2a7c7ef64208bb65900e45fe23c3a223f3dfc21eef225f43cba2
+flashinfer-cubin==0.6.18 \
+    --hash=sha256:2dd65c0fcfc6bc44c67f148530de5372979c2e3d260e47935730f94156d4d873
     # via -r /tmp/vllm-gb10-runtime.in
-flashinfer-python==0.6.16.post3 \
-    --hash=sha256:caf686b9b079abe1c9d65ab505698bd325e8072de40afd822f2c74f2ac3bc601
+flashinfer-python==0.6.18 \
+    --hash=sha256:d5d26edb48f8def0bf28b2c94415aef7f0754e2cd9e3cb3d6e7081262d068aad
     # via -r /tmp/vllm-gb10-runtime.in
 frozenlist==1.8.0 \
     --hash=sha256:0325024fe97f94c41c08872db482cf8ac4800d80e79222c6b0b7b162d5b13686 \
@@ -4498,9 +4498,9 @@ tqdm==4.67.3 \
     #   openai
     #   tilelang
     #   transformers
-transformers==5.16.1 \
-    --hash=sha256:17b0eac726ddc55e84ac58946063e0c6d37fd000c456b581f050ea0f4e822869 \
-    --hash=sha256:2f2d5b98a5ad3718713653734298fa620754ed683702a635ebb587df3ed29c7e
+transformers==5.17.0 \
+    --hash=sha256:78ec1ce21579b38dfb83950a0658cd119f87212a2fcfdff478096ce9d6c03801 \
+    --hash=sha256:a153be279169b55b92d8000bf4af294aed684503d091cca7804da2dd8a9de000
     # via
     #   -r /tmp/vllm-gb10-runtime.in
     #   compressed-tensors

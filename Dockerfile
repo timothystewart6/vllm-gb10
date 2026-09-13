@@ -128,17 +128,17 @@ RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
     _j="${BUILD_JOBS:-$(nproc)}" \
  && export MAX_JOBS="${_j}" CMAKE_BUILD_PARALLEL_LEVEL="${_j}" \
  && if [ -z "${SOURCE_DATE_EPOCH}" ]; then unset SOURCE_DATE_EPOCH; fi \
- && uv build --no-build-isolation --wheel . --out-dir=/wheels -v \
+ && uv build --python /usr/bin/python3 --no-build-isolation --wheel . --out-dir=/wheels -v \
  && cd flashinfer-cubin \
  && for _try in 1 2 3 4 5 6 7 8 9 10; do \
-        uv build --no-build-isolation --wheel . --out-dir=/wheels -v && break; \
+        uv build --python /usr/bin/python3 --no-build-isolation --wheel . --out-dir=/wheels -v && break; \
         _wait=$(( _try * 30 )); \
         [ "${_try}" -lt 10 ] \
             && { echo "flashinfer-cubin: attempt ${_try}/10 failed (cubin CDN), retrying in ${_wait}s..."; sleep "${_wait}"; } \
             || { echo "flashinfer-cubin: all 10 attempts failed"; exit 1; }; \
     done \
  && cd ../flashinfer-jit-cache \
- && uv build --no-build-isolation --wheel . --out-dir=/wheels -v
+ && uv build --python /usr/bin/python3 --no-build-isolation --wheel . --out-dir=/wheels -v
 
 ############################################################
 # STAGE 2b: rust-builder - build vLLM Rust frontend (parallel)

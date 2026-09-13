@@ -3,6 +3,7 @@
 
 import importlib.util
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -646,8 +647,13 @@ def test_apt_snapshot_bump_only_updates_snapshot():
         stale_date = datetime.now(timezone.utc) - timedelta(days=8)
         stale_stamp = stale_date.strftime("%Y%m%dT000000Z")
         stale_display = stale_date.strftime("%Y-%m-%dT00:00:00Z")
-        stale = sources.read_text().replace("20260827T000000Z", stale_stamp)
-        stale = stale.replace("2026-08-27T00:00:00Z", stale_display)
+        source_text = sources.read_text()
+        timestamp = re.search(r"\d{8}T000000Z", source_text)
+        display_timestamp = re.search(r"\d{4}-\d{2}-\d{2}T00:00:00Z", source_text)
+        assert timestamp, "apt sources must contain a snapshot timestamp"
+        assert display_timestamp, "apt sources must contain a display timestamp"
+        stale = source_text.replace(timestamp.group(), stale_stamp)
+        stale = stale.replace(display_timestamp.group(), stale_display)
         sources.write_text(stale)
         versions_before = (root / "versions.env").read_bytes()
 

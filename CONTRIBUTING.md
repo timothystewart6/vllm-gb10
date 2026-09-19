@@ -58,7 +58,9 @@ The full lifecycle is:
 1. Run the monitor from `main`. Upstream data is processed in the read-only,
    secret-free job.
 2. A fresh hosted runner validates the candidate `versions.env` against the
-   exact trusted `main` SHA, then creates a PR containing only that file.
+   exact trusted `main` SHA, then creates or updates the single
+   `deps/bump-latest` PR containing only that file. Later monitor runs update
+   that PR with newer upstream values instead of opening overlapping PRs.
 3. Run every hosted test against the generated PR state. This is the first
    validation of the repository after the candidate has been applied.
 4. Review the generated PR's exact 40-character head SHA.

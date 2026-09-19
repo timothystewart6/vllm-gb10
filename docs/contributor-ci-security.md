@@ -81,7 +81,9 @@ monitor PAT is available to any step, trusted code from the exact triggering
 Only the validated `versions.env` is copied into the trusted checkout. The PR
 action is pinned by full commit SHA, commits only `versions.env`, and receives
 an explicit `main` base because the trusted checkout intentionally uses a
-detached exact SHA.
+detached exact SHA. It uses the stable `deps/bump-latest` branch, so newer
+monitor results update the existing dependency PR rather than creating
+overlapping PRs.
 
 This fresh-runner boundary is required even when the upstream parser validates
 its output. It prevents a parser defect or compromised upstream response from

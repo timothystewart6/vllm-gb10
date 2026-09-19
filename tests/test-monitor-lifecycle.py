@@ -180,6 +180,8 @@ def test_workflows_preserve_generated_pr_handoff_order():
     )
     assert "base: main" in create_job
     assert "add-paths: versions.env" in create_job
+    assert "branch: deps/bump-latest" in create_job
+    assert "branch: deps/bump-${{ github.run_number }}" not in create_job
 
     bump = read(".github/workflows/run-bump.yaml")
     ordered_bump_controls = (

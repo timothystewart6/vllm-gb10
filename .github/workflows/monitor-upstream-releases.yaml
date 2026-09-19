@@ -139,5 +139,7 @@ jobs:
           body-path: /tmp/pr-body.md
           base: main
           add-paths: versions.env
-          branch: deps/bump-${{ github.run_number }}
+          # Keep one long-lived dependency branch so a later monitor run
+          # updates the existing PR instead of opening another overlapping PR.
+          branch: deps/bump-latest
           delete-branch: true

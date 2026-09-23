@@ -8,6 +8,14 @@
 #
 # Until bump.sh has run, these unversioned names are seeds only.
 # Do NOT build the Docker image until bump.sh has populated exact versions.
+#
+# This file is a generated output. Do NOT hand-edit any existing entry:
+# the exact version pins are resolved by scripts/bump.sh against the pinned
+# snapshot. The one allowed manual change is adding a NEW apt package as a
+# bare, unversioned name (for example libdw-dev) when the Docker build
+# genuinely needs a new system package. That is rare. Never change, remove,
+# or re-version an existing entry by hand. See CONTRIBUTING.md
+# (Adding an apt package) before editing.
 
 # --- Build tools ---
 

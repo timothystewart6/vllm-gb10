@@ -48,6 +48,12 @@ post-merge validation that could not run in the pull request.
 Before adding, removing, or changing a `versions.env` variable, read and follow
 [Adding or changing a versions.env input](CONTRIBUTING.md#adding-or-changing-a-versionsenv-input).
 
+Never hand-edit the versioned lockfiles under `locks/`. They are generated
+outputs. The one rare exception is adding a new apt package seed to
+`locks/apt-packages.txt` as a bare, unversioned name. Read and follow
+[Adding an apt package](CONTRIBUTING.md#adding-an-apt-package) before touching
+any lockfile.
+
 Before changing release-monitor detection, fixtures, or PR creation, read and
 follow [Automated release monitor lifecycle](CONTRIBUTING.md#automated-release-monitor-lifecycle).
 Validation must apply a representative generated update and run the hosted

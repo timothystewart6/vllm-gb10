@@ -8,6 +8,14 @@
 #
 # Until bump.sh has run, these unversioned names are seeds only.
 # Do NOT build the Docker image until bump.sh has populated exact versions.
+#
+# This file is a generated output. Do NOT hand-edit any existing entry:
+# the exact version pins are resolved by scripts/bump.sh against the pinned
+# snapshot. The one allowed manual change is adding a NEW apt package as a
+# bare, unversioned name (for example libdw-dev) when the Docker build
+# genuinely needs a new system package. That is rare. Never change, remove,
+# or re-version an existing entry by hand. See CONTRIBUTING.md
+# (Adding an apt package) before editing.
 
 # --- Build tools ---
 
@@ -25,7 +33,7 @@ debhelper=13.14.1ubuntu5
 dh-make=2.202304
 fakeroot=1.33-1
 git=1:2.43.0-1ubuntu7.3
-libdw-dev=0.190-1.1ubuntu0.1
+libdw-dev
 libibverbs-dev=50.0-2ubuntu0.2
 libnuma-dev=2.0.18-1ubuntu0.24.04.1
 ninja-build=1.11.1-2

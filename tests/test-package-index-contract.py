@@ -122,17 +122,18 @@ def test_libdw_dev_is_present_for_deepgemm_build():
     # <elfutils/libdwfl.h>. That header ships in libdw-dev. Without it the
     # vllm-builder stage fails to compile with
     # "fatal error: elfutils/libdwfl.h: No such file or directory".
-    # Match only an active (non-commented) package entry with a non-empty
-    # version, so a commented-out "# libdw-dev=..." line does not satisfy
-    # the contract and a legitimate snapshot bump that re-pins the version
-    # does not break the test.
+    # Declared as an unversioned seed in the reviewed lockfile; bump.sh
+    # resolves the exact version against the pinned apt snapshot. Match only
+    # an active (non-commented) entry so a commented-out "# libdw-dev" line
+    # does not satisfy the contract, and accept either the bare seed or the
+    # version-pinned form bump.sh writes back.
     active = [
         line.strip()
         for line in read("locks/apt-packages.txt").splitlines()
         if line.strip() and not line.lstrip().startswith("#")
     ]
     assert any(
-        re.fullmatch(r"libdw-dev=.+", entry) for entry in active
+        re.fullmatch(r"libdw-dev(?:=.+)?", entry) for entry in active
     )
 
 

@@ -10,12 +10,14 @@
 #
 # Job layout (split so re-runs of cheap stages don't require a 1-hour rebuild):
 #
-#   stop-model  -> stop the existing two-node model engine to release RAM.
-#   build       -> compile + push image to GHCR (the expensive job; cached to
-#                  ghcr.io/.../:buildcache so re-runs are near-instant hits).
-#   start-model -> restart both model-engine containers, even after failure.
-#   verify      -> pull image, smoke test, extract artifacts.
-#   release     -> push git release tag, mirror image to Docker Hub.
+#   build   -> compile + push image to GHCR (the expensive job; cached to
+#              ghcr.io/.../:buildcache so re-runs are near-instant hits).
+#   verify  -> pull image, smoke test, extract artifacts.
+#   release -> push git release tag, mirror image to Docker Hub.
+#
+# Build jobs run on the dedicated nvidia-spark-01 runner (label `spark-01`).
+# The ASUS GX10 nodes were retired from the build pipeline; their runners were
+# removed and the production model containers there are managed out-of-band.
 #
 # Re-run "verify" or "release" from the Actions UI to retry without rebuilding.
 
@@ -42,33 +44,8 @@ permissions:
   packages: write
 
 jobs:
-  stop-model:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: gb10-1
-            container: vllm-ray-head
-          - runner: gb10-2
-            container: vllm-ray-worker
-    runs-on: [self-hosted, linux, ARM64, "${{ matrix.runner }}"]
-
-    steps:
-      - name: Require main
-        env:
-          WORKFLOW_REF: ${{ github.ref }}
-        run: |
-          if [[ "$WORKFLOW_REF" != "refs/heads/main" ]]; then
-            echo "Refusing to run GX10 jobs from a non-main workflow ref."
-            exit 1
-          fi
-
-      - name: Stop model container
-        run: docker stop "${{ matrix.container }}"
-
   build:
-    needs: stop-model
-    runs-on: [self-hosted, linux, ARM64, dgx-spark]
+    runs-on: [self-hosted, linux, ARM64, spark-01]
     outputs:
       vllm_ref: ${{ steps.vars.outputs.vllm_ref }}
       gb10_build: ${{ steps.vars.outputs.gb10_build }}
@@ -84,7 +61,7 @@ jobs:
           WORKFLOW_REF: ${{ github.ref }}
         run: |
           if [[ "$WORKFLOW_REF" != "refs/heads/main" ]]; then
-            echo "Refusing to run GX10 jobs from a non-main workflow ref."
+            echo "Refusing to run self-hosted jobs from a non-main workflow ref."
             exit 1
           fi
 
@@ -235,35 +212,9 @@ jobs:
             FLASHINFER_CUDA_ARCH_LIST=${{ env.FLASHINFER_CUDA_ARCH_LIST }}
             SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }}
 
-  start-model:
-    needs: build
-    if: always()
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: gb10-1
-            container: vllm-ray-head
-          - runner: gb10-2
-            container: vllm-ray-worker
-    runs-on: [self-hosted, linux, ARM64, "${{ matrix.runner }}"]
-
-    steps:
-      - name: Require main
-        env:
-          WORKFLOW_REF: ${{ github.ref }}
-        run: |
-          if [[ "$WORKFLOW_REF" != "refs/heads/main" ]]; then
-            echo "Refusing to run GX10 jobs from a non-main workflow ref."
-            exit 1
-          fi
-
-      - name: Start model container
-        run: docker start "${{ matrix.container }}"
-
   verify:
-    needs: [build, start-model]
-    runs-on: [self-hosted, linux, ARM64, dgx-spark]
+    needs: build
+    runs-on: [self-hosted, linux, ARM64, spark-01]
     env:
       CANONICAL_IMAGE: ghcr.io/timothystewart6/vllm-gb10:${{ needs.build.outputs.canonical_tag }}
 
@@ -323,7 +274,7 @@ jobs:
 
   release:
     needs: [build, verify]
-    runs-on: [self-hosted, linux, ARM64, dgx-spark]
+    runs-on: [self-hosted, linux, ARM64, spark-01]
     env:
       VLLM_REF: ${{ needs.build.outputs.vllm_ref }}
       GB10_BUILD: ${{ needs.build.outputs.gb10_build }}
@@ -357,8 +308,7 @@ jobs:
 
       - name: Pull image
         # Ensures the image is in the local daemon even if this job lands
-        # on a different runner than `verify` (defensive; today there is
-        # only one dgx-spark runner so it would still be cached).
+        # on a different runner than `verify` (defensive).
         run: docker pull "ghcr.io/timothystewart6/vllm-gb10:${CANONICAL}"
 
       - name: Push release tag

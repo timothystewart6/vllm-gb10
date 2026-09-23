@@ -1,6 +1,6 @@
 # Contributor CI security workflow
 
-This document explains how contributions reach the GX10 runners without
+This document explains how contributions reach the Spark runners without
 automatically executing contributor code on persistent hardware.
 
 ## Security objective
@@ -8,7 +8,7 @@ automatically executing contributor code on persistent hardware.
 Pull requests from forks must be useful and testable without receiving secrets,
 write credentials, or access to a self-hosted runner.
 
-The GX10 bump workflow treats contributor changes as untrusted. It imports only
+The Spark bump workflow treats contributor changes as untrusted. It imports only
 four reviewed files as declarative data:
 
 - `versions.env`
@@ -19,7 +19,7 @@ four reviewed files as declarative data:
 `Dockerfile` is imported only so its content hash can affect `GB10_BUILD`. Its
 instructions are not executed by the bump workflow.
 
-All validators, `scripts/bump.sh`, and lockfile policy tests executed on GX10
+All validators, `scripts/bump.sh`, and lockfile policy tests executed on Spark
 come from the exact `main` commit that defined the manually dispatched
 workflow.
 
@@ -37,7 +37,7 @@ flowchart TD
     H --> I[Verify branch still equals approved SHA]
     I --> J[Import four files as data]
     J --> K[Validate with trusted main code]
-    K --> L[Run trusted bump generator on GX10]
+    K --> L[Run trusted bump generator on Spark]
     L --> M[Validate and commit generated files]
     M --> N[Review generated integration PR diff]
     N --> O[Merge integration PR]
@@ -54,14 +54,14 @@ lockfiles.
 |---|---|---|
 | Contributor repository code | Untrusted | GitHub-hosted PR runner only |
 | Four imported build-input files | Untrusted data with strict validation | Trusted generator worktree |
-| Workflow and generator scripts | Exact trusted `main` SHA | GX10 runner |
+| Workflow and generator scripts | Exact trusted `main` SHA | Spark runner |
 | Generated lockfiles | Untrusted output until reviewed | Integration PR |
-| Write token | Trusted workflow steps only | GX10 runner after no contributor code has executed |
-| Merged `main` code | Trusted by repository review policy | GX10 build and smoke-test jobs |
+| Write token | Trusted workflow steps only | Spark runner after no contributor code has executed |
+| Merged `main` code | Trusted by repository review policy | Spark build and smoke-test jobs |
 
 The workflow does not sandbox arbitrary code that a maintainer has merged.
 Containing malicious code that passed review requires ephemeral or separately
-isolated GX10 runners.
+isolated Spark runners.
 
 ## Automated release monitor
 
@@ -177,7 +177,7 @@ use the bypass for an external contributor's pull request. External changes
 must be promoted to an integration branch, receive the maintainer's code-owner
 approval after the final generated commit, and pass all required checks.
 
-The push to `main` starts the GX10 image build and smoke test.
+The push to `main` starts the Spark image build and smoke test.
 
 ## Validation policy
 
@@ -204,7 +204,7 @@ are rejected.
 Changes to workflows, scripts, tests, or Dockerfile instructions are preserved
 in the integration PR, but they are not executed by `run-bump.yaml`.
 
-There is no safe pre-merge GX10 execution path for arbitrary contributor code
+There is no safe pre-merge Spark execution path for arbitrary contributor code
 on the persistent runners. These changes rely on GitHub-hosted tests, exact-diff
 review, CODEOWNERS, and repository branch protections. The hardware build and
 smoke test run after merge from trusted `main`.

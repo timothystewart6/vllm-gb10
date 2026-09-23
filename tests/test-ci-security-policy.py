@@ -93,71 +93,49 @@ def test_trusted_builds_checkout_the_exact_event_sha():
         assert "ref: ${{ github.sha }}" in workflow, name
 
 
-def test_build_coordinates_model_lifecycle_across_both_gb10_nodes():
+def test_build_workflow_runs_only_on_spark_01_runner():
     workflow = read(WORKFLOWS / "build-image.yaml")
-    stop_job = workflow.split("\n  stop-model:", 1)[1].split(
-        "\n  build:", 1
-    )[0]
-    build_job = workflow.split("\n  build:", 1)[1].split(
-        "\n  start-model:", 1
-    )[0]
-    start_job = workflow.split("\n  start-model:", 1)[1].split(
-        "\n  verify:", 1
-    )[0]
-    verify_job = workflow.split("\n  verify:", 1)[1].split(
-        "\n  release:", 1
-    )[0]
 
     assert "group: build-image-model-lifecycle" in workflow
     assert "cancel-in-progress: false" in workflow
-    for job in (stop_job, start_job):
-        assert "runner: gb10-1" in job
-        assert "container: vllm-ray-head" in job
-        assert "runner: gb10-2" in job
-        assert "container: vllm-ray-worker" in job
-        assert 'runs-on: [self-hosted, linux, ARM64, "${{ matrix.runner }}"]' in job
-        assert "fail-fast: false" in job
-        assert "Require main" in job
-    assert 'docker stop "${{ matrix.container }}"' in stop_job
-    assert "|| true" not in stop_job
-    assert "needs: stop-model" in build_job
-    assert "docker stop" not in build_job
-    assert "docker start" not in build_job
-    assert "needs: build" in start_job
-    assert "if: always()" in start_job
-    assert 'docker start "${{ matrix.container }}"' in start_job
-    assert "|| true" not in start_job
-    assert "needs: [build, start-model]" in verify_job
+
+    # The ASUS GX10 nodes were retired from the build pipeline. No build job may
+    # target them, and the model lifecycle (stop-model/start-model) jobs are gone.
+    assert "stop-model" not in workflow
+    assert "start-model" not in workflow
+    assert "gb10-1" not in workflow
+    assert "gb10-2" not in workflow
+    assert "vllm-ray-head" not in workflow
+    assert "vllm-ray-worker" not in workflow
+    assert "docker stop" not in workflow
+    assert "docker start" not in workflow
+
+    # Every self-hosted job runs only on the dedicated nvidia-spark-01 runner.
+    # No job may target the retired GX10 labels or the shared dgx-spark pool.
+    assert workflow.count("runs-on: [self-hosted, linux, ARM64, spark-01]") == 3
+    assert "dgx-spark" not in workflow
+
+    # jobs must be chained build -> verify -> release.
+    assert "needs: build" in workflow
+    assert "needs: [build, verify]" in workflow
 
 
-def test_reproducibility_build_coordinates_model_lifecycle():
+def test_reproducibility_build_runs_only_on_spark_01_runner():
     workflow = read(WORKFLOWS / "verify-reproducible.yaml")
-    stop_job = workflow.split("\n  stop-model:", 1)[1].split(
-        "\n  verify:", 1
-    )[0]
-    verify_job = workflow.split("\n  verify:", 1)[1].split(
-        "\n  start-model:", 1
-    )[0]
-    start_job = workflow.split("\n  start-model:", 1)[1]
 
     assert "group: build-image-model-lifecycle" in workflow
     assert "cancel-in-progress: false" in workflow
-    for job in (stop_job, start_job):
-        assert "runner: gb10-1" in job
-        assert "container: vllm-ray-head" in job
-        assert "runner: gb10-2" in job
-        assert "container: vllm-ray-worker" in job
-        assert 'runs-on: [self-hosted, linux, ARM64, "${{ matrix.runner }}"]' in job
-        assert "fail-fast: false" in job
-        assert "Require main" in job
-        assert "|| true" not in job
-    assert 'docker stop "${{ matrix.container }}"' in stop_job
-    assert "needs: stop-model" in verify_job
-    assert "docker stop" not in verify_job
-    assert "docker start" not in verify_job
-    assert "needs: verify" in start_job
-    assert "if: always()" in start_job
-    assert 'docker start "${{ matrix.container }}"' in start_job
+    assert "stop-model" not in workflow
+    assert "start-model" not in workflow
+    assert "gb10-1" not in workflow
+    assert "gb10-2" not in workflow
+    assert "vllm-ray-head" not in workflow
+    assert "vllm-ray-worker" not in workflow
+    assert "docker stop" not in workflow
+    assert "docker start" not in workflow
+
+    verify_job = workflow.split("\n  verify:", 1)[1]
+    assert 'runs-on: [self-hosted, linux, ARM64, spark-01]' in verify_job
 
 
 def test_privileged_workflows_reject_untrusted_refs():
@@ -371,8 +349,8 @@ def main():
         test_all_external_actions_are_pinned_by_full_sha,
         test_bump_workflow_preserves_approval_boundary,
         test_trusted_builds_checkout_the_exact_event_sha,
-        test_build_coordinates_model_lifecycle_across_both_gb10_nodes,
-        test_reproducibility_build_coordinates_model_lifecycle,
+        test_build_workflow_runs_only_on_spark_01_runner,
+        test_reproducibility_build_runs_only_on_spark_01_runner,
         test_privileged_workflows_reject_untrusted_refs,
         test_monitor_pr_creation_is_scoped_and_handles_detached_checkout,
         test_pr_workflows_are_read_only_and_secret_free,

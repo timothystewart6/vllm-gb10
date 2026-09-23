@@ -27,9 +27,23 @@ APPROVED_ACTIONS = {
     "softprops/action-gh-release": "efb35369e0ad2afab669f228072c1b0d510eae64",
 }
 
+# The single shared runner-pool label for every self-hosted build job. The
+# GB10 nodes run one repo-scoped runner on nvidia-spark-01; the retired GX10
+# runners and their labels are gone. Every job-level runs-on below must resolve
+# to exactly this set (no other runner may be targeted).
+GB10_RUNS_ON = "[self-hosted, linux, ARM64, gb10]"
+
 
 def read(path):
     return path.read_text(encoding="utf-8")
+
+
+RUNS_ON = re.compile(r"^\s*runs-on:\s*(.+?)\s*$", re.MULTILINE)
+
+
+def find_runs_on(workflow):
+    """Return every job-level runs-on list, in file order, as stripped text."""
+    return [m.group(1) for m in RUNS_ON.finditer(workflow)]
 
 
 def test_self_hosted_workflows_have_trusted_entry_points():
@@ -112,9 +126,11 @@ def test_build_workflow_runs_only_on_spark_01_runner():
 
     # Every self-hosted job runs only on the GB10 class label. No job may target
     # the retired GX10 node labels, the old host label, or the dgx-spark pool.
-    assert workflow.count("runs-on: [self-hosted, linux, ARM64, gb10]") == 3
-    assert "runs-on: [self-hosted, linux, ARM64, spark-01]" not in workflow
-    assert "dgx-spark" not in workflow
+    # Collect every runs-on and assert the complete set is exactly the GB10
+    # runner so a newly added job on any other runner fails this regression
+    # guard instead of slipping past a fixed count.
+    runs_on_results = find_runs_on(workflow)
+    assert runs_on_results == [GB10_RUNS_ON, GB10_RUNS_ON, GB10_RUNS_ON], runs_on_results
 
     # jobs must be chained build -> verify -> release.
     assert "needs: build" in workflow
@@ -135,8 +151,9 @@ def test_reproducibility_build_runs_only_on_spark_01_runner():
     assert "docker stop" not in workflow
     assert "docker start" not in workflow
 
-    verify_job = workflow.split("\n  verify:", 1)[1]
-    assert 'runs-on: [self-hosted, linux, ARM64, gb10]' in verify_job
+    # Every job-level runs-on must resolve to the GB10 runner only.
+    runs_on_results = find_runs_on(workflow)
+    assert runs_on_results == [GB10_RUNS_ON], runs_on_results
 
 
 def test_privileged_workflows_reject_untrusted_refs():

@@ -15,9 +15,6 @@
 
 # --- NCCL .deb packaging (required for `make pkg.debian.build`) ---
 
-# --- vLLM build deps (DeepGEMM/DeepJIT requires elfutils/libdwfl.h) ---
-libdw-dev=0.190-1.1ubuntu0.1
-
 # --- NCCL InfiniBand and NUMA support ---
 build-essential=12.10ubuntu1
 ca-certificates=20260601~24.04.1
@@ -28,6 +25,7 @@ debhelper=13.14.1ubuntu5
 dh-make=2.202304
 fakeroot=1.33-1
 git=1:2.43.0-1ubuntu7.3
+libdw-dev=0.190-1.1ubuntu0.1
 libibverbs-dev=50.0-2ubuntu0.2
 libnuma-dev=2.0.18-1ubuntu0.24.04.1
 ninja-build=1.11.1-2

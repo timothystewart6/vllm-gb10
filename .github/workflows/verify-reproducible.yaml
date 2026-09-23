@@ -44,7 +44,7 @@ permissions:
 
 jobs:
   verify:
-    runs-on: [self-hosted, linux, ARM64, spark-01]
+    runs-on: [self-hosted, linux, ARM64, gb10]
 
     steps:
       - name: Require main

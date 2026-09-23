@@ -15,9 +15,10 @@
 #   verify  -> pull image, smoke test, extract artifacts.
 #   release -> push git release tag, mirror image to Docker Hub.
 #
-# Build jobs run on the dedicated nvidia-spark-01 runner (label `spark-01`).
-# The ASUS GX10 nodes were retired from the build pipeline; their runners were
-# removed and the production model containers there are managed out-of-band.
+# Build jobs run on the GB10 runner (class label `gb10`). The runner is
+# nvidia-spark-01 - the ASUS GX10 nodes were retired from the build pipeline;
+# their runners were removed and the production model containers there are
+# managed out-of-band.
 #
 # Re-run "verify" or "release" from the Actions UI to retry without rebuilding.
 
@@ -45,7 +46,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: [self-hosted, linux, ARM64, spark-01]
+    runs-on: [self-hosted, linux, ARM64, gb10]
     outputs:
       vllm_ref: ${{ steps.vars.outputs.vllm_ref }}
       gb10_build: ${{ steps.vars.outputs.gb10_build }}
@@ -214,7 +215,7 @@ jobs:
 
   verify:
     needs: build
-    runs-on: [self-hosted, linux, ARM64, spark-01]
+    runs-on: [self-hosted, linux, ARM64, gb10]
     env:
       CANONICAL_IMAGE: ghcr.io/timothystewart6/vllm-gb10:${{ needs.build.outputs.canonical_tag }}
 
@@ -274,7 +275,7 @@ jobs:
 
   release:
     needs: [build, verify]
-    runs-on: [self-hosted, linux, ARM64, spark-01]
+    runs-on: [self-hosted, linux, ARM64, gb10]
     env:
       VLLM_REF: ${{ needs.build.outputs.vllm_ref }}
       GB10_BUILD: ${{ needs.build.outputs.gb10_build }}

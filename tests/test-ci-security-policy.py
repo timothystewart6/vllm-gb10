@@ -110,9 +110,10 @@ def test_build_workflow_runs_only_on_spark_01_runner():
     assert "docker stop" not in workflow
     assert "docker start" not in workflow
 
-    # Every self-hosted job runs only on the dedicated nvidia-spark-01 runner.
-    # No job may target the retired GX10 labels or the shared dgx-spark pool.
-    assert workflow.count("runs-on: [self-hosted, linux, ARM64, spark-01]") == 3
+    # Every self-hosted job runs only on the GB10 class label. No job may target
+    # the retired GX10 node labels, the old host label, or the dgx-spark pool.
+    assert workflow.count("runs-on: [self-hosted, linux, ARM64, gb10]") == 3
+    assert "runs-on: [self-hosted, linux, ARM64, spark-01]" not in workflow
     assert "dgx-spark" not in workflow
 
     # jobs must be chained build -> verify -> release.
@@ -135,7 +136,7 @@ def test_reproducibility_build_runs_only_on_spark_01_runner():
     assert "docker start" not in workflow
 
     verify_job = workflow.split("\n  verify:", 1)[1]
-    assert 'runs-on: [self-hosted, linux, ARM64, spark-01]' in verify_job
+    assert 'runs-on: [self-hosted, linux, ARM64, gb10]' in verify_job
 
 
 def test_privileged_workflows_reject_untrusted_refs():

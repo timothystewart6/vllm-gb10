@@ -30,7 +30,7 @@ permissions:
 
 jobs:
   bump:
-    runs-on: [self-hosted, linux, ARM64, dgx-spark]
+    runs-on: [self-hosted, linux, ARM64, gb10]
     timeout-minutes: 30
     env:
       APPROVED_BRANCH: ${{ inputs.branch }}

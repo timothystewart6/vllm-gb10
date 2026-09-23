@@ -117,6 +117,25 @@ def test_build_revision_comparison_uses_trusted_main_schema_roles():
     assert 'python3 "${REPO_ROOT}/scripts/compute-gb10-build.py"' in bump
 
 
+def test_libdw_dev_is_present_for_deepgemm_build():
+    # vLLM v0.30.0 builds DeepGEMM, whose DeepJIT submodule includes
+    # <elfutils/libdwfl.h>. That header ships in libdw-dev. Without it the
+    # vllm-builder stage fails to compile with
+    # "fatal error: elfutils/libdwfl.h: No such file or directory".
+    # Match only an active (non-commented) package entry with a non-empty
+    # version, so a commented-out "# libdw-dev=..." line does not satisfy
+    # the contract and a legitimate snapshot bump that re-pins the version
+    # does not break the test.
+    active = [
+        line.strip()
+        for line in read("locks/apt-packages.txt").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    assert any(
+        re.fullmatch(r"libdw-dev=.+", entry) for entry in active
+    )
+
+
 def main():
     tests = [
         test_flashinfer_index_is_an_explicit_build_input,
@@ -127,6 +146,7 @@ def main():
         test_instanttensor_supports_vllm_copy_api,
         test_random_lock_paths_are_normalized,
         test_build_revision_comparison_uses_trusted_main_schema_roles,
+        test_libdw_dev_is_present_for_deepgemm_build,
     ]
     for test in tests:
         test()

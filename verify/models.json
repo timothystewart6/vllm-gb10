@@ -1,0 +1,113 @@
+{
+  "models": [
+    {
+      "name": "qwen3-0.6b",
+      "model": "Qwen/Qwen3-0.6B",
+      "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+      "serve": {
+        "gpu_memory_utilization": "0.8",
+        "max_model_len": "32768",
+        "max_num_batched_tokens": "4096",
+        "max_num_seqs": "8",
+        "default_chat_template_kwargs": {
+          "enable_thinking": false
+        },
+        "flags": [
+          "--enable-prefix-caching"
+        ]
+      },
+      "tests": {
+        "tool": false,
+        "reasoning": false,
+        "multimodal": false,
+        "spec_decode": false
+      }
+    },
+    {
+      "name": "gemma-4-12b",
+      "model": "google/gemma-4-12B-it",
+      "revision": "707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7",
+      "serve": {
+        "gpu_memory_utilization": "0.9",
+        "max_model_len": "32768",
+        "max_num_batched_tokens": "4096",
+        "max_num_seqs": "4",
+        "chat_template": "tool_chat_template_gemma4.jinja",
+        "default_chat_template_kwargs": {
+          "enable_thinking": true
+        },
+        "flags": [
+          "--reasoning-parser=gemma4",
+          "--enable-prefix-caching"
+        ]
+      },
+      "tests": {
+        "tool": false,
+        "reasoning": true,
+        "multimodal": true,
+        "spec_decode": false
+      }
+    },
+    {
+      "name": "nemotron-lightning",
+      "model": "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4",
+      "revision": "cc84af2fe71647d87f4486c064f320e1e7535243",
+      "serve": {
+        "gpu_memory_utilization": "0.92",
+        "max_model_len": "131072",
+        "max_num_batched_tokens": "4096",
+        "max_num_seqs": "4",
+        "kv_cache_dtype": "fp8_e4m3",
+        "quantization": "modelopt_fp4",
+        "speculative_config": {
+          "method": "mtp",
+          "num_speculative_tokens": 5
+        },
+        "flags": [
+          "--moe-backend=humming",
+          "--linear-backend=humming",
+          "--mamba-backend=flashinfer",
+          "--mamba-cache-mode=align",
+          "--mamba-ssu-algorithm=simple",
+          "--reasoning-parser=nemotron_v3",
+          "--tool-call-parser=qwen3_coder",
+          "--enable-auto-tool-choice",
+          "--enable-prefix-caching"
+        ]
+      },
+      "tests": {
+        "tool": true,
+        "reasoning": true,
+        "multimodal": false,
+        "spec_decode": true
+      }
+    },
+    {
+      "name": "qwen3.8-27b-nvfp4",
+      "model": "nvidia/Qwen3.8-27B-NVFP4",
+      "revision": "482ca0f3832238542f8f5295dde86b5f22711d80",
+      "serve": {
+        "gpu_memory_utilization": "0.9",
+        "max_model_len": "65536",
+        "max_num_batched_tokens": "4096",
+        "max_num_seqs": "4",
+        "kv_cache_dtype": "fp8_e4m3",
+        "quantization": "modelopt_fp4",
+        "flags": [
+          "--reasoning-parser=qwen3",
+          "--tool-call-parser=qwen3_coder",
+          "--enable-auto-tool-choice",
+          "--mm-encoder-tp-mode=data",
+          "--enable-chunked-prefill",
+          "--enable-prefix-caching"
+        ]
+      },
+      "tests": {
+        "tool": true,
+        "reasoning": true,
+        "multimodal": true,
+        "spec_decode": false
+      }
+    }
+  ]
+}

@@ -1,0 +1,122 @@
+# vllm-gb10 verify harness - vLLM server definition.
+#
+# Serves the freshly-built vllm-gb10 image on the GB10 runner and holds it up
+# long enough for the `verify` job in build-image.yaml to run a deterministic
+# functional test and llama-benchy against it. Proves a build actually boots,
+# serves, and answers before release.
+#
+# This is the production CI verify harness (tracked in the repo), promoted from
+# the local zIgnore/vllm-poc PoC. The PoC added an isolated host port and ran
+# llama-benchy on the host with sudo; the CI version runs benchy inside the
+# container via uvx so the ephemeral runner user needs no host provisioning.
+#
+# This file is the generic base skeleton only. Every model-specific value
+# (model id, revision, quantization, kv-cache-dtype, speculative-config, and
+# the rest of the serve flags) comes from verify/models.json and is emitted as
+# a per-model compose override by verify/gen-model-override.sh, which
+# run-verify.sh feeds to `docker compose -f <base> -f <override>`. The `command`
+# list here is a fallback so the skeleton stays self-contained.
+#
+# Settings mirror the tested production flags from home-ops
+# (ansible/playbooks/ai/vllm-x86.yaml for Nemotron Lightning 30B A3B NVFP4,
+# and ansible/files/ai-stacks/*.yaml for the vllm-gb10 image runtime),
+# adapted to a single node with an isolated port.
+
+# Overridable via env (no .env is committed; the verify job sets these):
+#   IMAGE:         the vllm-gb10 image tag to serve (CI sets the canonical tag)
+#   VLLM_PORT:     host port for the server (isolated)
+#   MODEL:         served HuggingFace model id
+#   MODEL_REVISION: pinned snapshot revision of MODEL in the HF cache
+#   HF_CACHE:      host dir holding the HuggingFace hub cache (NFS)
+#   VLLM_CACHE:    host dir for vLLM compile/JIT caches
+#   VERIFY_RESULT_DIR: host dir whose contents are visible at /results in the
+#                      container (chat + benchy JSON outputs land here so the
+#                      CI job can upload them as artifacts)
+#   GPU_MEMORY_UTILIZATION, MAX_MODEL_LEN, MAX_NUM_SEQS: vllm serve tuning
+
+services:
+  vllm-serve:
+    image: "${IMAGE:-ghcr.io/timothystewart6/vllm-gb10:v0.30.0-gb10.2}"
+    pull_policy: missing
+    container_name: vllm-gb10-verify
+    restart: "no"
+    # Host networking lets port 8010 behave like a host port, reachable by the
+    # verify driver and in-container benchy on localhost.
+    network_mode: host
+    ipc: host
+    shm_size: '10.24gb'
+    # privileged is required on GB10 to reach full throughput (per the GX10
+    # stacks). Keeps the bench numbers comparable to production deployments.
+    privileged: true
+    cap_add:
+      - SYS_PTRACE
+    ulimits:
+      memlock: -1
+    volumes:
+      # Model hub cache on NFS (runner user can read /mnt/llm/models).
+      - "${HF_CACHE:-/mnt/llm/models/huggingface}:/root/.cache/huggingface"
+      # vLLM compile/JIT cache survives container restarts / warm boots.
+      - "${VLLM_CACHE:-/mnt/llm/vllm-compile-cache}:/root/.cache/vllm"
+      # Chat + benchy JSON results written inside the container at /results
+      # appear on the host for artifact upload.
+      - "${VERIFY_RESULT_DIR:-./results}:/results"
+      # Vendored chat templates (e.g. tool_chat_template_gemma4.jinja) are passed
+      # to models whose tokenizer ships no chat_template. The verify/ dir on the
+      # host is mounted read-only at /etc/vllm/chat-templates so --chat-template
+      # can reference a stable in-container path.
+      - "${CHAT_TEMPLATE_DIR:-./}:/etc/vllm/chat-templates:ro"
+    environment:
+      - HF_TOKEN=${HF_TOKEN}
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN}
+      - VLLM_HOST_IP=${VLLM_HOST_IP:-127.0.0.1}
+      # Use the local NFS model share offline so no re-download occurs.
+      - HF_HUB_OFFLINE=1
+      - TRANSFORMERS_OFFLINE=1
+      - HF_HUB_DISABLE_XET=1
+      - SAFETENSORS_FAST_GPU=1
+      - RAY_memory_monitor_refresh_ms=0
+      - RAY_num_prestart_python_workers=0
+      - RAY_object_store_memory=1073741824
+      - RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO=0
+      - OMP_NUM_THREADS=4
+    command:
+      # The command list is a generic fallback. The real per-model command
+      # (model, revision, serve flags, tuning) comes from gen-model-override.sh
+      # reading verify/models.json, and is merged in as a compose override so
+      # each model in the catalog gets its own flags (e.g. a dense model must
+      # not receive Lightning's MoE/humming/mamba flags).
+      - vllm
+      - serve
+      - "${MODEL:-nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4}"
+      - --revision
+      - "${MODEL_REVISION:-cc84af2fe71647d87f4486c064f320e1e7535243}"
+      - --served-model-name
+      - "${MODEL:-nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4}"
+      - --host
+      - 0.0.0.0
+      - --port
+      - "${VLLM_PORT:-8010}"
+      - --gpu-memory-utilization
+      # 0.98 requests 119.3 GiB, more than the ~115.7 GiB free on the GB10
+      # runner (it also hosts the self-hosted runner). 0.92 leaves comfortable
+      # headroom while still using most of the 121.7 GiB unified memory.
+      - "${GPU_MEMORY_UTILIZATION:-0.92}"
+      - --max-model-len
+      - "${MAX_MODEL_LEN:-131072}"
+      - --max-num-batched-tokens
+      - "${MAX_NUM_BATCHED_TOKENS:-4096}"
+      - --max-num-seqs
+      - "${MAX_NUM_SEQS:-4}"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request, sys, os; sys.exit(0 if urllib.request.urlopen('http://localhost:' + os.environ.get('VLLM_PORT','8010') + '/health').status == 200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 80
+      start_period: 900s

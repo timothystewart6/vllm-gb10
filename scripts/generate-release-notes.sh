@@ -9,6 +9,11 @@
 # Required env:
 #   TAG         - e.g. v0.21.0-gb10.0
 #   GITHUB_SHA  - full commit sha of the build
+# Optional env:
+#   VERIFY_RESULTS_DIR - dir with verify/run-verify.sh result files (the newest
+#                        stamp's matrix/suite/bench/meta JSON set); when set and
+#                        holding a results set, a compact model-verification
+#                        report is appended to the release body.
 # Required: versions.env in CWD (the script sources it).
 
 set -euo pipefail
@@ -182,10 +187,33 @@ No changes - identical component pins to the previous release.
 else:
     changed_section = ""
 
+# Build the compact model-verification report when verify results are present.
+# The `verify` job renders it from the freshly-built image's serve+bench run
+# and passes the results dir via VERIFY_RESULTS_DIR. When unset or empty (the
+# manual create-release fallback has no GPU/verify run), the section is just
+# omitted rather than showing a placeholder.
+verify_report_section = ""
+verify_results = os.environ.get("VERIFY_RESULTS_DIR") or ""
+if verify_results:
+    try:
+        report = subprocess.run(
+            [sys.executable, os.path.join(os.environ["REPO_ROOT"], "verify", "render-verify-report.py"),
+             verify_results],
+            capture_output=True, text=True, check=True, timeout=30,
+        ).stdout.strip()
+        if report:
+            verify_report_section = f"""
+
+{report}
+"""
+    except (subprocess.CalledProcessError, OSError) as e:
+        print(f"warning: could not render verify report ({e}); omitting", file=sys.stderr)
+
 body = f"""## {tag}
 
 > Reproducible vLLM image for NVIDIA DGX Spark (GB10 / sm_121a)
 {changed_section}
+{verify_report_section}
 ### Image tags
 
 | Tag | Notes |

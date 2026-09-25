@@ -8,6 +8,7 @@ Output is written to the path specified by OUTPUT_PATH env var, or
 defaults to /tmp/test-release-notes-output.md.
 """
 
+import json
 import os
 import subprocess
 import sys
@@ -69,6 +70,106 @@ def test_release_notes_script_imports_shared_module():
 
 test_release_notes_script_imports_shared_module()
 
+
+def test_release_notes_embed_compact_verify_report():
+    """The release body must include the compact model-verification report when
+    VERIFY_RESULTS_DIR points at a verify run, and must omit the section when
+    the var is unset (the manual create-release fallback has no verify run).
+    """
+    repo_root = Path(__file__).resolve().parent.parent
+    script = str(repo_root / "scripts" / "generate-release-notes.sh")
+
+    with tempfile.TemporaryDirectory() as results_dir:
+        stamp = "20990102-112233"
+        (Path(results_dir) / f"meta-demo-model-{stamp}.json").write_text(json.dumps({
+            "model": "demo/demo-model",
+            "name": "demo-model",
+            "startup_s": 123,
+            "stamp": stamp,
+        }), encoding="utf-8")
+        (Path(results_dir) / f"bench-demo-model-{stamp}.json").write_text(json.dumps(
+            {"benchmarks": [
+                {"prompt_size": 2048, "response_size": 128,
+                 "pp_throughput": {"mean": 10000.0}, "tg_throughput": {"mean": 50.0}},
+            ]}
+        ), encoding="utf-8")
+        (Path(results_dir) / f"bench-conc-demo-model-{stamp}.json").write_text(json.dumps(
+            {"benchmarks": [
+                {"concurrency": 4, "prompt_size": 2048, "response_size": 128,
+                 "total_throughput": {"mean": 200.0}},
+            ]}
+        ), encoding="utf-8")
+        (Path(results_dir) / f"suite-results-demo-model-{stamp}.json").write_text(json.dumps({
+            "model": "demo/demo-model",
+            "name": "demo-model",
+            "stamp": stamp,
+            "results": {
+                "deterministic": "pass",
+                "streaming": "pass",
+                "tool": "pass",
+                "reasoning": "fail",
+                "multimodal": "skipped",
+            },
+        }), encoding="utf-8")
+        (Path(results_dir) / f"matrix-demo-model-{stamp}.json").write_text(json.dumps({
+            "model": "demo/demo-model",
+            "name": "demo-model",
+            "stamp": stamp,
+            "startup": 1,
+            "registry": 1,
+            "functional": "pass",
+            "spec_decode": "skip",
+            "bench_pptg": "pass",
+            "bench_conc": "pass",
+            "post_health": "pass",
+            "server_log": "pass",
+            "clean_stop": "pass",
+        }), encoding="utf-8")
+
+        base_env = {
+            "TAG": "v-demo-gb10.0",
+            "GITHUB_SHA": "0123456789abcdef0123456789abcdef01234567",
+        }
+
+        # With results present: the compact report section must appear with the
+        # model row and headline numbers.
+        env_present = os.environ.copy()
+        env_present.update(base_env)
+        env_present["VERIFY_RESULTS_DIR"] = results_dir
+        result = subprocess.run(
+            ["bash", script], cwd=repo_root, env=env_present,
+            capture_output=True, text=True, timeout=30,
+        )
+        assert result.returncode == 0, result.stderr
+        assert "## Model verification" in result.stdout
+        assert "`demo/demo-model`" in result.stdout   # org/model id from meta
+        assert "123" in result.stdout          # startup seconds
+        assert "10000" in result.stdout        # pp tok/s
+        assert "50.0" in result.stdout         # tg tok/s
+        assert "200" in result.stdout          # concurrency-4 aggregate
+        # Full report-style test matrix must be embedded too.
+        assert "### Test matrix" in result.stdout
+        assert "Speculative decoding" in result.stdout
+        assert "| Test | Implemented by | Kind |" in result.stdout
+        assert "Model startup (health)" in result.stdout
+        assert "Clean shutdown" in result.stdout
+
+        # Without results (manual fallback): no section, no spurious error.
+        env_absent = os.environ.copy()
+        env_absent.update(base_env)
+        env_absent.pop("VERIFY_RESULTS_DIR", None)
+        result = subprocess.run(
+            ["bash", script], cwd=repo_root, env=env_absent,
+            capture_output=True, text=True, timeout=30,
+        )
+        assert result.returncode == 0, result.stderr
+        assert "## Model verification" not in result.stdout
+        assert "### Test matrix" not in result.stdout
+        assert "warning:" not in result.stderr
+
+
+test_release_notes_embed_compact_verify_report()
+
 # ---------------------------------------------------------------------------
 # Release-note scenario helpers
 # ---------------------------------------------------------------------------
@@ -84,7 +185,7 @@ def get_previous_tag(current_tag, all_tags):
 def get_changed_section(current_tag, current_env, prev_tag, prev_env,
                         lockfile_map=None):
     """Return (prev_tag, changed_lines_list).
-    
+
     lockfile_map: dict of lock_path -> (old_content, new_content) for testing.
     """
     if not prev_tag or not prev_env:
@@ -144,8 +245,13 @@ def render_body(tag, short_sha, full_sha, cuda_base_image, cuda_base_digest,
                 tilelang_version, numba_version, nccl_ref, nccl_commit,
                 vllm_ref, vllm_commit, flashinfer_ref, flashinfer_commit,
                 ray_version, fastsafe_version, instant_version, arch_list,
-                changed_section):
-    """Render the full release body (same logic as the script)."""
+                changed_section, verify_report_section=""):
+    """Render the full release body (same logic as the script).
+
+    ``verify_report_section`` is the compact model-verification block derived
+    from the CI verify run. The script appends it only when VERIFY_RESULTS_DIR
+    is set and holds result files; the manual create-release fallback omits it.
+    """
     cuda_ver = cuda_base_image.split(":")[1].split("-")[0]
     cuda_short = "cu" + ".".join(cuda_ver.split(".")[:2])
     torch_short = "torch" + ".".join(torch_version.split(".")[:2])
@@ -160,6 +266,7 @@ def render_body(tag, short_sha, full_sha, cuda_base_image, cuda_base_digest,
 
 > Reproducible vLLM image for NVIDIA DGX Spark (GB10 / sm_121a)
 {changed_section}
+{verify_report_section}
 ### Image tags
 
 | Tag | Notes |
@@ -413,7 +520,7 @@ BASE_ENV = {
 # Helper: create a scenario tuple
 def make_scenario(name, current_tag, tags, current_env_mods, prev_env_mods, lockfiles_old, lockfiles_new):
     """Create a scenario definition.
-    
+
     current_env_mods: dict of overrides for current env (applied on top of BASE_ENV)
     prev_env_mods: dict of overrides for previous env (applied on top of current)
     lockfiles_old: dict of lockfile content at previous tag (or None = same as new)
@@ -421,13 +528,13 @@ def make_scenario(name, current_tag, tags, current_env_mods, prev_env_mods, lock
     """
     current_env = dict(BASE_ENV)
     current_env.update(current_env_mods)
-    
+
     if prev_env_mods is not None:
         prev_env = dict(current_env)
         prev_env.update(prev_env_mods)
     else:
         prev_env = None
-    
+
     # Build lockfile map: (old_content, new_content) pairs
     lockfile_map = {}
     if lockfiles_old is not None and lockfiles_new is not None:
@@ -442,7 +549,7 @@ def make_scenario(name, current_tag, tags, current_env_mods, prev_env_mods, lock
     elif lockfiles_new is not None and lockfiles_old is None:
         # Only new lockfiles provided - old ones match new (no change)
         pass
-    
+
     return (name, current_tag, tags, current_env, prev_env, lockfile_map)
 
 

@@ -2,7 +2,7 @@
 """Aggregate the vllm-gb10 CI verify multi-model results into one summary.
 
 Reads every bench-*.json (pp/tg matrix), bench-conc-*.json (concurrency), and
-meta-*.json (startup + peak memory) under the results dir, derives the model
+meta-*.json (startup + post-registration memory) under the results dir, derives the model
 name from each filename (bench-<model>-<stamp>.json,
 bench-conc-<model>-<stamp>.json, meta-<model>-<stamp>.json), and writes:
 
@@ -106,7 +106,7 @@ def conc_rows_for_document(data, model_name):
 
 
 def meta_for_model(meta_path, model_name):
-    """Pull startup + peak memory from a meta-<model>.json file."""
+    """Pull startup + post-registration memory from a meta-<model>.json file."""
     try:
         data = json.loads(meta_path.read_text())
     except (json.JSONDecodeError, OSError):
@@ -114,7 +114,7 @@ def meta_for_model(meta_path, model_name):
     return {
         "model": model_name,
         "startup_s": data.get("startup_s"),
-        "peak_mem_mib": data.get("peak_mem_mib"),
+        "startup_mem_mib": data.get("startup_mem_mib"),
         "image": data.get("image"),
         "revision": data.get("revision"),
     }
@@ -191,13 +191,13 @@ def _md(combined, models, metas):
     print()
     print("## model meta")
     print()
-    print("| model | startup s | peak mem MiB | image |")
+    print("| model | startup s | startup mem MiB | image |")
     print("|---|---|---|---|")
     for m in sorted(models):
         meta = metas.get(m) or {}
         print(
             f"| {m} | {meta.get('startup_s', '-')} | "
-            f"{meta.get('peak_mem_mib', '-')} | {meta.get('image', '-')} |"
+            f"{meta.get('startup_mem_mib', '-')} | {meta.get('image', '-')} |"
         )
     print()
     print("## prompt processing / generation (pp/tg)")

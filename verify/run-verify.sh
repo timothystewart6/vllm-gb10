@@ -37,6 +37,7 @@
 #   BENCH_PP="128 2048 8192 32768"   llama-benchy prompt sizes
 #   BENCH_TG="32 128"                llama-benchy generation sizes
 #   BENCH_RUNS=3                      measured runs per shape (plus 1 warmup)
+#   BENCHY_VERSION=0.4.0             pinned llama-benchy release (uvx @<version>)
 #   BENCH_CONC_PP=2048  BENCH_CONC_TG=128  concurrency workload shape
 #   BENCH_CONC="1 4"                  concurrency levels
 #   SKIP_BENCH=1       skip the llama-benchy stage
@@ -80,6 +81,14 @@ HEALTH_TIMEOUT_MIN="${HEALTH_TIMEOUT_MIN:-20}"
 
 # The deterministic token the functional suite requires after normalization.
 DETERMINISTIC_TOKEN="${DETERMINISTIC_TOKEN:-GB10_TEST_OK}"
+
+# llama-benchy is invoked inside the privileged serving container via uvx, so
+# its version must be a reviewed, pinned build input rather than resolving
+# "latest" at runtime (an upstream release could otherwise execute unreviewed
+# code with privileged device access). The pin below mirrors what the harness
+# was validated against; bump it deliberately, review the release notes, and
+# re-validate on the runner.
+BENCHY_VERSION="${BENCHY_VERSION:-0.4.0}"
 
 # Publish the config to the environment so `docker compose` can interpolate
 # these values (compose reads the child process environment, not unexported
@@ -158,7 +167,7 @@ echo "  models:      ${MODEL_LIST}"
 echo "  port:        ${VLLM_PORT}"
 echo "  hf_cache:    ${HF_CACHE}"
 echo "  result_dir:  ${RESULT_DIR}"
-echo "  benchy:      uvx llama-benchy (inside container)"
+echo "  benchy:      uvx llama-benchy@${BENCHY_VERSION} (inside container)"
 echo "  bench_pp:    ${BENCH_PP}"
 echo "  bench_tg:    ${BENCH_TG}"
 echo "  bench_conc:  ${BENCH_CONC} (pp=${BENCH_CONC_PP}/tg=${BENCH_CONC_TG})"
@@ -208,6 +217,9 @@ for MODEL_NAME in ${MODEL_LIST}; do
 
   MODEL_ID="$(model_val "${MODEL_NAME}" '.model')"
   MODEL_REV="$(model_val "${MODEL_NAME}" '.revision // ""')"
+  # This model's served context window, used to clamp the benchmark shapes so
+  # every requested pp/tg combination fits (see [7] below).
+  MODEL_MAX_LEN="$(model_val "${MODEL_NAME}" '.serve.max_model_len // "131072"')"
 
   if [[ -z "${MODEL_ID}" || "${MODEL_ID}" == "null" ]]; then
     say "=== [skip] '${MODEL_NAME}' not found in ${CATALOG} ==="
@@ -274,7 +286,6 @@ for MODEL_NAME in ${MODEL_LIST}; do
     continue
   fi
   pass "/health ready on ${VLLM_PORT} for ${MODEL_NAME}"
-  STARTUP_S="$(($(date +%s) - START_TS))"
 
   # --- [4] model registry -----------------------------------------------------
   # /health answers as soon as the API layer is up, which can be before the
@@ -307,14 +318,24 @@ for MODEL_NAME in ${MODEL_LIST}; do
   fi
   pass "model '${MODEL_ID}' registered"
 
+  # Startup time is measured to the real readiness signal: the model appearing
+  # in /v1/models (step [4]). /health answers before the engine finishes
+  # loading weights, so recording startup after it would under-report the time
+  # users actually wait for the model to be ready.
+  STARTUP_S="$(($(date +%s) - START_TS))"
+
   # Record startup + server info for the summary.
   IMAGE_ID="$(docker inspect -f '{{.Image}}' "${CONTAINER}" 2>/dev/null || echo "${IMAGE}")"
-  PEAK_MEM_MIB=0
+  STARTUP_MEM_MIB=0
   if docker inspect -f '{{.State.Running}}' "${CONTAINER}" 2>/dev/null | grep -q true; then
-    # Best-effort peak memory (host RSS of the container's main process, in MiB).
-    PEAK_MEM_MIB="$(docker stats --no-stream --format '{{.MemUsage}}' "${CONTAINER}" 2>/dev/null \
+    # One current-memory sample taken after registration and before the
+    # functional/bench workloads. This is NOT a peak over the model run (docker
+    # stats --no-stream is a single instantaneous reading), so it is reported
+    # as startup_mem_mib, not peak_mem_mib. Host RSS of the container's main
+    # process, in MiB.
+    STARTUP_MEM_MIB="$(docker stats --no-stream --format '{{.MemUsage}}' "${CONTAINER}" 2>/dev/null \
       | awk '{for(i=1;i<=NF;i++) if($i ~ /MiB/) {gsub(/MiB/,"",$i); m+=$i} } END {printf "%d", m}')"
-    [[ -z "${PEAK_MEM_MIB}" || "${PEAK_MEM_MIB}" == "0" ]] && PEAK_MEM_MIB="n/a"
+    [[ -z "${STARTUP_MEM_MIB}" || "${STARTUP_MEM_MIB}" == "0" ]] && STARTUP_MEM_MIB="n/a"
   fi
 
   # --- 5. functional test suite ----------------------------------------------
@@ -342,6 +363,7 @@ for MODEL_NAME in ${MODEL_LIST}; do
         VLLM_TESTS="${VLLM_TESTS}" \
         VLLM_TEMP="0.0" \
         VLLM_MAX_TOKENS="4096" \
+        VLLM_DETERMINISTIC_TOKEN="${DETERMINISTIC_TOKEN}" \
         python3 "${DIR}/model-tests.py"; then
     fail "functional tests failed for ${MODEL_NAME}"
     # A failed suite must still free port 8010 and the GPU for the next model,
@@ -397,76 +419,106 @@ for MODEL_NAME in ${MODEL_LIST}; do
     say "--- [7] llama-benchy ${MODEL_NAME} (in-container) ==="
     BENCH_OUT="bench-${MODEL_NAME}-${STAMP}.json"
 
-    # Default llama-benchy runs a warmup phase first (unless --no-warmup), then
-    # --runs measured iterations per shape. We want 1 warmup + several measured
-    # runs, which is the default behavior, so we omit --no-warmup.
-    # --no-cache adds random noise to requests + sends cache-prompt=false to
-    # disable prompt caching during the benchmark.
-    # shellcheck disable=SC2086  # BENCH_PP / BENCH_TG are intentionally word-split.
-    if docker_compose -f "${COMPOSE_FILE}" -f "${OVERRIDE_FILE}" exec -T "${SERVICE}" uvx llama-benchy \
-        --base-url "${BASE_URL}" \
-        --model "${MODEL_ID}" \
-        --tokenizer "${BENCH_TOKENIZER}" \
-        --pp ${BENCH_PP} \
-        --tg ${BENCH_TG} \
-        --depth 0 \
-        --runs "${BENCH_RUNS}" \
-        --exact-tg \
-        --latency-mode generation \
-        --concurrency 1 \
-        --no-cache \
-        --save-result "/results/${BENCH_OUT}" \
-        --format json; then
-      if [[ -f "${RESULT_DIR}/${BENCH_OUT}" ]]; then
-        BENCH_PPTG_RESULT="pass"
-        pass "llama-benchy (pp/tg matrix) completed for ${MODEL_NAME} (${RESULT_DIR}/${BENCH_OUT})"
-      else
-        BENCH_PPTG_RESULT="fail"
-        fail "llama-benchy for ${MODEL_NAME} reported success but no result file at ${RESULT_DIR}/${BENCH_OUT}"
+    # Clamp the prompt sizes so every pp/tg combination fits this model's
+    # served context window: prompt + the longest generation + a small safety
+    # margin must be <= max_model_len. A shape that exceeds the window is
+    # rejected by the server with HTTP 400 (the doc's "Benchmark shape" note).
+    # These smaller models used to lose their 32768 row that way. With the
+    # clamp every declared shape actually runs, so the matrix row reflects a
+    # real measurement instead of a silently-dropped request.
+    BENCH_TG_MAX=0
+    for tg in ${BENCH_TG}; do
+      (( tg > BENCH_TG_MAX )) && BENCH_TG_MAX=$((tg))
+    done
+    BENCH_PP_CLAMPED=""
+    for pp in ${BENCH_PP}; do
+      if (( pp + BENCH_TG_MAX + 64 <= MODEL_MAX_LEN )); then
+        BENCH_PP_CLAMPED="${BENCH_PP_CLAMPED:+${BENCH_PP_CLAMPED} }${pp}"
       fi
-    else
+    done
+    if [[ -z "${BENCH_PP_CLAMPED}" ]]; then
       BENCH_PPTG_RESULT="fail"
-      fail "llama-benchy failed for ${MODEL_NAME}"
-      echo "--- container state ---" >&2
-      docker inspect -f 'State={{.State.Status}} ExitCode={{.State.ExitCode}} OOMKilled={{.State.OOMKilled}} Error={{.State.Error}}' "${CONTAINER}" 2>&1 || \
-        echo "  container ${CONTAINER} is gone (it exited before/during benchy)" >&2
-      echo "--- last 60 container log lines ---" >&2
-      docker logs --tail 60 "${CONTAINER}" 2>&1 >&2 || true
-    fi
+      fail "no benchmark prompt size fits ${MODEL_NAME} max_model_len=${MODEL_MAX_LEN} (max tg=${BENCH_TG_MAX})"
+    else
+      say "  clamped bench pp: ${BENCH_PP_CLAMPED} (max_model_len=${MODEL_MAX_LEN})"
 
-    # Concurrency workload: run a separate llama-benchy at the fixed
-    # pp/tg shape across the requested concurrency levels. llama-benchy runs
-    # all pp/tg combos at every concurrency level, so this must be a separate
-    # invocation scoped to one shape.
-    if [[ -n "${BENCH_CONC}" ]]; then
-      say "--- [7b] llama-benchy concurrency ${MODEL_NAME} ==="
-      CONC_OUT="bench-conc-${MODEL_NAME}-${STAMP}.json"
-      # shellcheck disable=SC2086  # BENCH_CONC is intentionally word-split.
-      if docker_compose -f "${COMPOSE_FILE}" -f "${OVERRIDE_FILE}" exec -T "${SERVICE}" uvx llama-benchy \
+      # Default llama-benchy runs a warmup phase first (unless --no-warmup), then
+      # --runs measured iterations per shape. We want 1 warmup + several measured
+      # runs, which is the default behavior, so we omit --no-warmup.
+      # --no-cache adds random noise to requests + sends cache-prompt=false to
+      # disable prompt caching during the benchmark.
+      # The `uvx llama-benchy@<version>` pin (not bare `llama-benchy`) makes the
+      # benchmark tool a reviewed, locked build input instead of resolving
+      # "latest" at runtime inside the privileged container. Bump BENCHY_VERSION
+      # deliberately and re-validate on the runner.
+      # shellcheck disable=SC2086  # BENCH_PP_CLAMPED is intentionally word-split.
+      if docker_compose -f "${COMPOSE_FILE}" -f "${OVERRIDE_FILE}" exec -T "${SERVICE}" \
+          uvx "llama-benchy@${BENCHY_VERSION}" \
           --base-url "${BASE_URL}" \
           --model "${MODEL_ID}" \
           --tokenizer "${BENCH_TOKENIZER}" \
-          --pp "${BENCH_CONC_PP}" \
-          --tg "${BENCH_CONC_TG}" \
+          --pp ${BENCH_PP_CLAMPED} \
+          --tg ${BENCH_TG} \
           --depth 0 \
           --runs "${BENCH_RUNS}" \
+          --exact-tg \
           --latency-mode generation \
-          --concurrency ${BENCH_CONC} \
+          --concurrency 1 \
           --no-cache \
-          --save-result "/results/${CONC_OUT}" \
+          --save-result "/results/${BENCH_OUT}" \
           --format json; then
-        if [[ -f "${RESULT_DIR}/${CONC_OUT}" ]]; then
-          BENCH_CONC_RESULT="pass"
-          pass "llama-benchy concurrency completed for ${MODEL_NAME} (${RESULT_DIR}/${CONC_OUT})"
+        if [[ -f "${RESULT_DIR}/${BENCH_OUT}" ]]; then
+          BENCH_PPTG_RESULT="pass"
+          pass "llama-benchy (pp/tg matrix) completed for ${MODEL_NAME} (${RESULT_DIR}/${BENCH_OUT})"
         else
-          BENCH_CONC_RESULT="fail"
-          fail "llama-benchy concurrency for ${MODEL_NAME}: no result file at ${RESULT_DIR}/${CONC_OUT}"
+          BENCH_PPTG_RESULT="fail"
+          fail "llama-benchy for ${MODEL_NAME} reported success but no result file at ${RESULT_DIR}/${BENCH_OUT}"
         fi
       else
-        BENCH_CONC_RESULT="fail"
-        fail "llama-benchy concurrency failed for ${MODEL_NAME}"
-        echo "--- last 40 container log lines ---" >&2
-        docker logs --tail 40 "${CONTAINER}" 2>&1 >&2 || true
+        BENCH_PPTG_RESULT="fail"
+        fail "llama-benchy failed for ${MODEL_NAME}"
+        echo "--- container state ---" >&2
+        docker inspect -f 'State={{.State.Status}} ExitCode={{.State.ExitCode}} OOMKilled={{.State.OOMKilled}} Error={{.State.Error}}' "${CONTAINER}" 2>&1 || \
+          echo "  container ${CONTAINER} is gone (it exited before/during benchy)" >&2
+        echo "--- last 60 container log lines ---" >&2
+        docker logs --tail 60 "${CONTAINER}" 2>&1 >&2 || true
+      fi
+
+      # Concurrency workload: run a separate llama-benchy at the fixed
+      # pp/tg shape across the requested concurrency levels. llama-benchy runs
+      # all pp/tg combos at every concurrency level, so this must be a separate
+      # invocation scoped to one shape. The same version pin applies.
+      if [[ -n "${BENCH_CONC}" ]]; then
+        say "--- [7b] llama-benchy concurrency ${MODEL_NAME} ==="
+        CONC_OUT="bench-conc-${MODEL_NAME}-${STAMP}.json"
+        # shellcheck disable=SC2086  # BENCH_CONC is intentionally word-split.
+        if docker_compose -f "${COMPOSE_FILE}" -f "${OVERRIDE_FILE}" exec -T "${SERVICE}" \
+            uvx "llama-benchy@${BENCHY_VERSION}" \
+            --base-url "${BASE_URL}" \
+            --model "${MODEL_ID}" \
+            --tokenizer "${BENCH_TOKENIZER}" \
+            --pp "${BENCH_CONC_PP}" \
+            --tg "${BENCH_CONC_TG}" \
+            --depth 0 \
+            --runs "${BENCH_RUNS}" \
+            --latency-mode generation \
+            --concurrency ${BENCH_CONC} \
+            --no-cache \
+            --save-result "/results/${CONC_OUT}" \
+            --format json; then
+          if [[ -f "${RESULT_DIR}/${CONC_OUT}" ]]; then
+            BENCH_CONC_RESULT="pass"
+            pass "llama-benchy concurrency completed for ${MODEL_NAME} (${RESULT_DIR}/${CONC_OUT})"
+          else
+            BENCH_CONC_RESULT="fail"
+            fail "llama-benchy concurrency for ${MODEL_NAME}: no result file at ${RESULT_DIR}/${CONC_OUT}"
+          fi
+        else
+          BENCH_CONC_RESULT="fail"
+          fail "llama-benchy concurrency failed for ${MODEL_NAME}"
+          echo "--- last 40 container log lines ---" >&2
+          docker logs --tail 40 "${CONTAINER}" 2>&1 >&2 || true
+        fi
       fi
     fi
   fi
@@ -501,8 +553,8 @@ for MODEL_NAME in ${MODEL_LIST}; do
       "$(jq -n --arg v "${MODEL_NAME}" '$v')" \
       "$(jq -n --arg v "${IMAGE_ID}" '$v')" \
       "${STARTUP_S}"
-    printf '  "peak_mem_mib": %s, "revision": %s, "stamp": %s }\n' \
-      "$(jq -n --arg v "${PEAK_MEM_MIB}" '$v')" \
+    printf '  "startup_mem_mib": %s, "revision": %s, "stamp": %s }\n' \
+      "$(jq -n --arg v "${STARTUP_MEM_MIB}" '$v')" \
       "$(jq -n --arg v "${MODEL_REV}" '$v')" \
       "$(jq -n --arg v "${STAMP}" '$v')"
   } > "${MODEL_META}"
@@ -575,6 +627,13 @@ if command -v python3 >/dev/null 2>&1; then
     pass "combined bench summary written (${RESULT_DIR}/summary-${STAMP}.json)"
   else
     echo "  (no combined summary: no bench results to aggregate)"
+  fi
+  # The human-readable markdown report the summarizer documents. Both the JSON
+  # and .md ride the uploaded verify/results artifact.
+  if python3 "${DIR}/summarize-bench.py" --markdown "${RESULT_DIR}" > "${RESULT_DIR}/summary-${STAMP}.md" 2>/dev/null; then
+    pass "markdown summary written (${RESULT_DIR}/summary-${STAMP}.md)"
+  else
+    echo "  (no markdown summary: no bench results to aggregate)"
   fi
 fi
 

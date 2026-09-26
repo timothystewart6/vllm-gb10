@@ -92,12 +92,15 @@ For each model, in order:
 7. `llama-benchy` (in-container) pp/tg workload: prompt sizes
    `128 2048 8192 32768` x generation sizes `32 128`, 1 warmup + several
    measured runs (default `BENCH_RUNS=3`), prompt caching disabled
-   (`--no-cache`), exact output length (`--exact-tg`).
+   (`--no-cache`), exact output length (`--exact-tg`). Prompt sizes whose
+   `pp + largest tg + 64` exceeds the served model's `max_model_len` are
+   clamped out so every declared shape actually runs instead of returning
+   HTTP 400.
 8. `llama-benchy` concurrency workload: fixed `pp=2048/tg=128` across
    concurrency levels `1 4`. Aggregate (total) throughput is the comparison
    point.
 9. Post-bench `/health` re-check.
-10. Record per-model meta (startup seconds, peak memory when available, image,
+10. Record per-model meta (startup seconds, post-registration memory, image,
     revision) for the summary.
 11. Clean teardown, verify the process exits, then next model can start.
 
@@ -116,8 +119,9 @@ harness deliberately uses only what that user already has:
   (default `HF_CACHE`; the served model snapshots are already cached there)
 
 No `sudo`, no host `llama-benchy` install, no host `pipx` needed. `llama-benchy`
-runs inside the serving container via `uvx`, so it benchmarks the exact image
-under test and needs no host provisioning.
+runs inside the serving container via `uvx` pinned to the reviewed
+`BENCHY_VERSION` (default `0.4.0`), so it benchmarks the exact image under
+test and needs no host provisioning.
 
 ## Usage
 

@@ -74,16 +74,33 @@ jobs:
           fi
 
       - name: Resolve image reference
-        # A bare tag becomes the full GHCR reference; a full reference is used
-        # as given. Blank falls back to the catalog's canonical default tag.
+        # Only this repository's published GHCR image may be verified. This
+        # workflow boots the image with privileged:true, host networking, and
+        # writable NFS/cache mounts on the persistent GB10 runner, so accepting
+        # an arbitrary reference would let a typo or malicious tag execute
+        # arbitrary code with those privileges. Bare tags are validated: they
+        # must be a plausible vllm-gb10 release tag (v<major>.<minor>.<patch>-gb10.<n>).
+        # A full reference is accepted only when it is exactly this image.
         run: |
+          set -euo pipefail
+          IMAGE_REF='ghcr.io/timothystewart6/vllm-gb10'
           if [[ -z "$IMAGE_TAG_INPUT" ]]; then
-            echo "IMAGE=ghcr.io/timothystewart6/vllm-gb10:v0.30.0-gb10.2" >> "$GITHUB_ENV"
+            TAG='v0.30.0-gb10.2'
+          elif [[ "$IMAGE_TAG_INPUT" == "${IMAGE_REF}:"* ]]; then
+            # shellcheck disable=SC2295  # $IMAGE_REF is a literal image name.
+            TAG="${IMAGE_TAG_INPUT#"$IMAGE_REF":}"
           elif [[ "$IMAGE_TAG_INPUT" == ghcr.io/* ]]; then
-            echo "IMAGE=$IMAGE_TAG_INPUT" >> "$GITHUB_ENV"
+            echo "Refusing: only ${IMAGE_REF} images may be verified." >&2
+            exit 1
           else
-            echo "IMAGE=ghcr.io/timothystewart6/vllm-gb10:$IMAGE_TAG_INPUT" >> "$GITHUB_ENV"
+            TAG="$IMAGE_TAG_INPUT"
           fi
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-gb10\.[0-9]+$ ]]; then
+            echo "Refusing: invalid vllm-gb10 tag '$TAG'." >&2
+            exit 1
+          fi
+          echo "IMAGE=${IMAGE_REF}:${TAG}" >> "$GITHUB_ENV"
+          echo "IMAGE_TAG=${TAG}" >> "$GITHUB_ENV"
         env:
           IMAGE_TAG_INPUT: ${{ inputs.image_tag }}
 
@@ -157,9 +174,11 @@ jobs:
       - name: Upload serve and bench results
         # Preserve the functional + benchy JSON as a CI artifact so results can
         # be compared across runs without rerunning the benchmark.
+        # The encoded tag is safe for an artifact name: a full verification tag
+        # is always bare (validated above), so it contains no `/` or `:`.
         # actions/upload-artifact v7
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: serve-bench-results-${{ github.sha }}-${{ inputs.image_tag || 'default' }}
+          name: serve-bench-results-${{ github.sha }}-${{ env.IMAGE_TAG }}
           path: verify/results/
           if-no-files-found: warning

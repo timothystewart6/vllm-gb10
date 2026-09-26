@@ -29,6 +29,8 @@ Env contract:
   VLLM_TESTS       comma list of extra suites to run: tool,reasoning,multimodal
   VLLM_TEMP        sampling temperature (0.0 = greedy)
   VLLM_MAX_TOKENS  max_tokens for normal completions
+  VLLM_DETERMINISTIC_TOKEN  the token the deterministic test requires after
+                        normalization (defaults to GB10_TEST_OK)
 """
 
 import base64
@@ -48,6 +50,7 @@ RED_SQUARE = os.environ.get("VLLM_RED_SQUARE", "")
 TESTS = {t.strip() for t in os.environ.get("VLLM_TESTS", "").split(",") if t.strip()}
 TEMP = float(os.environ.get("VLLM_TEMP", "0.0"))
 MAX_TOKENS = int(os.environ.get("VLLM_MAX_TOKENS", "4096"))
+DETERMINISTIC_TOKEN = os.environ.get("VLLM_DETERMINISTIC_TOKEN", "GB10_TEST_OK")
 
 PASSED = 0
 FAILED = []
@@ -156,7 +159,7 @@ def _read_body(resp, err):
 
 def test_deterministic() -> None:
     print("  -- deterministic generation --")
-    prompt = "Reply with exactly this text and nothing else\n\nGB10_TEST_OK"
+    prompt = "Reply with exactly this text and nothing else\n\n" + DETERMINISTIC_TOKEN
     code, err, resp = chat(
         [{"role": "user", "content": prompt}], max_tokens=128)
     if err:
@@ -174,7 +177,7 @@ def test_deterministic() -> None:
     content = msg.get("content") or ""
     # A reasoning parser (nemotron_v3, qwen3) can put the entire deterministic
     # answer in `message.reasoning` with empty `content`, and the reasoning
-    # trace often echoes the full prompt (including the GB10_TEST_OK token).
+    # trace often echoes the full prompt (including the DETERMINISTIC_TOKEN).
     # For reasoning-enabled models require the token to appear somewhere in
     # content OR reasoning (containment), because exact equality against a
     # freeform thinking trace is not stable. For plain models only content is
@@ -182,11 +185,11 @@ def test_deterministic() -> None:
     candidate = content
     if "reasoning" in TESTS:
         candidate = candidate + " " + (msg.get("reasoning") or msg.get("reasoning_content") or "")
-        ok = "gb10testok" in normalize(candidate)
-        label = "GB10_TEST_OK present in content or reasoning after normalize"
+        ok = normalize(DETERMINISTIC_TOKEN) in normalize(candidate)
+        label = f"{DETERMINISTIC_TOKEN} present in content or reasoning after normalize"
     else:
-        ok = normalize(candidate) == "gb10testok"
-        label = "contains GB10_TEST_OK after normalize"
+        ok = normalize(candidate) == normalize(DETERMINISTIC_TOKEN)
+        label = f"contains {DETERMINISTIC_TOKEN} after normalize"
     check(label, ok,
           f"normalized={normalize(content)!r} raw={content!r} reasoning={msg.get('reasoning','')!r}")
     usage = body.get("usage") or {}
@@ -208,6 +211,7 @@ def test_streaming() -> None:
         return
     chunks = []
     text = ""
+    reasoning = ""
     try:
         for raw in resp:
             line = raw.decode("utf-8", "replace").rstrip("\n")
@@ -221,6 +225,18 @@ def test_streaming() -> None:
             chunks.append(chunk)
             delta = (chunk.get("choices") or [{}])[0].get("delta", {})
             text += delta.get("content") or ""
+            # A reasoning parser streams the thinking text through
+            # delta.reasoning while delta.content only carries the final
+            # answer. A model that spends its token budget thinking would hand
+            # back a valid stream with empty content, so accumulate the
+            # reasoning field (and the legacy reasoning_content shim) too when
+            # checking that the stream produced output. This matches the
+            # reasoning-content contract documented in docs/model-verification.md.
+            reasoning += (
+                delta.get("reasoning")
+                or delta.get("reasoning_content")
+                or ""
+            )
     except Exception as e:  # noqa: BLE001
         check("stream completes without exception", False, f"exc={e!r}")
         return
@@ -228,8 +244,9 @@ def test_streaming() -> None:
     check("more than one chunk", len(chunks) > 1, f"chunks={len(chunks)}")
     check("stream finished with [DONE]", "[DONE]" in chunks,
           f"last={chunks[-1]!r}" if chunks else "no chunks")
-    check("generated content received", len(text.strip()) > 0, f"len={len(text)}")
-    record("streaming", {"chunks": len(chunks), "text": text})
+    check("generated content received", len((text + reasoning).strip()) > 0,
+          f"len={len(text)} content_len={len(reasoning)}")
+    record("streaming", {"chunks": len(chunks), "text": text, "reasoning": reasoning})
 
 
 def test_tool() -> None:

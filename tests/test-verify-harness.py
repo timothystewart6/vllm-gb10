@@ -164,7 +164,13 @@ def test_driver_is_ci_safe_and_in_container_benchy():
     # word may appear in explanatory comments, but not as a command).
     assert not re.search(r"^\s*sudo\b", driver, re.MULTILINE), "driver must not invoke sudo"
     assert "require sudo" not in driver
-    assert "uvx llama-benchy" in driver
+    # llama-benchy runs in-container via a pinned version. The `uvx` tool
+    # runner installs the exact pinned release rather than resolving "latest"
+    # at runtime inside the privileged container, so the benchmark tool is a
+    # reviewed, locked build input.
+    assert "uvx" in driver
+    assert '"llama-benchy@${BENCHY_VERSION}"' in driver
+    assert 'BENCHY_VERSION="${BENCHY_VERSION:-' in driver
     # exec must target the compose SERVICE name, not the container_name.
     # `docker compose exec` resolves services by the compose service name and
     # errors "is not running" when given the container_name instead.
@@ -211,10 +217,13 @@ def test_driver_runs_functional_tests():
     ):
         assert fragment in driver, f"missing '{fragment}' in driver"
 
-    # model-tests.py must normalize and require the deterministic token.
+    # model-tests.py must normalize and require the deterministic token. The
+    # token is parameterized via VLLM_DETERMINISTIC_TOKEN (the driver passes
+    # DETERMINISTIC_TOKEN through to the suite) and defaults to GB10_TEST_OK.
     tests = read(VERIFY / "model-tests.py")
-    assert "gb10testok" in tests
+    assert 'os.environ.get("VLLM_DETERMINISTIC_TOKEN", "GB10_TEST_OK")' in tests
     assert "normalize" in tests
+    assert "normalize(DETERMINISTIC_TOKEN)" in tests
     # Optional suites must be wired through the env contract.
     for suite in ("tool", "reasoning", "multimodal"):
         assert f"def test_{suite}" in tests, f"missing {suite} suite in model-tests.py"
@@ -487,7 +496,7 @@ def test_render_verify_report_compact_output():
         assert "360" in out          # concurrency-4 aggregate
         assert "60.1" not in out     # p=32768 row must not leak in
         # Table header must stay exactly in sync with the release notes layout.
-        assert "| Model | Startup (s) | PP tok/s | TG tok/s | TG tok/s @concurrency 4 |" in out
+        assert "| Model | Startup (s) | PP tok/s | TG tok/s | TG tok/s @ concurrency 4 |" in out
         # Full report-style test matrix must be present and mirror the report.
         assert "### Test matrix" in out
         assert "Speculative decoding" in out

@@ -155,7 +155,7 @@ def render(results_dir):
                  " (raw per-model JSONs and server logs ride the"
                  " `verify-results` release tarball):")
     lines.append("")
-    lines.append("| Model | Startup (s) | PP tok/s | TG tok/s | TG tok/s @concurrency 4 |")
+    lines.append("| Model | Startup (s) | PP tok/s | TG tok/s | TG tok/s @ concurrency 4 |")
     lines.append("| --- | ---: | ---: | ---: | ---: |")
 
     for model in sorted(models):

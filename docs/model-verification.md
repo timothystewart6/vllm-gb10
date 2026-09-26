@@ -321,12 +321,14 @@ Then provision the checkpoint and validate on hardware:
    64-token budget). When a model has the `reasoning` test enabled, expect the
    deterministic, multimodal, and spec-decode checks to read the `reasoning`
    field as fallback; do not assume `content` is always populated.
-9. Benchmark shape. llama-benchy requests `pp + tg` sequences. For models whose
-   `max_model_len` is close to the largest benchmark prompt (32768), the
-   `pp=32768 / tg>0` rows exceed the limit and return HTTP 400, so they are
-   dropped from the summary. Keep `BENCH_PP` at or below `max_model_len` minus
-   the largest `BENCH_TG`, or accept the dropped rows as expected for small
-   context models.
+9. Benchmark shape. llama-benchy requests `pp + tg` sequences. The driver
+   clamps `BENCH_PP` to prompt sizes whose `pp + largest tg + 64` fits the
+   served model's `max_model_len`, so every declared shape actually runs and
+   the matrix row reflects a real measurement. Small-context models simply lose
+   their oversized 32768 row instead of sending a request the server rejects
+   with HTTP 400. If every prompt size exceeds the window, the pp/tg bench
+   records a failure rather than silently skipping. Keep `BENCH_PP` at or below
+   `max_model_len` minus the largest `BENCH_TG` to keep the full declared set.
 10. Direct log validation. When the functional gates pass, grep the captured
     `server-<model>-<stamp>.log` for the runtime markers that prove each path
     actually executed: the `reasoning_parser` and tool parser in the non-default

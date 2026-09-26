@@ -27,8 +27,8 @@ emit_override() {
   local model rev gpu maxlen batched maxseqs quant kv_dtype spec_config chat_kwargs chat_template
   model="$(jq -r --arg n "$name" '.models[] | select(.name == $n) | .model' "$CATALOG")"
   rev="$(jq -r --arg n "$name" '.models[] | select(.name == $n) | .revision // ""' "$CATALOG")"
-  gpu="$(jq -r --arg n "$name" '.models[] | select(.name == $n) | .serve.gpu_memory_utilization // "0.92"' "$CATALOG")"
-  maxlen="$(jq -r --arg n "$name" '.models[] | select(.name == $n) | .serve.max_model_len // "131072"' "$CATALOG")"
+  gpu="$(jq -r --arg n "$name" '.models[] | select(.name == $n) | .serve.gpu_memory_utilization // "0.6"' "$CATALOG")"
+  maxlen="$(jq -r --arg n "$name" '.models[] | select(.name == $n) | .serve.max_model_len // "65536"' "$CATALOG")"
   batched="$(jq -r --arg n "$name" '.models[] | select(.name == $n) | .serve.max_num_batched_tokens // "4096"' "$CATALOG")"
   maxseqs="$(jq -r --arg n "$name" '.models[] | select(.name == $n) | .serve.max_num_seqs // "4"' "$CATALOG")"
   # Quantization / KV-cache dtype are separate serve flags when present.

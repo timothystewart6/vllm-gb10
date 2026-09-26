@@ -366,7 +366,7 @@ Then provision the checkpoint and validate on hardware:
 The functional suites prove models load and generate, but not which kernel or
 backend executes for a given runtime path. The server log captures the actual
 selection inline. These are the markers found in the full-pass logs (stamp
-`20260925-005052`) that directly confirm each path.
+`20260926-145833`) that directly confirm each path.
 
 ### gemma-4-12b (`server-gemma-4-12b-<stamp>.log`)
 
@@ -376,8 +376,8 @@ selection inline. These are the markers found in the full-pass logs (stamp
 - Attention backend: TRITON_ATTN (selected for the heterogeneous head dims of
   Gemma 4 Unified).
 - Sampling: `FlashInfer for top-p & top-k sampling`.
-- KV cache: `Using LBNHC KV cache layout`, `GPU KV cache size: 832,473 tokens`,
-  `84.28 GiB available KV cache`.
+- KV cache: `Using LBNHC KV cache layout`, `GPU KV cache size: 474,031 tokens`,
+  `Maximum concurrency for 32,768 tokens per request: 14.47x`.
 
 ### nemotron-lightning (`server-nemotron-lightning-<stamp>.log`)
 

@@ -37,8 +37,8 @@ model's MoE/humming/mamba flags. Add models to `verify/models.json`:
   "model": "org/model-id",
   "revision": "<snapshot sha256 from the NFS cache>",
   "serve": {
-    "gpu_memory_utilization": "0.92",
-    "max_model_len": "131072",
+    "gpu_memory_utilization": "0.6",
+    "max_model_len": "65536",
     "max_num_batched_tokens": "4096",
     "max_num_seqs": "4",
     "quantization": "modelopt_fp4",
@@ -54,6 +54,17 @@ model's MoE/humming/mamba flags. Add models to `verify/models.json`:
   }
 }
 ```
+
+On the GB10 the runner is a self-hosted host with 121.7 GiB of unified memory,
+so `gpu_memory_utilization` is set conservatively (0.55-0.65 in the catalog).
+vLLM commits the KV cache as `gpu_memory_utilization` x total up front, and
+that same pool also has to fit dockerd, the ephemeral runner, the HF cache, and
+the OS. Values above ~0.9 leave the host almost nothing to run on; 0.55-0.65
+keeps the whole CI stack healthy while still giving every model a KV pool far
+larger than the harness bench needs (max pp is 32768 and max tg 128).
+`max_model_len` is likewise capped where the model's real workload allows
+(e.g. Nemotron Lightning runs at 65536, which still covers the full bench
+matrix).
 
 `serve.quantization` and `serve.kv_cache_dtype` are emitted as `--quantization`
 and `--kv-cache-dtype`; `serve.speculative_config` is emitted as the JSON value

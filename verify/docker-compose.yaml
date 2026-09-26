@@ -122,12 +122,15 @@ services:
       - --port
       - "${VLLM_PORT:-8010}"
       - --gpu-memory-utilization
-      # 0.98 requests 119.3 GiB, more than the ~115.7 GiB free on the GB10
-      # runner (it also hosts the self-hosted runner). 0.92 leaves comfortable
-      # headroom while still using most of the 121.7 GiB unified memory.
-      - "${GPU_MEMORY_UTILIZATION:-0.92}"
+      # Keep this well below the 121.7 GiB unified pool. On a unified-memory
+      # GB10, vLLM commits the KV cache as gpu_memory_utilization x total up
+      # front, and the same pool also hosts dockerd, the ephemeral runner, the
+      # HF cache, and the OS. Values above ~0.9 leave the host almost nothing
+      # to run on, so the catalog uses 0.55-0.65. Per-model values live in
+      # verify/models.json; this is only the base skeleton fallback.
+      - "${GPU_MEMORY_UTILIZATION:-0.6}"
       - --max-model-len
-      - "${MAX_MODEL_LEN:-131072}"
+      - "${MAX_MODEL_LEN:-65536}"
       - --max-num-batched-tokens
       - "${MAX_NUM_BATCHED_TOKENS:-4096}"
       - --max-num-seqs

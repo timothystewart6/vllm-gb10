@@ -229,7 +229,7 @@ for MODEL_NAME in ${MODEL_LIST}; do
   MODEL_REV="$(model_val "${MODEL_NAME}" '.revision // ""')"
   # This model's served context window, used to clamp the benchmark shapes so
   # every requested pp/tg combination fits (see [7] below).
-  MODEL_MAX_LEN="$(model_val "${MODEL_NAME}" '.serve.max_model_len // "131072"')"
+  MODEL_MAX_LEN="$(model_val "${MODEL_NAME}" '.serve.max_model_len // "65536"')"
 
   if [[ -z "${MODEL_ID}" || "${MODEL_ID}" == "null" ]]; then
     say "=== [skip] '${MODEL_NAME}' not found in ${CATALOG} ==="

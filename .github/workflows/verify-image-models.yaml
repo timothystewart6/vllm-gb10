@@ -75,11 +75,12 @@ jobs:
 
       - name: Resolve image reference
         # Only this repository's published GHCR image may be verified. This
-        # workflow boots the image with privileged:true, host networking, and
-        # writable NFS/cache mounts on the persistent GB10 runner, so accepting
-        # an arbitrary reference would let a typo or malicious tag execute
-        # arbitrary code with those privileges. Bare tags are validated: they
-        # must be a plausible vllm-gb10 release tag (v<major>.<minor>.<patch>-gb10.<n>).
+        # workflow boots the image with host networking and writable NFS/cache
+        # mounts on the persistent GB10 runner (unprivileged by default), so
+        # accepting an arbitrary reference would let a typo or malicious tag
+        # execute arbitrary code inside that container. Bare tags are
+        # validated: they must be a plausible vllm-gb10 release tag
+        # (v<major>.<minor>.<patch>-gb10.<n>).
         # A full reference is accepted only when it is exactly this image.
         run: |
           set -euo pipefail

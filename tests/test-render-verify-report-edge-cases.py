@@ -301,6 +301,82 @@ def test_normalize_outcome_unit():
     assert mod.normalize_outcome("garbage!!") == "skip"
 
 
+def test_runtime_path_rows_require_log_markers():
+    """Indirect runtime-path rows (NVFP4, FP8 KV, MoE, Mamba) must be resolved
+    from the captured server log, not inferred from catalog flags. A configured
+    path passes only when its marker appears in the server log; a configured
+    path whose marker is absent must fail (the path did not execute); a path not
+    configured for the model is skipped."""
+    nemotron = "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4"
+    raw = "nemotron-lightning"
+    full_log = (
+        "Using HummingNvFp4LinearKernel for NVFP4 GEMM\n"
+        "kv_cache_dtype=torch.float8_e4m3fn\n"
+        "Using indexed gemm for humming moe\n"
+        "Using 'HUMMING' NvFp4 MoE backend\n"
+        "Using FlashInfer Mamba SSU algorithm: simple\n"
+        "Using flashinfer Mamba SSU backend\n"
+    )
+    with tempfile.TemporaryDirectory() as d:
+        write(d, "bench", raw, bench_obj())
+        write(d, "meta", raw, {"model": nemotron, "startup_s": 1, "stamp": STAMP})
+        write(d, "matrix", raw, matrix_obj())
+        (Path(d) / f"server-{raw}-{STAMP}.log").write_text(full_log, encoding="utf-8")
+        out = render(d)
+        m = out[out.find("### Test matrix"):]
+        cells = {line.split("|")[1].strip(): [c.strip() for c in line.split("|")]
+                 for line in m.splitlines() if line.startswith("| ")}
+
+        def mark_for(row_label):
+            return cells[row_label][-2]
+
+        assert mark_for("NVFP4 execution") == "✓"
+        assert mark_for("FP8 KV cache") == "✓"
+        assert mark_for("MoE execution") == "✓"
+        assert mark_for("Mamba execution") == "✓"
+
+    # A configured path without its marker is a fail (path did not execute),
+    # not a pass by inference.
+    with tempfile.TemporaryDirectory() as d:
+        write(d, "bench", raw, bench_obj())
+        write(d, "meta", raw, {"model": nemotron, "startup_s": 1, "stamp": STAMP})
+        write(d, "matrix", raw, matrix_obj())
+        # Only the FP8 KV marker present; NVFP4/MoE/Mamba markers absent.
+        (Path(d) / f"server-{raw}-{STAMP}.log").write_text(
+            "kv_cache_dtype=torch.float8_e4m3fn\n", encoding="utf-8")
+        out = render(d)
+        m = out[out.find("### Test matrix"):]
+        cells = {line.split("|")[1].strip(): [c.strip() for c in line.split("|")]
+                 for line in m.splitlines() if line.startswith("| ")}
+
+        def mark_for(row_label):
+            return cells[row_label][-2]
+
+        assert mark_for("FP8 KV cache") == "✓"
+        assert mark_for("NVFP4 execution") == "✗"
+        assert mark_for("MoE execution") == "✗"
+        assert mark_for("Mamba execution") == "✗"
+
+    # A model with no captured log and no configured path is skipped, not pass.
+    with tempfile.TemporaryDirectory() as d:
+        write(d, "bench", "qwen3-0.6b", bench_obj())
+        write(d, "meta", "qwen3-0.6b", {"model": "Qwen/Qwen3-0.6B",
+                                        "startup_s": 1, "stamp": STAMP})
+        write(d, "matrix", "qwen3-0.6b", matrix_obj())
+        out = render(d)
+        m = out[out.find("### Test matrix"):]
+        cells = {line.split("|")[1].strip(): [c.strip() for c in line.split("|")]
+                 for line in m.splitlines() if line.startswith("| ")}
+
+        def mark_for(row_label):
+            return cells[row_label][-2]
+
+        assert mark_for("NVFP4 execution") == "-"
+        assert mark_for("FP8 KV cache") == "-"
+        assert mark_for("MoE execution") == "-"
+        assert mark_for("Mamba execution") == "-"
+
+
 def main():
     tests = [
         (name, fn) for name, fn in sorted(globals().items())

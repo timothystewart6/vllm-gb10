@@ -60,11 +60,9 @@ actually exercise.
 ### Coverage matrix
 
 Each row below maps a claimed test to the harness code that produces it, and
-whether it is a direct assertion or an indirect proof (a runtime path that is
-exercised only because loading a model with those serve flags initializes and
-generates successfully). A checked cell means the harness actually runs that
-test for that model; an empty cell means the suite is intentionally not run for
-that model.
+whether it is a direct assertion or a log-backed proof. A checked cell means
+the harness actually runs that test for that model; an empty cell means the
+suite is intentionally not run for that model.
 
 | Test | Implemented by | Kind | Qwen3 0.6B | Gemma 4 12B-it | Nemotron Lightning | Qwen3.8 27B NVFP4 |
 | --- | --- | --- | :---: | :---: | :---: | :---: |
@@ -72,14 +70,14 @@ that model.
 | `/v1/models` registration | `run-verify.sh` [4] registry check | direct | ✓ | ✓ | ✓ | ✓ |
 | Deterministic generation | `model-tests.py` `test_deterministic` | direct | ✓ | ✓ | ✓ | ✓ |
 | Streaming generation | `model-tests.py` `test_streaming` | direct | ✓ | ✓ | ✓ | ✓ |
-| Structured response validity | `model-tests.py` NaN/Inf + valid-JSON checks | direct | ✓ | ✓ | ✓ | ✓ |
+| Response JSON validity | `model-tests.py` NaN/Inf + valid-JSON checks | direct | ✓ | ✓ | ✓ | ✓ |
 | Tool calling | `model-tests.py` `test_tool` | direct |  |  | ✓ | ✓ |
 | Reasoning parser | `model-tests.py` `test_reasoning` | direct |  | ✓ | ✓ | ✓ |
 | Multimodal image input | `model-tests.py` `test_multimodal` | direct |  | ✓ |  | ✓ |
-| NVFP4 execution | `serve.quantization=modelopt_fp4` load + generate | indirect |  |  | ✓ | ✓ |
-| FP8 KV cache | `serve.kv_cache_dtype=fp8_e4m3` load + generate | indirect |  |  | ✓ | ✓ |
-| MoE execution | nemotron MoE serve flags | indirect |  |  | ✓ |  |
-| Mamba execution | nemotron Mamba serve flags | indirect |  |  | ✓ |  |
+| NVFP4 execution | server log `for NVFP4 GEMM` marker | log |  |  | ✓ | ✓ |
+| FP8 KV cache | server log `kv_cache_dtype=torch.float8_e4m3fn` marker | log |  |  | ✓ | ✓ |
+| MoE execution | server log humming MoE backend markers | log |  |  | ✓ |  |
+| Mamba execution | server log flashinfer Mamba backend markers | log |  |  | ✓ |  |
 | Speculative decoding | `run-verify.sh` [6] spec-decode probe | direct |  |  | ✓ |  |
 | llama-benchy pp/tg | `run-verify.sh` [7] | direct | ✓ | ✓ | ✓ | ✓ |
 | llama-benchy concurrency | `run-verify.sh` [7b] | direct | ✓ | ✓ | ✓ | ✓ |
@@ -87,17 +85,18 @@ that model.
 | Server log captured | `run-verify.sh` `docker logs` capture | direct | ✓ | ✓ | ✓ | ✓ |
 | Clean shutdown | `run-verify.sh` teardown + exit check | direct | ✓ | ✓ | ✓ | ✓ |
 
-The indirect rows (NVFP4, FP8 KV, MoE, Mamba) prove the path initializes and
-generates: if the flag or kernel were unsupported, the model would fail to load
-or error at first generation, which fails the startup or deterministic gate.
-They do not add a separate runtime assertion beyond that, because the flag
-itself is the load-time contract.
+The log-backed rows (NVFP4, FP8 KV, MoE, Mamba) pass only when the kernel or
+backend marker for that path actually appears in the captured server log (see
+"Direct log validation" for the exact strings). The renderer greps the
+`server-<model>-<stamp>.log` the harness captures, so a row cannot pass from a
+config flag alone: if the kernel or backend never executed, the marker is
+absent and the row is marked failed.
 
 This table mirrors the release-notes test matrix, which the renderer
 (`verify/render-verify-report.py`, MATRIX_ROWS) rebuilds from the per-model
 `matrix-<model>-<stamp>.json` and `suite-results-<model>-<stamp>.json` files
-that the harness drops, plus the indirect-path booleans derived from
-`verify/models.json`. When you add or remove a row here, update MATRIX_ROWS the
+that the harness drops, plus the log markers from the captured `server` logs.
+When you add or remove a row here, update MATRIX_ROWS the
 same way so the spec and the report stay in lockstep. The "Next-model startup"
 row that the harness observes (each model boots on a freshly-torn-down port,
 so a boot also validates the port is freed) is not listed in the renderer and
@@ -157,7 +156,10 @@ Two consequences drive the harness design:
    a reasoning parser is enabled, vLLM already splits reasoning and content
    correctly. The deterministic and multimodal tests still read both fields
    for reasoning-enabled models, because a model can spend its whole budget
-   thinking and leave `content` empty.
+   thinking and leave `content` empty. The deterministic check prioritizes
+   `content` and only falls back to `reasoning` when content is empty, to
+   close the prompt-echo loophole; the multimodal check may use either field
+   because its expected value is absent from the prompt.
 2. Streaming behaves differently under a reasoning parser. The thinking text
    streams into each chunk's `delta.reasoning`, and `delta.content` only
    receives the final answer. A streaming test that only accumulates
@@ -167,14 +169,19 @@ Two consequences drive the harness design:
 One subtlety the deterministic test accounts for: a reasoning model can put the
 whole answer in `message.reasoning` with empty `content` even on a non-streaming
 request, if it spends the generation thinking. A reasoning trace also tends to
-echo the full prompt, so exact equality against it is not stable. For
-reasoning-enabled models the deterministic check therefore requires the
-`GB10_TEST_OK` token to appear somewhere in `content` or `reasoning`
-(containment after normalization); for plain models `content` must equal the
-token exactly. This keeps the round-trip proof without weakening the plain-model
-check. The multimodal check works the same way: for reasoning-enabled models it
-requires the color to appear somewhere (a reasoning trace often says "the square
-is red"), while plain models must output exactly `red`.
+echo the full prompt, so treating it as the answer would let a model pass by
+repeating the prompt. The check therefore prioritizes final `content`: for
+reasoning-enabled models the token budget is raised so the model can finish
+thinking and emit real content, and the check requires the `GB10_TEST_OK` token
+in `content` when content is present. Content falls back to `reasoning` only
+when `content` is empty, and only when the reasoning carries the token beyond a
+pure prompt echo. Plain models must equal the token exactly. This keeps the
+round-trip proof without letting an echoed thinking trace count as an answer.
+The multimodal check is different because its expected value (`red`) is absent
+from the prompt, so there is no echo loophole: for reasoning-enabled models the
+color may appear in `content` or the reasoning trace (a reasoning model can
+describe "the square is red" with empty content), while plain models must output
+exactly `red`.
 
 ## Thinking is on by default for some model families
 
@@ -251,9 +258,11 @@ token budget and requires the response to contain output. A reasoning model can
 spend that whole budget in `message.reasoning` and return `content: null` while
 still generating normally (this is exactly what nemotron does on a 64-token
 budget). The probe therefore accepts non-empty `content` OR non-empty
-`reasoning` as proof the speculative decode path produced output. This is the
-same containment rule the deterministic suite uses for reasoning-enabled
-models.
+`reasoning` as proof the speculative decode path produced output. This is a
+deliberately looser rule than the deterministic suite's content-first check:
+the spec-decode probe only needs to prove the draft path decoded tokens, not
+that a specific answer was produced, and its expected value (`content` or
+`reasoning` populated) is not planted in the prompt.
 
 ### qwen3.8-27b-nvfp4 - NVFP4 multimodal reasoning
 
@@ -318,9 +327,11 @@ Then provision the checkpoint and validate on hardware:
    hash makes serving deterministic regardless of upstream changes.
 8. Reasoning-only responses. A reasoning model can spend its whole token budget
    in `message.reasoning` and return empty `content` (nemotron does this on a
-   64-token budget). When a model has the `reasoning` test enabled, expect the
-   deterministic, multimodal, and spec-decode checks to read the `reasoning`
-   field as fallback; do not assume `content` is always populated.
+   64-token budget). The deterministic and multimodal checks give reasoning
+   models a larger token budget so they can finish thinking and emit `content`,
+   and only fall back to reading the `reasoning` field when `content` is empty.
+   The streaming and spec-decode checks read `reasoning` directly by design; do
+   not assume `content` is always populated.
 9. Benchmark shape. llama-benchy requests `pp + tg` sequences. The driver
    clamps `BENCH_PP` to prompt sizes whose `pp + largest tg + 64` fits the
    served model's `max_model_len`, so every declared shape actually runs and
@@ -329,13 +340,15 @@ Then provision the checkpoint and validate on hardware:
    with HTTP 400. If every prompt size exceeds the window, the pp/tg bench
    records a failure rather than silently skipping. Keep `BENCH_PP` at or below
    `max_model_len` minus the largest `BENCH_TG` to keep the full declared set.
-10. Direct log validation. When the functional gates pass, grep the captured
+10. Direct log validation. The release-notes renderer greps the captured
     `server-<model>-<stamp>.log` for the runtime markers that prove each path
-    actually executed: the `reasoning_parser` and tool parser in the non-default
-    args, `kv_cache_dtype`, the selected GEMM kernel (for example
-    `Using HummingNvFp4LinearKernel for NVFP4 GEMM`), MoE and Mamba backend
-    selection, and speculative decode metrics. See "Direct log validation"
-    below for the exact markers per model.
+    actually executed: `kv_cache_dtype`, the selected GEMM kernel (for example
+    `Using HummingNvFp4LinearKernel for NVFP4 GEMM`), and MoE and Mamba backend
+    selection. A configured path row fails when its marker is absent, so the
+    report cannot claim a kernel or backend that never ran. The
+    `reasoning_parser` and tool parser lines plus speculative decode metrics are
+    documented here for manual audit. See "Direct log validation" below for the
+    exact markers per model.
 
 ## Direct log validation
 

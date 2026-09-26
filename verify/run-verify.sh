@@ -82,11 +82,13 @@ HEALTH_TIMEOUT_MIN="${HEALTH_TIMEOUT_MIN:-20}"
 # The deterministic token the functional suite requires after normalization.
 DETERMINISTIC_TOKEN="${DETERMINISTIC_TOKEN:-GB10_TEST_OK}"
 
-# llama-benchy is invoked inside the privileged serving container via uvx, so
-# its version must be a reviewed, pinned build input rather than resolving
-# "latest" at runtime (an upstream release could otherwise execute unreviewed
-# code with privileged device access). The pin below mirrors what the harness
-# was validated against; bump it deliberately, review the release notes, and
+# llama-benchy is invoked inside the serving container via uvx, so its version
+# must be a reviewed, pinned build input rather than resolving "latest" at
+# runtime (an upstream release could otherwise execute unreviewed code inside
+# the host-networked container with NFS mounts). The container runs
+# unprivileged by default (VLLM_PRIVILEGED=false), so that code has no
+# privileged device access. The pin below mirrors what the harness was
+# validated against; bump it deliberately, review the release notes, and
 # re-validate on the runner.
 BENCHY_VERSION="${BENCHY_VERSION:-0.4.0}"
 
@@ -332,9 +334,11 @@ for MODEL_NAME in ${MODEL_LIST}; do
     # functional/bench workloads. This is NOT a peak over the model run (docker
     # stats --no-stream is a single instantaneous reading), so it is reported
     # as startup_mem_mib, not peak_mem_mib. Host RSS of the container's main
-    # process, in MiB.
+    # process, in MiB. docker stats formats usage as "1.234GiB / 31.32GiB"
+    # (usage / limit): take only the first operand and convert either unit to
+    # MiB so multi-gigabyte servers report a real number instead of 0.
     STARTUP_MEM_MIB="$(docker stats --no-stream --format '{{.MemUsage}}' "${CONTAINER}" 2>/dev/null \
-      | awk '{for(i=1;i<=NF;i++) if($i ~ /MiB/) {gsub(/MiB/,"",$i); m+=$i} } END {printf "%d", m}')"
+      | awk '{v=$1; if (v ~ /GiB$/) {gsub(/GiB/,"",v); printf "%.0f", v*1024} else if (v ~ /MiB$/) {gsub(/MiB/,"",v); printf "%d", v}}')"
     [[ -z "${STARTUP_MEM_MIB}" || "${STARTUP_MEM_MIB}" == "0" ]] && STARTUP_MEM_MIB="n/a"
   fi
 
@@ -449,8 +453,9 @@ for MODEL_NAME in ${MODEL_LIST}; do
       # disable prompt caching during the benchmark.
       # The `uvx llama-benchy@<version>` pin (not bare `llama-benchy`) makes the
       # benchmark tool a reviewed, locked build input instead of resolving
-      # "latest" at runtime inside the privileged container. Bump BENCHY_VERSION
-      # deliberately and re-validate on the runner.
+      # "latest" at runtime inside the serving container (unprivileged by
+      # default). Bump BENCHY_VERSION deliberately and re-validate on the
+      # runner.
       # shellcheck disable=SC2086  # BENCH_PP_CLAMPED is intentionally word-split.
       if docker_compose -f "${COMPOSE_FILE}" -f "${OVERRIDE_FILE}" exec -T "${SERVICE}" \
           uvx "llama-benchy@${BENCHY_VERSION}" \
@@ -536,14 +541,15 @@ for MODEL_NAME in ${MODEL_LIST}; do
 
   # Persist the full server log so it rides along in the uploaded
   # verify/results artifact (the plan records server logs per model, not just a
-  # tail on failure). Best-effort: capture whatever the container produced.
+  # tail on failure). Treat failure as a real harness failure like the other
+  # stages: it contributes to PASS/FAIL and the final exit status.
   SERVER_LOG="${RESULT_DIR}/server-${MODEL_NAME}-${STAMP}.log"
   SERVER_LOG_RESULT="fail"
   if docker logs "${CONTAINER}" > "${SERVER_LOG}" 2>&1; then
     SERVER_LOG_RESULT="pass"
     pass "saved server log (${SERVER_LOG})"
   else
-    echo "  (could not save server log)" >&2
+    fail "could not save server log for ${MODEL_NAME} to ${SERVER_LOG}"
   fi
 
   MODEL_META="${RESULT_DIR}/meta-${MODEL_NAME}-${STAMP}.json"

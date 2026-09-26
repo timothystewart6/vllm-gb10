@@ -45,9 +45,13 @@ services:
     network_mode: host
     ipc: host
     shm_size: '10.24gb'
-    # privileged is required on GB10 to reach full throughput (per the GX10
-    # stacks). Keeps the bench numbers comparable to production deployments.
-    privileged: true
+    # Defaults to unprivileged: an unprivileged container serves the full
+    # catalog and benches at full throughput on GB10 (verified on qwen3-0.6b),
+    # so the harness does not run benchy with full container privileges over
+    # the NFS mounts. Set VLLM_PRIVILEGED=true only if a model needs a
+    # capability that an unprivileged container cannot supply; the maintainer
+    # must re-review the security posture before doing so.
+    privileged: ${VLLM_PRIVILEGED:-false}
     cap_add:
       - SYS_PTRACE
     ulimits:
@@ -69,6 +73,10 @@ services:
       - HF_TOKEN=${HF_TOKEN}
       - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN}
       - VLLM_HOST_IP=${VLLM_HOST_IP:-127.0.0.1}
+      # The healthcheck reads VLLM_PORT from the container environment (not the
+      # command), so it must be passed here to probe the non-default port
+      # instead of always poking 8010.
+      - VLLM_PORT=${VLLM_PORT:-8010}
       # Use the local NFS model share offline so no re-download occurs.
       - HF_HUB_OFFLINE=1
       - TRANSFORMERS_OFFLINE=1

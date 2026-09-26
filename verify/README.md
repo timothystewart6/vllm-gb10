@@ -76,8 +76,12 @@ For each model, in order:
 2. Compose up, wait for `/health`.
 3. `/v1/models` shows the served model registered.
 4. Deterministic functional test: prompt "Reply with exactly this text and
-   nothing else\n\nGB10_TEST_OK", normalize the response, require `GB10_TEST_OK`
-   exactly. Proves load + tokenize + chat template + generation + decode +
+   nothing else\n\nGB10_TEST_OK", verify the response carries the token after
+   normalization. Plain models must equal `GB10_TEST_OK` exactly in `content`.
+   Reasoning-enabled models get a larger token budget so they can finish
+   thinking and emit `content`; `content` must contain the token, falling back
+   to `reasoning` only when content is empty and the reasoning is more than a
+   prompt echo. Proves load + tokenize + chat template + generation + decode +
    OpenAI endpoint working together. Also checks usage has no NaN/Inf.
 5. Streaming test: "Count from 1 through 20" yields HTTP 200, >1 chunk, content,
    a clean `[DONE]`, and no server exception.

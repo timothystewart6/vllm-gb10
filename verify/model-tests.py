@@ -160,8 +160,12 @@ def _read_body(resp, err):
 def test_deterministic() -> None:
     print("  -- deterministic generation --")
     prompt = "Reply with exactly this text and nothing else\n\n" + DETERMINISTIC_TOKEN
+    # Reasoning models spend part of the budget on the thinking trace. Give
+    # them enough room to finish thinking AND emit the final answer, so the
+    # probe asserts on real generated content instead of on an echoed trace.
+    budget = 1024 if "reasoning" in TESTS else 128
     code, err, resp = chat(
-        [{"role": "user", "content": prompt}], max_tokens=128)
+        [{"role": "user", "content": prompt}], max_tokens=budget)
     if err:
         check("http 200", False, err)
         return
@@ -175,23 +179,31 @@ def test_deterministic() -> None:
         return
     msg = (body.get("choices") or [{}])[0].get("message", {})
     content = msg.get("content") or ""
-    # A reasoning parser (nemotron_v3, qwen3) can put the entire deterministic
-    # answer in `message.reasoning` with empty `content`, and the reasoning
-    # trace often echoes the full prompt (including the DETERMINISTIC_TOKEN).
-    # For reasoning-enabled models require the token to appear somewhere in
-    # content OR reasoning (containment), because exact equality against a
-    # freeform thinking trace is not stable. For plain models only content is
-    # valid and must equal the token exactly (the strict round-trip proof).
-    candidate = content
+    reasoning = msg.get("reasoning") or msg.get("reasoning_content") or ""
+    norm_content = normalize(content)
+    norm_reason = normalize(reasoning)
+    # The prompt embeds DETERMINISTIC_TOKEN, so a model that merely echoes its
+    # reasoning trace satisfies a naive containment check without producing the
+    # requested answer. Treat only the final `content` as the generated answer:
+    # it must contain the token (plain models use exact equality as the strict
+    # round-trip proof). For reasoning models whose documented behavior is a
+    # thinking-only reply (content empty), fall back to reasoning, but only
+    # when the reasoning actually carries the token beyond the prompt echo.
     if "reasoning" in TESTS:
-        candidate = candidate + " " + (msg.get("reasoning") or msg.get("reasoning_content") or "")
-        ok = normalize(DETERMINISTIC_TOKEN) in normalize(candidate)
-        label = f"{DETERMINISTIC_TOKEN} present in content or reasoning after normalize"
+        if norm_content:
+            ok = normalize(DETERMINISTIC_TOKEN) in norm_content
+            label = f"{DETERMINISTIC_TOKEN} present in content after normalize"
+        else:
+            echo = normalize(prompt) in norm_reason
+            ok = normalize(DETERMINISTIC_TOKEN) in norm_reason and not echo
+            label = ("reasoning carries {} (content empty, not a prompt echo)"
+                     ).format(DETERMINISTIC_TOKEN)
+            check("content empty", True, "reasoning-only reply (documented)")
     else:
-        ok = normalize(candidate) == normalize(DETERMINISTIC_TOKEN)
-        label = f"contains {DETERMINISTIC_TOKEN} after normalize"
+        ok = norm_content == normalize(DETERMINISTIC_TOKEN)
+        label = f"contains {DETERMINISTIC_TOKEN} after normalize (exact)"
     check(label, ok,
-          f"normalized={normalize(content)!r} raw={content!r} reasoning={msg.get('reasoning','')!r}")
+          f"normalized={norm_content!r} raw={content!r} reasoning={norm_reason!r}")
     usage = body.get("usage") or {}
     check("completion_tokens > 0", (usage.get("completion_tokens") or 0) > 0,
           f"usage={usage}")

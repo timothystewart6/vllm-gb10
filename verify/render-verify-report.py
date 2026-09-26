@@ -32,6 +32,27 @@ from pathlib import Path
 
 STAMP_RE = re.compile(r"-\d{8}-\d{6}$")
 
+# Log markers that directly prove each log-backed runtime path executed on the
+# server (docs "Direct log validation"). A path row passes only when every
+# marker for that path appears in the captured server log for the model. These
+# are stable, version-pinned strings taken from the full-pass logs; they must be
+# updated in lockstep with the docs when vLLM changes its log wording.
+LOG_MARKERS = {
+    # Shared substring across the per-family NVFP4 GEMM kernels (nemotron logs
+    # "Using HummingNvFp4LinearKernel for NVFP4 GEMM", qwen3.8-27b-nvfp4 logs
+    # "Using FlashInferCutlassNvFp4LinearKernel for NVFP4 GEMM").
+    "nvfp4": ["for NVFP4 GEMM"],
+    "fp8kv": ["kv_cache_dtype=torch.float8_e4m3fn"],
+    "moe": [
+        "Using indexed gemm for humming moe",
+        "Using 'HUMMING' NvFp4 MoE backend",
+    ],
+    "mamba": [
+        "Using FlashInfer Mamba SSU algorithm: simple",
+        "Using flashinfer Mamba SSU backend",
+    ],
+}
+
 
 def model_from_stem(stem, prefix):
     """Recover the model name from a result filename (same as summarize-bench)."""
@@ -145,6 +166,19 @@ def render(results_dir):
                         ("pptg", 1, b.get("prompt_size"), b.get("response_size"), b)
                     )
 
+    # Runtime-path rows (NVFP4, FP8 KV, MoE, Mamba) are proven from the captured
+    # server log, not inferred from catalog flags + generation success. Load the
+    # log for every model at this stamp so the matrix row reflects the kernel
+    # and backend the server actually selected (see docs "Direct log validation"
+    # for the exact markers).
+    for path in results_dir.glob(f"server-*-{stamp}.log"):
+        model = model_from_stem(path.stem, "server-")
+        if model in models:
+            try:
+                models[model]["log"] = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                models[model]["log"] = ""
+
     if not models:
         return ""
 
@@ -203,10 +237,10 @@ def render(results_dir):
     # Full report-style test matrix: one row per test, one column per model.
     # The per-model outcome (`pass`/`fail`/`skip`) comes from the matrix-*.json
     # and suite-results-*.json files the harness drops, so this stays in
-    # lockstep with what the harness actually ran. Indirect runtime-path rows
-    # (NVFP4, FP8 KV, MoE, Mamba) carry a pass when the catalog enabled that
-    # model's path and the model generated successfully (functional = pass);
-    # they are proven directly in the server logs.
+    # lockstep with what the harness actually ran. Log-backed runtime-path rows
+    # (NVFP4, FP8 KV, MoE, Mamba) carry a pass only when the kernel/backend
+    # marker for that path actually appears in the captured server log (see
+    # LOG_MARKERS); they are no longer inferred from catalog flags alone.
     matrix_models = [m for m, e in models.items() if e["matrix"]]
     if matrix_models:
         # Each row: (label, implemented-by, kind, outcome-key resolver).
@@ -215,14 +249,14 @@ def render(results_dir):
             ("`/v1/models` registration", "`run-verify.sh` [4]", "direct", "registry"),
             ("Deterministic generation", "`model-tests.py` `test_deterministic`", "direct", "suite:deterministic"),
             ("Streaming generation", "`model-tests.py` `test_streaming`", "direct", "suite:streaming"),
-            ("Structured response validity", "`model-tests.py` NaN/Inf + valid-JSON checks", "direct", "suite:deterministic"),
+            ("Response JSON validity", "`model-tests.py` NaN/Inf + valid-JSON checks", "direct", "suite:deterministic"),
             ("Tool calling", "`model-tests.py` `test_tool`", "direct", "suite:tool"),
             ("Reasoning parser", "`model-tests.py` `test_reasoning`", "direct", "suite:reasoning"),
             ("Multimodal image input", "`model-tests.py` `test_multimodal`", "direct", "suite:multimodal"),
-            ("NVFP4 execution", "`serve.quantization=modelopt_fp4` load + generate", "indirect", "path:nvfp4"),
-            ("FP8 KV cache", "`serve.kv_cache_dtype=fp8_e4m3` load + generate", "indirect", "path:fp8kv"),
-            ("MoE execution", "nemotron MoE serve flags", "indirect", "path:moe"),
-            ("Mamba execution", "nemotron Mamba serve flags", "indirect", "path:mamba"),
+            ("NVFP4 execution", "server log `for NVFP4 GEMM` marker", "log", "path:nvfp4"),
+            ("FP8 KV cache", "server log `kv_cache_dtype=torch.float8_e4m3fn` marker", "log", "path:fp8kv"),
+            ("MoE execution", "server log humming MoE backend markers", "log", "path:moe"),
+            ("Mamba execution", "server log flashinfer Mamba backend markers", "log", "path:mamba"),
             ("Speculative decoding", "`run-verify.sh` [6] probe", "direct", "spec_decode"),
             ("llama-benchy pp/tg", "`run-verify.sh` [7]", "direct", "bench_pptg"),
             ("llama-benchy concurrency", "`run-verify.sh` [7b]", "direct", "bench_conc"),
@@ -239,27 +273,35 @@ def render(results_dir):
                     return "skipped"
                 return normalize_outcome(suite.get(key.split(":", 1)[1], "skipped"))
             if key.startswith("path:"):
-                # Indirect runtime-path: pass when the model's serve flags +
-                # functional generation succeeded; skip when the path is not
-                # configured for the model.
+                # Log-backed runtime-path: pass only when the marker the server
+                # actually logged for that path appears in the captured server
+                # log (docs "Direct log validation"). Skip when the path is not
+                # configured for the model; fail when the path is configured
+                # but the kernel/backend marker never appears.
                 path = key.split(":", 1)[1]
                 mid = model_entry["meta"].get("model_id")
                 paths = CATALOG_PATHS.get(mid)
                 if not paths or not paths.get(path):
                     return "skipped"
-                matrix = model_entry.get("matrix") or {}
-                return normalize_outcome(matrix.get("functional", "skip"))
+                markers = LOG_MARKERS.get(path)
+                log = model_entry.get("log") or ""
+                if not markers:
+                    return "skipped"
+                if all(m in log for m in markers):
+                    return normalize_outcome("pass")
+                return normalize_outcome("fail")
             # Direct outcome from the matrix record itself.
             return normalize_outcome(model_entry["matrix"].get(key, "skip"))
 
         lines.append("### Test matrix")
         lines.append("")
         lines.append("Each row is a harness test and each column a served model."
-                     " ✓ passed, ✗ failed, - not run for that model. Indirect"
-                     " rows (NVFP4, FP8 KV, MoE, Mamba) are proven directly in"
-                     " the captured server logs. The methodology is documented"
-                     " in `docs/model-verification.md`; the raw per-model JSONs"
-                     " and logs are attached to this release.")
+                     " ✓ passed, ✗ failed, - not run for that model."
+                     " Log-backed rows (NVFP4, FP8 KV, MoE, Mamba) pass only when"
+                     " the kernel or backend marker for that path appears in the"
+                     " captured server log. The methodology is documented in"
+                     " `docs/model-verification.md`; the raw per-model JSONs and"
+                     " logs are attached to this release.")
         lines.append("")
         cols = ["Test", "Implemented by", "Kind"] + [
             f"`{models[m]['meta'].get('model_id') or m}`" for m in sorted(matrix_models)
@@ -281,7 +323,7 @@ CATALOG_PATHS = {}
 
 
 def load_catalog_paths():
-    """Derive per-model indirect-path booleans (nvfp4, fp8kv, moe, mamba) from
+    """Derive per-model log-backed path flags (nvfp4, fp8kv, moe, mamba) from
     verify/models.json so the matrix can mark which runtime paths each model
     enables. Falls back to empty when the catalog is unreadable (the matrix
     then marks those rows all skipped)."""

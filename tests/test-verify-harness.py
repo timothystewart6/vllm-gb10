@@ -36,6 +36,10 @@ def test_compose_serves_under_test_image_from_env():
     assert 'image: "${IMAGE:-ghcr.io/timothystewart6/vllm-gb10' in compose
     assert "pull_policy: missing" in compose
     assert "network_mode: host" in compose
+    # Unprivileged by default: the harness must not run benchy in a privileged
+    # container over the NFS mounts. The operator can opt out explicitly.
+    assert "privileged: ${VLLM_PRIVILEGED:-false}" in compose
+    assert "cap_add:" in compose and "SYS_PTRACE" in compose
     # The base compose keeps the common runtime flags/paths but must NOT bake
     # per-model serve flags into a hardcoded command. Those live in models.json
     # and reach the server via per-model compose overrides from
@@ -166,8 +170,8 @@ def test_driver_is_ci_safe_and_in_container_benchy():
     assert "require sudo" not in driver
     # llama-benchy runs in-container via a pinned version. The `uvx` tool
     # runner installs the exact pinned release rather than resolving "latest"
-    # at runtime inside the privileged container, so the benchmark tool is a
-    # reviewed, locked build input.
+    # at runtime inside the serving container (unprivileged by default), so
+    # the benchmark tool is a reviewed, locked build input.
     assert "uvx" in driver
     assert '"llama-benchy@${BENCHY_VERSION}"' in driver
     assert 'BENCHY_VERSION="${BENCHY_VERSION:-' in driver
@@ -503,7 +507,7 @@ def test_render_verify_report_compact_output():
         assert "| Test | Implemented by | Kind |" in out
         assert "Model startup (health)" in out
         assert "/v1/models" in out
-        assert "Structured response validity" in out
+        assert "Response JSON validity" in out
         assert "NVFP4 execution" in out
         assert "Clean shutdown" in out
         # qwen3-0.6b: spec-decode skipped, deterministic/streaming passed.

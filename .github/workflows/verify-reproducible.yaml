@@ -96,7 +96,7 @@ jobs:
       # ── Build 1 of 2 (warm BuildKit cache) ─────────────────────────────────
       - name: Build 1 of 2 (warm cache)
         # docker/build-push-action v7
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
         with:
           context: .
           target: runner
@@ -138,7 +138,7 @@ jobs:
       # ── Build 2 of 2 (no-cache - full rebuild from scratch) ────────────────
       - name: Build 2 of 2 (no-cache)
         # docker/build-push-action v7
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
         with:
           context: .
           target: runner

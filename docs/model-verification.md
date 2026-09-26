@@ -31,6 +31,17 @@ in one script. GitHub Actions does not share YAML anchors across files, so each
 workflow keeps a thin wrapper around that driver instead of duplicating the
 harness.
 
+The serving container runs with the hardened profile from
+`verify/docker-compose.yaml`: unprivileged by default, no capabilities except
+`SYS_PTRACE` (`cap_drop: [ALL]` with `cap_add: [SYS_PTRACE]`),
+`no-new-privileges`, and a `pids_limit` cap. This keeps the pinned in-container
+benchy path from being able to escalate privileges or fork-bomb the shared
+runner over the NFS mounts. Because the container has no `CAP_DAC_OVERRIDE`,
+`run-verify.sh` makes the bind-mounted results dir world-writable so benchy can
+write its JSON there. `VLLM_PRIVILEGED=true` opts back into a privileged
+container if a model ever needs a capability the default cannot supply; that is
+an explicit, reviewed exception.
+
 ## Why these four models
 
 The catalog exists to prove that the vllm-gb10 image serves several different

@@ -188,6 +188,14 @@ if curl -sf --max-time 3 "${HEALTH_URL}" >/dev/null 2>&1; then
 fi
 
 mkdir -p "${RESULT_DIR}" "${GENERATED_DIR}"
+# The serving container is hardened (unprivileged, cap_drop ALL) so its root
+# has no CAP_DAC_OVERRIDE and cannot bypass file permissions on the bind
+# mount. The in-container benchy therefore needs real write permission at
+# /results. The results dir only ever holds per-run JSONs that CI uploads,
+# so world-writable is safe here and matches how CI artifact dirs behave.
+# Host-side files (meta, server log, matrix, summary) are written by the
+# gha-runner user that owns the dir; benchy JSONs land here too as root.
+chmod 0777 "${RESULT_DIR}"
 
 cleanup() {
   if [[ "${KEEP_SERVER}" != "1" ]]; then

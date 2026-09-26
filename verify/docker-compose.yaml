@@ -45,15 +45,32 @@ services:
     network_mode: host
     ipc: host
     shm_size: '10.24gb'
-    # Defaults to unprivileged: an unprivileged container serves the full
-    # catalog and benches at full throughput on GB10 (verified on qwen3-0.6b),
-    # so the harness does not run benchy with full container privileges over
-    # the NFS mounts. Set VLLM_PRIVILEGED=true only if a model needs a
-    # capability that an unprivileged container cannot supply; the maintainer
-    # must re-review the security posture before doing so.
+    # Defaults to unprivileged: an unprivileged, hardened container serves the
+    # full catalog and benches at full throughput on GB10 (verified across all
+    # four catalog models against the privileged baseline), so the harness does
+    # not run benchy with full container privileges over the NFS mounts. Set
+    # VLLM_PRIVILEGED=true only if a model needs a capability that an
+    # unprivileged container cannot supply; the maintainer must re-review the
+    # security posture before doing so.
     privileged: ${VLLM_PRIVILEGED:-false}
+    # Hardened runtime for the unprivileged default:
+    #   - no-new-privileges prevents gaining extra privileges via setuid
+    #     binaries or file capabilities, even if one is somehow introduced
+    #     into the image or a mounted tree.
+    #   - cap_drop ALL removes every Linux capability, then cap_add restores
+    #     only SYS_PTRACE, which vLLM's flashinfer/attention JIT needs. The
+    #     container thus gets no capabilities it does not require.
+    #   - pids_limit caps how many processes the container can spawn, so a
+    #     runaway benchy/uvx run cannot fork-bomb the shared runner.
+    # When VLLM_PRIVILEGED=true bypasses these, the maintainer must re-review
+    # why the container needs full privileges.
+    security_opt:
+      - no-new-privileges:true
     cap_add:
       - SYS_PTRACE
+    cap_drop:
+      - ALL
+    pids_limit: 512
     ulimits:
       memlock: -1
     volumes:

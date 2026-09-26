@@ -39,7 +39,14 @@ def test_compose_serves_under_test_image_from_env():
     # Unprivileged by default: the harness must not run benchy in a privileged
     # container over the NFS mounts. The operator can opt out explicitly.
     assert "privileged: ${VLLM_PRIVILEGED:-false}" in compose
+    # Hardened runtime: drop all capabilities except SYS_PTRACE (which vLLM's
+    # flashinfer/attention JIT needs), forbid privilege escalation via setuid,
+    # and cap the process count so a runaway benchy cannot fork-bomb the shared
+    # runner.
     assert "cap_add:" in compose and "SYS_PTRACE" in compose
+    assert "cap_drop:" in compose and "- ALL" in compose
+    assert "no-new-privileges:true" in compose
+    assert "pids_limit" in compose
     # The base compose keeps the common runtime flags/paths but must NOT bake
     # per-model serve flags into a hardcoded command. Those live in models.json
     # and reach the server via per-model compose overrides from
@@ -192,6 +199,25 @@ def test_driver_is_ci_safe_and_in_container_benchy():
     assert "gen-model-override.sh" in driver
     assert "OVERRIDE_FILE=" in driver
     assert "--env-file /dev/null up -d" in driver
+
+
+def test_driver_makes_results_dir_writable_for_hardened_container():
+    """The hardened container (unprivileged, cap_drop ALL) has no
+    CAP_DAC_OVERRIDE, so in-container benchy needs real write permission at
+    /results. The driver must open the results dir up for that, or the bench
+    stages fail writing bench-*.json on every hardened run."""
+    driver = read(VERIFY / "run-verify.sh")
+    compose = read(VERIFY / "docker-compose.yaml")
+    # The base compose is hardened by default...
+    assert "privileged: ${VLLM_PRIVILEGED:-false}" in compose
+    # ...so the driver must make the bind-mounted results dir writable by the
+    # container root without relying on CAP_DAC_OVERRIDE.
+    assert "chmod 0777 \"${RESULT_DIR}\"" in driver, (
+        "driver must chmod the results dir writable for the hardened container"
+    )
+    # The chmod must come after the dir is created.
+    assert "mkdir -p \"${RESULT_DIR}\"" in driver
+    assert driver.index("mkdir -p \"${RESULT_DIR}\"") < driver.index("chmod 0777 \"${RESULT_DIR}\"")
 
 
 def test_driver_stages_are_stable_and_deterministic():

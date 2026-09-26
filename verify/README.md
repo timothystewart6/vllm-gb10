@@ -127,6 +127,26 @@ runs inside the serving container via `uvx` pinned to the reviewed
 `BENCHY_VERSION` (default `0.4.0`), so it benchmarks the exact image under
 test and needs no host provisioning.
 
+## Container security
+
+The serving container runs unprivileged by default, with the common hardening
+profile from `docker-compose.yaml`:
+
+- `privileged: ${VLLM_PRIVILEGED:-false}` - not privileged unless explicitly
+  opted in via the env toggle.
+- `cap_drop: [ALL]` with `cap_add: [SYS_PTRACE]` - drops every Linux
+  capability except the one vLLM's flashinfer/attention JIT needs.
+- `security_opt: [no-new-privileges:true]` - a process cannot gain extra
+  privileges through setuid binaries or file capabilities.
+- `pids_limit: 512` - caps the process count so a runaway benchy/uvx run
+  cannot fork-bomb the shared runner.
+
+This keeps the benchy execution path (pinned `uvx llama-benchy@${BENCHY_VERSION}`)
+outside a privileged, capability-rich container over the NFS cache mounts. If a
+model ever needs a capability an unprivileged container cannot supply, the
+maintainer must re-review the security posture before setting
+`VLLM_PRIVILEGED=true`.
+
 ## Usage
 
 Run from a repo checkout on the runner:

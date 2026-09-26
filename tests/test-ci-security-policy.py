@@ -156,6 +156,34 @@ def test_reproducibility_build_runs_only_on_spark_01_runner():
     assert runs_on_results == [GB10_RUNS_ON], runs_on_results
 
 
+def test_verify_image_models_workflow_is_dispatch_only_and_catalog_gated():
+    workflow = read(WORKFLOWS / "verify-image-models.yaml")
+
+    # It must be separate from the build pipeline and never run on PR/push.
+    assert "workflow_dispatch:" in workflow
+    assert "\n  pull_request:" not in workflow
+    assert "\n  push:" not in workflow
+
+    # Trusted entry point: dispatch from main only, exact SHA checkout.
+    assert '$WORKFLOW_REF" != "refs/heads/main"' in workflow
+    assert "Refusing to run: dispatch this workflow from main." in workflow
+    assert "ref: ${{ github.sha }}" in workflow
+
+    # Runs only on the GB10 runner.
+    runs_on_results = find_runs_on(workflow)
+    assert runs_on_results == [GB10_RUNS_ON], runs_on_results
+
+    # The model list must be validated against the catalog so adding a model
+    # requires a reviewed change to verify/models.json, not an ad-hoc override.
+    assert "Validate requested models against the catalog" in workflow
+    assert 'json.load(open("verify/models.json"))' in workflow
+    assert "verify/run-verify.sh" in workflow
+
+    # Manual dispatch form inputs for picking a tag and a model subset.
+    assert "image_tag:" in workflow
+    assert "models:" in workflow
+
+
 def test_privileged_workflows_reject_untrusted_refs():
     monitor = read(WORKFLOWS / "monitor-upstream-releases.yaml")
     assert 'WORKFLOW_REF: ${{ github.ref }}' in monitor

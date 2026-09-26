@@ -143,15 +143,18 @@ jobs:
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302
         with:
           images: ghcr.io/timothystewart6/vllm-gb10
-          # Four published tags per build:
-          #   1. Canonical immutable: VLLM_REF-gb10.N
+          # Three immutable tags are published per build, all pinned to this
+          # exact build's digest:
+          #   1. Canonical immutable: VLLM_REF-gb10.N (verify + release use it)
           #   2. Component shorthand: VLLM_REF-cu<x.y>-torch<x.y>-gb10.N
-          #   3. latest (mutable - always points at the most recent green build)
-          #   4. sha-<short_sha> (immutable, useful for exact-build references)
+          #   3. sha-<short_sha> (immutable, useful for exact-build references)
+          # `latest` is deliberately NOT pushed here. It is the mutable
+          # release-facing pointer and is promoted only after the verify job
+          # passes (see the release job's "Promote latest (post-verify)" step),
+          # so a runtime-broken image can never replace `latest`.
           tags: |
             type=raw,value=${{ env.VLLM_REF }}-gb10.${{ env.GB10_BUILD }}
             type=raw,value=${{ env.VLLM_REF }}-${{ env.CUDA_SHORT }}-${{ env.TORCH_SHORT }}-gb10.${{ env.GB10_BUILD }}
-            type=raw,value=latest
             type=sha,prefix=sha-,format=short
 
       - name: Build and push image to GHCR
@@ -247,6 +250,42 @@ jobs:
             -v "${{ github.workspace }}/tests/smoke-test.sh:/tmp/smoke-test.sh:ro" \
             "${CANONICAL_IMAGE}" bash /tmp/smoke-test.sh
 
+      - name: Serve and bench the built image
+        # Boots the freshly-built image, proves it serves the catalog of cached
+        # models across a deterministic functional test plus per-model optional
+        # suites (tool calling, reasoning, multimodal, spec-decode), then runs
+        # a llama-benchy workload against each served model from inside the
+        # container (verify/run-verify.sh). The models come from verify/models.json
+        # - each entry carries its own serve flags/tuning and a `tests` map, so
+        # dense and MoE/reasoning/multimodal models each get the right flags and
+        # the right suites. Deliberately uses only what the gha-runner user has
+        # (docker, curl, jq, python3, NFS model cache): no sudo, no host
+        # llama-benchy. Bench numbers land in verify/results/ (bind-mounted at
+        # /results) for artifact upload.
+        # verify/docker-compose.yaml defaults HF_CACHE to the NFS model share,
+        # where the pinned model snapshots are already cached.
+        env:
+          # Actions env values are not shell-expanded, so the literal
+          # ${CANONICAL_IMAGE} would be passed through verbatim. Reference the
+          # job-level env with an Actions expression instead.
+          IMAGE: ${{ env.CANONICAL_IMAGE }}
+          VLLM_PORT: "8010"
+          HF_CACHE: /mnt/llm/models/huggingface
+          VLLM_CACHE: /mnt/llm/vllm-compile-cache
+          HEALTH_TIMEOUT_MIN: "25"
+        run: bash "${GITHUB_WORKSPACE}/verify/run-verify.sh"
+
+      - name: Upload serve and bench results
+        # Preserve the chat + benchy JSON from the serve+bench step as a CI
+        # artifact so results can be compared across builds without rerunning
+        # the benchmark. Same action already used for build artifacts.
+        # actions/upload-artifact v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: serve-bench-results-${{ github.sha }}
+          path: verify/results/
+          if-no-files-found: error
+
       - name: Extract build artifacts from image
         # Extract the authoritative artifact set for the verify-reproducible
         # workflow to compare. pip freeze and apt versions are runtime reads;
@@ -312,6 +351,28 @@ jobs:
         # on a different runner than `verify` (defensive).
         run: docker pull "ghcr.io/timothystewart6/vllm-gb10:${CANONICAL}"
 
+      - name: Promote latest (post-verify)
+        # `latest` is the mutable release-facing pointer. The build job does
+        # not push it; it is published here, gated on this job having passed
+        # (this job `needs: [build, verify]`), so a runtime-broken image can
+        # never replace `latest`. The canonical tag was rebuilt in the Pull
+        # image step above; re-tag and push it as `latest` now.
+        run: |
+          set -euo pipefail
+          SRC="ghcr.io/timothystewart6/vllm-gb10"
+          docker tag "${SRC}:${CANONICAL}" "${SRC}:latest"
+          docker push "${SRC}:latest"
+
+      - name: Download serve and bench results
+        # The verify job uploaded the per-model bench + meta JSON as an
+        # artifact. Pull it back so the release notes can include the compact
+        # model-verification report derived from this exact build's run.
+        # actions/download-artifact v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: serve-bench-results-${{ github.sha }}
+          path: verify/results/
+
       - name: Push release tag
         # Pushing a tag with GITHUB_TOKEN does NOT trigger other workflows
         # (GitHub anti-recursion), so create-release.yaml won't fire here.
@@ -330,9 +391,28 @@ jobs:
       - name: Generate release notes
         # Release notes are produced by a shared script so create-release.yaml
         # (manual fallback) stays in sync with the inline release here.
+        # VERIFY_RESULTS_DIR points at the serve+bench artifact so the body
+        # carries the compact model-verification report for this build.
         env:
           TAG: ${{ needs.build.outputs.canonical_tag }}
-        run: bash scripts/generate-release-notes.sh > /tmp/release-notes.md
+        run: |
+          export VERIFY_RESULTS_DIR="${GITHUB_WORKSPACE}/verify/results"
+          bash scripts/generate-release-notes.sh > /tmp/release-notes.md
+
+      - name: Bundle verify results
+        # Archive the per-model verify JSONs (meta/bench/bench-conc/matrix/
+        # suite-results/specdecode) plus the per-model server logs into a
+        # single tarball so each release carries one clean, self-describing
+        # raw-data artifact for later analysis. The JSONs and logs were
+        # downloaded from the serve-bench-results artifact into verify/results/
+        # just above. Transient fail-*.json records (which can capture raw
+        # error output) are excluded.
+        run: |
+          set -euo pipefail
+          cd "${GITHUB_WORKSPACE}/verify"
+          tar -czf "/tmp/verify-results-${TAG}.tar.gz" --exclude='results/fail-*.json' results/*.json results/*.log
+        env:
+          TAG: ${{ needs.build.outputs.canonical_tag }}
 
       - name: Create GitHub Release
         # action-gh-release is the de facto standard. It is idempotent: if a
@@ -344,6 +424,10 @@ jobs:
           tag_name: ${{ needs.build.outputs.canonical_tag }}
           name: vllm-gb10 ${{ needs.build.outputs.canonical_tag }}
           body_path: /tmp/release-notes.md
+          # `files` is glob-based and expanded by the action itself (no shell
+          # interpolation), so match the tag-named results tarball from the
+          # bundle step above with a wildcard.
+          files: /tmp/verify-results-*.tar.gz
 
       - name: Mirror to Docker Hub
         # Re-tag the pulled canonical image with all four target names and

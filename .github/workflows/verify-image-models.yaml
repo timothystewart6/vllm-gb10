@@ -1,0 +1,185 @@
+# .github/workflows/verify-image-models.yaml
+#
+# Dispatch-only workflow to verify a published vllm-gb10 image against the
+# model catalog. This is intentionally separate from the build-image pipeline:
+# it lets a codeowner re-verify any already-published image tag (or a subset of
+# models) without rebuilding and without triggering a release tag.
+#
+# The verify job runs exclusively on the self-hosted DGX Spark runner
+# (nvidia-spark-01). To keep the contributor-CI security boundary, this
+# workflow:
+#   - triggers only on workflow_dispatch (never on pull_request or push),
+#   - guards that dispatch must come from main,
+#   - checks out the exact event SHA,
+#   - pins every external action to the reviewed SHAs allowlisted in
+#     tests/test-ci-security-policy.py.
+#
+# Actions are pinned by SHA per the SPEC. Update SHAs via Dependabot - do NOT
+# track floating tags.
+
+name: Verify image with models
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: >-
+          Image to verify. Either a bare tag such as v0.30.0-gb10.2 or a full
+          reference such as ghcr.io/timothystewart6/vllm-gb10:v0.30.0-gb10.2.
+          Leave blank to use the default image.
+        required: false
+        type: string
+      models:
+        description: >-
+          Comma-separated subset of catalog names to verify (for example
+          qwen3-0.6b,nemotron-lightning). Leave blank to verify the full
+          catalog.
+        required: false
+        type: string
+      bench_runs:
+        description: Measured bench runs per shape (plus one warmup).
+        required: false
+        type: number
+        default: 3
+      keep_server:
+        description: Leave the last serving container running after the checks.
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: verify-image-models
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  verify:
+    runs-on: [self-hosted, linux, ARM64, gb10]
+    timeout-minutes: 120
+    env:
+      WORKFLOW_REF: ${{ github.ref }}
+      MODELS: ${{ inputs.models }}
+      BENCH_RUNS: ${{ inputs.bench_runs }}
+      KEEP_SERVER: ${{ inputs.keep_server && '1' || '0' }}
+
+    steps:
+      - name: Require dispatch from main
+        run: |
+          if [[ "$WORKFLOW_REF" != "refs/heads/main" ]]; then
+            echo "Refusing to run: dispatch this workflow from main."
+            exit 1
+          fi
+
+      - name: Resolve image reference
+        # Only this repository's published GHCR image may be verified. This
+        # workflow boots the image with host networking and writable NFS/cache
+        # mounts on the persistent GB10 runner (unprivileged by default), so
+        # accepting an arbitrary reference would let a typo or malicious tag
+        # execute arbitrary code inside that container. Bare tags are
+        # validated: they must be a plausible vllm-gb10 release tag
+        # (v<major>.<minor>.<patch>-gb10.<n>).
+        # A full reference is accepted only when it is exactly this image.
+        run: |
+          set -euo pipefail
+          IMAGE_REF='ghcr.io/timothystewart6/vllm-gb10'
+          if [[ -z "$IMAGE_TAG_INPUT" ]]; then
+            TAG='v0.30.0-gb10.2'
+          elif [[ "$IMAGE_TAG_INPUT" == "${IMAGE_REF}:"* ]]; then
+            # shellcheck disable=SC2295  # $IMAGE_REF is a literal image name.
+            TAG="${IMAGE_TAG_INPUT#"$IMAGE_REF":}"
+          elif [[ "$IMAGE_TAG_INPUT" == ghcr.io/* ]]; then
+            echo "Refusing: only ${IMAGE_REF} images may be verified." >&2
+            exit 1
+          else
+            TAG="$IMAGE_TAG_INPUT"
+          fi
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-gb10\.[0-9]+$ ]]; then
+            echo "Refusing: invalid vllm-gb10 tag '$TAG'." >&2
+            exit 1
+          fi
+          echo "IMAGE=${IMAGE_REF}:${TAG}" >> "$GITHUB_ENV"
+          echo "IMAGE_TAG=${TAG}" >> "$GITHUB_ENV"
+        env:
+          IMAGE_TAG_INPUT: ${{ inputs.image_tag }}
+
+      - name: Checkout exact event SHA
+        # Needed for verify/run-verify.sh, verify/models.json, and the model
+        # catalog. actions/checkout v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Validate requested models against the catalog
+        # Every requested model name must resolve in verify/models.json at this
+        # exact SHA. Because the catalog is the single source of truth for the
+        # model list, adding a valid model requires a reviewed change to
+        # models.json; there is no ad-hoc model override here. A blank request
+        # runs the full catalog, so the catalog must parse.
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          catalog = json.load(open("verify/models.json"))
+          known = {m["name"] for m in catalog.get("models", [])}
+          requested = [s for s in os.environ.get("MODELS", "").split(",") if s.strip()]
+          if not requested:
+              sys.exit(0)
+          missing = [r for r in requested if r not in known]
+          if missing:
+              print("Unknown catalog model(s): " + ", ".join(missing))
+              print("Known models: " + ", ".join(sorted(known)))
+              sys.exit(1)
+          PY
+        env:
+          MODELS: ${{ inputs.models }}
+
+      - name: Log in to GHCR
+        # Required to pull the image (may be private).
+        # docker/login-action v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull image
+        run: docker pull "${IMAGE}"
+
+      - name: Serve and bench the published image
+        # Boots the requested image, proves it serves the catalog of cached
+        # models across the deterministic functional test plus the per-model
+        # optional suites, then runs the llama-benchy workload matrix against
+        # each served model from inside the container (verify/run-verify.sh).
+        # Models come from verify/models.json. The MODEL env is passed through
+        # only when a subset was requested; otherwise the driver runs the full
+        # catalog. Uses only what the gha-runner user has (docker, curl, jq,
+        # python3, NFS model cache): no sudo, no host llama-benchy. Bench
+        # numbers land in verify/results/ (bind-mounted at /results) for
+        # artifact upload.
+        # verify/docker-compose.yaml defaults HF_CACHE to the NFS model share,
+        # where the pinned model snapshots are already cached.
+        env:
+          VLLM_PORT: "8010"
+          HF_CACHE: /mnt/llm/models/huggingface
+          VLLM_CACHE: /mnt/llm/vllm-compile-cache
+          HEALTH_TIMEOUT_MIN: "25"
+        run: |
+          if [[ -n "${MODELS}" ]]; then
+            MODELS="${MODELS}" bash "${GITHUB_WORKSPACE}/verify/run-verify.sh"
+          else
+            bash "${GITHUB_WORKSPACE}/verify/run-verify.sh"
+          fi
+
+      - name: Upload serve and bench results
+        # Preserve the functional + benchy JSON as a CI artifact so results can
+        # be compared across runs without rerunning the benchmark.
+        # The encoded tag is safe for an artifact name: a full verification tag
+        # is always bare (validated above), so it contains no `/` or `:`.
+        # actions/upload-artifact v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: serve-bench-results-${{ github.sha }}-${{ env.IMAGE_TAG }}
+          path: verify/results/
+          if-no-files-found: warning

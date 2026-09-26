@@ -1,6 +1,12 @@
 # Local working folder - not committed
 zIgnore/
 
+# verify harness runtime output (chat + benchy JSON, uploaded as CI artifacts)
+verify/results/
+
+# verify harness per-model compose overrides (regenerated from models.json)
+verify/generated/
+
 # Generated at build time - not a repo artifact
 build-metadata.yaml
 

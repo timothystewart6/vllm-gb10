@@ -230,6 +230,9 @@ FROM base AS runner
 ARG PYTORCH_INDEX_URL
 ARG PYPI_INDEX_URL
 ARG FLASHINFER_INDEX_URL
+# Used by the OCI image labels at the end of this stage.
+ARG VLLM_REF
+ARG GB10_BUILD
 
 # Copied here (not in apt-base) so runtime dep changes only bust this stage.
 COPY locks/python-runtime.txt /tmp/python-runtime.txt
@@ -297,6 +300,18 @@ RUN rm -f /usr/local/lib/python3.12/dist-packages/nvidia/nccl/lib/libnccl.so.2 \
       > /workspace/build-artifacts/nccl-sha256.txt
 
 COPY build-metadata.yaml /workspace/build-metadata.yaml
+# OCI image metadata. These bake in the image identity so a pulled image is
+# self-describing even outside this repo's CI pipeline. The values mirror what
+# docker/metadata-action applies to the config at build time; declaring them
+# here as Dockerfile labels keeps the contract explicit and satisfies GitHub's
+# documented single-arch labelling path (org.opencontainers.image.description
+# read from config.Labels for non-multi-arch images).
+LABEL org.opencontainers.image.title="vllm-gb10" \
+      org.opencontainers.image.description="Production ready, bleeding edge vLLM Docker image for the NVIDIA DGX Spark (GB10 / sm_121a)." \
+      org.opencontainers.image.source="https://github.com/timothystewart6/vllm-gb10" \
+      org.opencontainers.image.url="https://github.com/timothystewart6/vllm-gb10" \
+      org.opencontainers.image.version="${VLLM_REF}-gb10.${GB10_BUILD}" \
+      org.opencontainers.image.licenses="MIT"
 # Clear the ENTRYPOINT inherited from the NVIDIA base image.
 # nvidia_entrypoint.sh is a 0-byte placeholder in the base image that only
 # gets populated by the nvidia-container-runtime in legacy mode. CDI mode

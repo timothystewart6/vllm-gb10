@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Regression tests for OCI image label and annotation contracts."""
 
-import re
 from pathlib import Path
 
 

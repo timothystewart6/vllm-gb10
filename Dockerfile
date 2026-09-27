@@ -302,10 +302,11 @@ RUN rm -f /usr/local/lib/python3.12/dist-packages/nvidia/nccl/lib/libnccl.so.2 \
 COPY build-metadata.yaml /workspace/build-metadata.yaml
 # OCI image metadata. These bake in the image identity so a pulled image is
 # self-describing even outside this repo's CI pipeline. The values mirror what
-# docker/metadata-action applies to the config at build time; declaring them
-# here as Dockerfile labels keeps the contract explicit and satisfies GitHub's
-# documented single-arch labelling path (org.opencontainers.image.description
-# read from config.Labels for non-multi-arch images).
+# docker/metadata-action applies to the config at build time and are kept
+# explicit here as a contract. Note that GHCR renders
+# org.opencontainers.image.description on version pages from the manifest
+# annotations passed by the workflow (see build-image.yaml), not from these
+# config labels, so the two are complementary rather than interchangeable.
 LABEL org.opencontainers.image.title="vllm-gb10" \
       org.opencontainers.image.description="Production ready, bleeding edge vLLM Docker image for the NVIDIA DGX Spark (GB10 / sm_121a)." \
       org.opencontainers.image.source="https://github.com/timothystewart6/vllm-gb10" \

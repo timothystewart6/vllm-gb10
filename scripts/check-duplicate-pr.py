@@ -61,9 +61,9 @@ def get_versions_diff(ref=None, base=None):
     """
     if ref:
         if base:
-            args = ["diff", "--exit-code", base, f"origin/{ref}", "--", "versions.env"]
+            args = ["diff", "--exit-code", base, ref, "--", "versions.env"]
         else:
-            args = ["diff", "--exit-code", "HEAD", f"origin/{ref}", "--", "versions.env"]
+            args = ["diff", "--exit-code", "HEAD", ref, "--", "versions.env"]
     else:
         # Check both staged and unstaged changes vs HEAD
         args = ["diff", "--exit-code", "HEAD", "--", "versions.env"]
@@ -129,7 +129,7 @@ def check_for_duplicate():
         [
             "pr", "list",
             "--state", "OPEN",
-            "--json", "number,headRefName",
+            "--json", "number",
             "--jq", ".[]",
         ],
         check=False,
@@ -160,20 +160,29 @@ def check_for_duplicate():
     base_ref = resolve_base_ref()
 
     for pr in prs:
-        number = pr["number"]
-        branch = pr["headRefName"]
-        print(f"Checking PR #{number} ({branch})...")
+        if not isinstance(pr, dict):
+            raise RuntimeError(f"Invalid pull request metadata: {pr!r}")
+        number = pr.get("number")
+        if type(number) is not int or number <= 0:
+            raise RuntimeError(f"Invalid pull request number: {number!r}")
+        print(f"Checking PR #{number}...")
 
-        # Fetch the branch pinned to its remote-tracking ref. A plain
-        # "git fetch origin <branch>" only updates FETCH_HEAD and never creates
-        # refs/remotes/origin/<branch>, so the diff target below would not
-        # resolve in a fresh shallow checkout.
-        run_git(["fetch", "origin", f"{branch}:refs/remotes/origin/{branch}"])
+        # GitHub exposes every open PR head through refs/pull/<number>/head,
+        # including fork heads that do not exist as branches on origin. Fetch
+        # it into a deterministic local ref without checking out or executing
+        # any contributor code.
+        pr_ref = f"refs/remotes/origin/pr-{number}-head"
+        run_git([
+            "fetch",
+            "--no-tags",
+            "origin",
+            f"refs/pull/{number}/head:{pr_ref}",
+        ])
 
         # Compare the substantive changes between the PR branch and the base
         # ref vs the working tree and the base ref. This way we compare what
         # each changes relative to the common base, ignoring GB10_BUILD.
-        branch_diff_vs_main = get_versions_diff(branch, base_ref)
+        branch_diff_vs_main = get_versions_diff(pr_ref, base_ref)
         if diff_has_substantive_changes(branch_diff_vs_main) != diff_has_substantive_changes(working_diff):
             print(f"PR #{number} has different versions.env -- not a match")
             continue

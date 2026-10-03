@@ -14,6 +14,10 @@ Scenario coverage:
   - Single PR with same UV but different GB10_BUILD (skip - same substantive, GB10 ignored)
   - Dependabot PR with matching versions.env change (skip)
   - Dependabot PR with no versions.env change (proceed - action-only PR does not cover the update)
+  - Fork PR whose head branch does not exist on the upstream remote (proceed)
+  - Fork PR followed by a matching same-repository PR (skip)
+  - PRs with identical head branch names from separate repositories (skip)
+  - Head metadata is not required to fetch a pull request (skip)
   - Larger PR includes the candidate update as a subset (skip)
   - PR changes the same variable to a different value (proceed)
   - Candidate has more changes than the PR (partial coverage, proceed)
@@ -24,6 +28,8 @@ Scenario coverage:
   - Multiple PRs, all match (skip - first match short-circuits)
   - gh returns single object not array (skip)
   - gh pr list errors/network issue (error)
+  - Malformed PR metadata and invalid PR numbers (error)
+  - No locally resolvable base ref (error)
   - gh returns empty array (proceed)
   - git fetch fails (error)
   - Workflow invokes the script through Python and maps all exit codes correctly
@@ -143,6 +149,7 @@ index abc1234..def5678 100644
 """
 
 if __name__ == "__main__":
+    import json
     import os
     import subprocess
     import tempfile
@@ -240,6 +247,38 @@ if __name__ == "__main__":
             10,  # proceed (an action-only dependabot PR does not cover the uv update)
         ),
         (
+            "Fork PR head is fetched through its GitHub pull ref",
+            '{"number": 151, "headRefName": "fix/dsv4-sm120-sparse-prefill-bump"}',
+            {"working_diff": UV_AND_GB10_DIFF,
+             "branch_diffs_vs_base": {"fix/dsv4-sm120-sparse-prefill-bump": VLLM_AND_GB10_DIFF},
+             "fetch_exit": 0},
+            10,  # proceed (the fork PR does not include the candidate update)
+        ),
+        (
+            "Fork PR is scanned before a matching same-repository PR",
+            '{"number": 151, "headRefName": "fix/dsv4-sm120-sparse-prefill-bump"}\n{"number": 150, "headRefName": "deps/bump-latest"}',
+            {"working_diff": UV_AND_GB10_DIFF,
+             "pr_diffs_by_number": {151: VLLM_AND_GB10_DIFF, 150: UV_AND_GB10_DIFF},
+             "fetch_exit": 0},
+            0,  # skip (the second PR covers the candidate update)
+        ),
+        (
+            "Separate PRs with the same head name use distinct pull refs",
+            '{"number": 151, "headRefName": "shared-branch"}\n{"number": 150, "headRefName": "shared-branch"}',
+            {"working_diff": UV_AND_GB10_DIFF,
+             "pr_diffs_by_number": {151: VLLM_AND_GB10_DIFF, 150: UV_AND_GB10_DIFF},
+             "fetch_exit": 0},
+            0,  # skip (the second PR covers the candidate update)
+        ),
+        (
+            "Head branch metadata is unnecessary for canonical pull refs",
+            '{"number": 42}',
+            {"working_diff": UV_AND_GB10_DIFF,
+             "pr_diffs_by_number": {42: UV_AND_GB10_DIFF},
+             "fetch_exit": 0},
+            0,  # skip (only the PR number is required)
+        ),
+        (
             "Larger PR includes the candidate update as a subset (skip)",
             '{"number": 42, "headRefName": "deps/bump-42"}',
             {"working_diff": UV_AND_GB10_DIFF,
@@ -296,6 +335,16 @@ if __name__ == "__main__":
              "fetch_exit": 0,
              "origin_main_available": False},
             10,  # proceed (different substantive content under HEAD base)
+        ),
+        (
+            "No locally resolvable base ref fails closed",
+            '{"number": 42, "headRefName": "deps/bump-42"}',
+            {"working_diff": UV_AND_GB10_DIFF,
+             "branch_diffs_vs_base": {"deps/bump-42": UV_AND_GB10_DIFF},
+             "fetch_exit": 0,
+             "origin_main_available": False,
+             "head_available": False},
+            2,  # error (the duplicate check cannot compare against main)
         ),
         (
             "git diff fails for a PR branch (fail closed, not a silent duplicate)",
@@ -366,6 +415,46 @@ if __name__ == "__main__":
             2,  # error (the duplicate check was inconclusive)
         ),
         (
+            "gh returns malformed JSON",
+            "not-json",
+            {"working_diff": UV_AND_GB10_DIFF,
+             "branch_diffs_vs_base": {},
+             "fetch_exit": 0},
+            2,  # error (the duplicate check was inconclusive)
+        ),
+        (
+            "PR metadata is not an object",
+            "42",
+            {"working_diff": UV_AND_GB10_DIFF,
+             "branch_diffs_vs_base": {},
+             "fetch_exit": 0},
+            2,  # error (the duplicate check was inconclusive)
+        ),
+        (
+            "PR number is missing",
+            '{"headRefName": "deps/bump-42"}',
+            {"working_diff": UV_AND_GB10_DIFF,
+             "branch_diffs_vs_base": {},
+             "fetch_exit": 0},
+            2,  # error (the duplicate check was inconclusive)
+        ),
+        (
+            "PR number is a boolean",
+            '{"number": true}',
+            {"working_diff": UV_AND_GB10_DIFF,
+             "branch_diffs_vs_base": {},
+             "fetch_exit": 0},
+            2,  # error (the duplicate check was inconclusive)
+        ),
+        (
+            "PR number is not positive",
+            '{"number": 0}',
+            {"working_diff": UV_AND_GB10_DIFF,
+             "branch_diffs_vs_base": {},
+             "fetch_exit": 0},
+            2,  # error (the duplicate check was inconclusive)
+        ),
+        (
             "gh returns empty array (no matching PRs)",
             "[]",
             {"working_diff": UV_AND_GB10_DIFF,
@@ -412,8 +501,38 @@ if __name__ == "__main__":
             fetch_exit = fake_git_behaviors.get("fetch_exit", 0)
             gh_exit = fake_git_behaviors.get("gh_exit", 0)
             origin_main_available = fake_git_behaviors.get("origin_main_available", True)
+            head_available = fake_git_behaviors.get("head_available", True)
             error_branches = set(fake_git_behaviors.get("branch_diff_errors", []))
             working_diff_error = fake_git_behaviors.get("working_diff_error", False)
+            pr_metadata = []
+            for line in fake_gh_stdout.splitlines():
+                if line.strip():
+                    try:
+                        item = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    pr_metadata.extend(item if isinstance(item, list) else [item])
+            pr_refs = {
+                f"refs/remotes/origin/pr-{pr['number']}-head": pr.get("headRefName")
+                for pr in pr_metadata
+                if isinstance(pr, dict) and type(pr.get("number")) is int
+            }
+            pr_diffs_by_number = fake_git_behaviors.get("pr_diffs_by_number", {})
+            branch_diffs_by_ref = {
+                ref: pr_diffs_by_number.get(
+                    int(ref.removeprefix("refs/remotes/origin/pr-").removesuffix("-head")),
+                    branch_diffs_vs_base.get(branch),
+                )
+                for ref, branch in pr_refs.items()
+                if (
+                    int(ref.removeprefix("refs/remotes/origin/pr-").removesuffix("-head"))
+                    in pr_diffs_by_number
+                    or branch in branch_diffs_vs_base
+                )
+            }
+            error_refs = {
+                ref for ref, branch in pr_refs.items() if branch in error_branches
+            }
             # The script prefers origin/main when the ref resolves, otherwise
             # falls back to HEAD (the shallow create-pr checkout case).
             base_ref = "origin/main" if origin_main_available else "HEAD"
@@ -452,9 +571,15 @@ if __name__ == "__main__":
                     f.write("  exit 0\n")
                 f.write("fi\n")
 
-                # Handle "git fetch origin <branch>"
-                f.write('if [ "$1" = "fetch" ] && [ "$2" = "origin" ] && [ $# -eq 3 ]; then\n')
-                f.write(f"  exit {fetch_exit}\n")
+                # Require the canonical GitHub pull ref, which works for both
+                # same-repository and fork pull requests.
+                f.write('if [ "$1" = "fetch" ] && [ "$2" = "--no-tags" ] && [ "$3" = "origin" ] && [ $# -eq 4 ]; then\n')
+                f.write('  case "$4" in\n')
+                for ref in pr_refs:
+                    number = ref.removeprefix("refs/remotes/origin/pr-").removesuffix("-head")
+                    f.write(f'    "refs/pull/{number}/head:{ref}") exit {fetch_exit} ;;\n')
+                f.write('    *) exit 1 ;;\n')
+                f.write('  esac\n')
                 f.write("fi\n")
 
                 # Handle "git rev-parse --verify --quiet origin/main" (base resolution)
@@ -463,26 +588,26 @@ if __name__ == "__main__":
                 f.write("fi\n")
                 # Handle "git rev-parse --verify --quiet HEAD" (base fallback)
                 f.write('if [ "$1" = "rev-parse" ] && [ "$2" = "--verify" ] && [ "$3" = "--quiet" ] && [ "$4" = "HEAD" ]; then\n')
-                f.write("  exit 0\n")
+                f.write(f"  exit {0 if head_available else 1}\n")
                 f.write("fi\n")
 
-                # Handle "git diff --exit-code <base> origin/<branch> -- versions.env"
-                f.write('if [ "$1" = "diff" ] && [ "$2" = "--exit-code" ] && [ "$3" = "' + base_ref + '" ] && [[ "$4" =~ ^origin/ ]] && [ "$5" = "--" ] && [ "$6" = "versions.env" ] && [ $# -eq 6 ]; then\n')
-                if branch_diffs_vs_base:
+                # Handle "git diff --exit-code <base> <local-pull-ref> -- versions.env"
+                f.write('if [ "$1" = "diff" ] && [ "$2" = "--exit-code" ] && [ "$3" = "' + base_ref + '" ] && [[ "$4" =~ ^refs/remotes/origin/pr-[0-9]+-head$ ]] && [ "$5" = "--" ] && [ "$6" = "versions.env" ] && [ $# -eq 6 ]; then\n')
+                if branch_diffs_by_ref:
                     i=0
-                    for br, diff_content in branch_diffs_vs_base.items():
+                    for ref, diff_content in branch_diffs_by_ref.items():
                         prefix = "elif" if i > 0 else "if"
                         i+=1
-                        if br in error_branches:
-                            f.write(f'  {prefix} [ "$4" = "origin/{br}" ]; then\n')
+                        if ref in error_refs:
+                            f.write(f'  {prefix} [ "$4" = "{ref}" ]; then\n')
                             f.write('    echo "fatal: ambiguous argument" >&2\n')
                             f.write("    exit 128\n")
                         elif diff_content is not None:
-                            f.write(f'  {prefix} [ "$4" = "origin/{br}" ]; then\n')
+                            f.write(f'  {prefix} [ "$4" = "{ref}" ]; then\n')
                             f.write(f'    cat << \'ENDDIFF\'\n{diff_content}\nENDDIFF\n')
                             f.write("    exit 1\n")
                         else:
-                            f.write(f'  {prefix} [ "$4" = "origin/{br}" ]; then\n')
+                            f.write(f'  {prefix} [ "$4" = "{ref}" ]; then\n')
                             f.write("    exit 0\n")
                     f.write("  else\n")
                     f.write("    exit 1\n")
@@ -569,6 +694,14 @@ if __name__ == "__main__":
     check(
         '"--search"' not in source,
         "Script must not filter PRs by branch namespace (would miss dependabot PRs)",
+    )
+    check(
+        'refs/pull/{number}/head' in source,
+        "Script must fetch each PR through GitHub's canonical pull ref",
+    )
+    check(
+        'headRefName' not in source,
+        "Script must not use an upstream branch name to fetch fork pull requests",
     )
     check(
         "<= substantive_lines(branch_diff_vs_main)" in source,

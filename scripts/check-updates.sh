@@ -495,6 +495,11 @@ fi
 log "Fetching vLLM ${VLLM_TARGET} requirements for cross-checks..."
 load_vllm_reqs "${VLLM_TARGET}"
 
+# The Dockerfile calls vLLM helper scripts directly. Fail before generating a
+# dependency PR when an upstream release moves one of those source paths.
+log "Validating vLLM ${VLLM_TARGET} source layout..."
+bash "${REPO_ROOT}/scripts/validate-vllm-source-layout.sh" --tag "${VLLM_TARGET}"
+
 NCCL_LATEST=$(gh_latest_tag "NVIDIA/nccl")
 report "NCCL (NCCL_REF)" "NCCL_REF" "${NCCL_REF}" "${NCCL_LATEST}"
 

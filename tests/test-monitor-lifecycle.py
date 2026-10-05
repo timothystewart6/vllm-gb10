@@ -172,6 +172,17 @@ def test_upstream_values_use_the_atomic_validated_writer():
         assert f'"{key}=${{{key}}}"' in bump
 
 
+def test_vllm_source_layout_is_checked_before_dependency_generation():
+    check_updates = read("scripts/check-updates.sh")
+    bump = read("scripts/bump.sh")
+    validator = 'scripts/validate-vllm-source-layout.sh'
+
+    assert validator in check_updates
+    assert '"${REPO_ROOT}/scripts/validate-vllm-source-layout.sh" --tag "${VLLM_TARGET}"' in check_updates
+    assert validator in bump
+    assert '"${REPO_ROOT}/scripts/validate-vllm-source-layout.sh" --commit "${VLLM_COMMIT}"' in bump
+
+
 def test_workflows_preserve_generated_pr_handoff_order():
     monitor = read(".github/workflows/monitor-upstream-releases.yaml")
     create_job = monitor.split("\n  create-pr:", 1)[1]
@@ -229,6 +240,7 @@ def main():
         test_every_monitored_change_reaches_build_and_release_metadata,
         test_uv_update_reaches_bootstrap_lock_and_advances_build,
         test_upstream_values_use_the_atomic_validated_writer,
+        test_vllm_source_layout_is_checked_before_dependency_generation,
         test_workflows_preserve_generated_pr_handoff_order,
         test_lifecycle_guidance_is_visible_to_agents_and_humans,
     ]

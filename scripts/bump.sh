@@ -138,6 +138,11 @@ log "Resolving VLLM_COMMIT for ${VLLM_REF}..."
 VLLM_COMMIT=$(resolve_git_sha "${VLLM_REPO}" "${VLLM_REF}")
 log "  VLLM_COMMIT=${VLLM_COMMIT}"
 
+# The monitor checked the candidate tag. Recheck the resolved immutable commit
+# before lock generation so a moved tag cannot bypass the source-layout guard.
+log "Validating vLLM source layout at ${VLLM_COMMIT}..."
+bash "${REPO_ROOT}/scripts/validate-vllm-source-layout.sh" --commit "${VLLM_COMMIT}"
+
 log "Resolving FLASHINFER_COMMIT for ${FLASHINFER_REF}..."
 FLASHINFER_COMMIT=$(resolve_git_sha "${FLASHINFER_REPO}" "${FLASHINFER_REF}")
 log "  FLASHINFER_COMMIT=${FLASHINFER_COMMIT}"

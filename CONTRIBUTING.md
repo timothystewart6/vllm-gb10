@@ -94,6 +94,12 @@ The full lifecycle is:
 7. Merge the dependency PR. The `versions.env` or lockfile change triggers the
    trusted `main` image build, verification, and release jobs.
 
+Before writing a candidate, the monitor verifies that the target vLLM tag
+still contains the helper paths the Dockerfile invokes. `bump.sh` repeats that
+check against its resolved commit before generating locks. A moved or renamed
+helper fails the read-only monitor or trusted generator before it can reach an
+image build.
+
 Tests for monitor detection must use an explicit deterministic baseline for
 every monitored key. They must not inherit mutable production values while
 also asserting fixed mock outputs or update counts. The baseline key set must

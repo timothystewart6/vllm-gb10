@@ -60,6 +60,12 @@ if os.environ.get("FAKE_FAIL_ALL") == "1":
 if "raw.githubusercontent.com" in url:
     if os.environ.get("FAKE_FAIL_RAW") == "1":
         sys.exit(22)
+    missing_helper = os.environ.get("FAKE_MISSING_VLLM_HELPER")
+    if missing_helper and url.endswith(f"/{missing_helper}"):
+        sys.exit(22)
+    empty_helper = os.environ.get("FAKE_EMPTY_VLLM_HELPER")
+    if empty_helper and url.endswith(f"/{empty_helper}"):
+        sys.exit(0)
     if "/requirements/common.txt" in url:
         print(os.environ.get("FAKE_COMMON_REQUIREMENTS", "transformers>=4.45.0"))
     elif os.environ.get("FAKE_REQUIREMENTS"):
@@ -151,6 +157,10 @@ def setup_case(directory, source_versions=None):
     (root / "locks").mkdir()
     shutil.copy2(SOURCE_ROOT / "scripts" / "check-updates.sh", root / "scripts")
     shutil.copy2(
+        SOURCE_ROOT / "scripts" / "validate-vllm-source-layout.sh",
+        root / "scripts",
+    )
+    shutil.copy2(
         SOURCE_ROOT / "scripts" / "validate-monitor-update.py",
         root / "scripts",
     )
@@ -190,6 +200,21 @@ def run_check(root, env, *arguments):
     )
 
 
+def run_layout(root, env, *arguments):
+    return subprocess.run(
+        [
+            "bash",
+            str(root / "scripts" / "validate-vllm-source-layout.sh"),
+            *arguments,
+        ],
+        cwd=Path(root).parent,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+
 def parse_env(path):
     values = {}
     for line in path.read_text().splitlines():
@@ -217,6 +242,63 @@ def test_target_vllm_requirements_are_applied():
         assert values["QUACK_KERNELS_VERSION"] == "9.3.0"
         assert (root / "versions.env").stat().st_mode & 0o777 == 0o644
         assert "9 component(s) updated in versions.env" in result.stdout
+
+
+def test_vllm_source_layout_accepts_tags_and_resolved_commits():
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory)
+        tag_result = run_layout(root, env, "--tag", "v0.26.0")
+        commit_result = run_layout(root, env, "--commit", "a" * 40)
+
+        assert tag_result.returncode == 0, tag_result.stderr
+        assert commit_result.returncode == 0, commit_result.stderr
+
+
+def test_vllm_source_layout_rejects_missing_or_empty_helpers():
+    for failure_key in (
+        "FAKE_MISSING_VLLM_HELPER",
+        "FAKE_EMPTY_VLLM_HELPER",
+    ):
+        for helper in ("tools/build_rust.sh", "tools/use_existing_torch.py"):
+            with tempfile.TemporaryDirectory() as directory:
+                root, env = setup_case(directory)
+                env[failure_key] = helper
+                result = run_layout(root, env, "--tag", "v0.26.0")
+
+                assert result.returncode != 0
+                assert helper in result.stderr
+                assert "source layout mismatch" in result.stderr
+
+
+def test_vllm_source_layout_rejects_invalid_refs_and_fetch_failures():
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory)
+        for arguments in (
+            ("--tag", "v0.26.0/../../untrusted"),
+            ("--commit", "not-a-commit"),
+        ):
+            result = run_layout(root, env, *arguments)
+            assert result.returncode != 0
+            assert "Invalid vLLM" in result.stderr
+
+        env["FAKE_FAIL_RAW"] = "1"
+        result = run_layout(root, env, "--commit", "a" * 40)
+        assert result.returncode != 0
+        assert "source layout mismatch" in result.stderr
+
+
+def test_monitor_rejects_an_update_with_missing_vllm_helper():
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory)
+        env["FAKE_VLLM_TAG"] = "v0.26.1"
+        env["FAKE_MISSING_VLLM_HELPER"] = "tools/build_rust.sh"
+        before = (root / "versions.env").read_bytes()
+
+        result = run_check(root, env, "--update")
+
+        assert result.returncode != 0
+        assert "source layout mismatch" in result.stderr
+        assert (root / "versions.env").read_bytes() == before
 
 
 def test_quack_aligns_to_vllm_pin_on_update():
@@ -857,6 +939,10 @@ def test_mutating_modes_are_mutually_exclusive():
 def main():
     tests = [
         test_target_vllm_requirements_are_applied,
+        test_vllm_source_layout_accepts_tags_and_resolved_commits,
+        test_vllm_source_layout_rejects_missing_or_empty_helpers,
+        test_vllm_source_layout_rejects_invalid_refs_and_fetch_failures,
+        test_monitor_rejects_an_update_with_missing_vllm_helper,
         test_repository_version_drift_does_not_change_fixture_results,
         test_every_monitored_repository_value_is_normalized,
         test_fixture_preserves_non_monitored_values_and_structure,

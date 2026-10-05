@@ -181,7 +181,7 @@ WORKDIR /workspace/vllm
 ENV CARGO_BUILD_JOBS=4
 RUN --mount=type=cache,target=/root/.cargo/registry \
     --mount=type=cache,target=/root/.cargo/git \
-    bash build_rust.sh
+    bash tools/build_rust.sh
 
 ############################################################
 # STAGE 3: vllm-builder - build vLLM wheel
@@ -211,7 +211,7 @@ RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
     _j="${BUILD_JOBS:-$(nproc)}" \
  && export MAX_JOBS="${_j}" CMAKE_BUILD_PARALLEL_LEVEL="${_j}" \
  && if [ -z "${SOURCE_DATE_EPOCH}" ]; then unset SOURCE_DATE_EPOCH; fi \
- && python3 use_existing_torch.py \
+ && python3 tools/use_existing_torch.py \
  && uv build --no-build-isolation --wheel . --out-dir=/wheels -v
 
 # NOTE: No patches, no PR reverts, no requirements/cuda.txt edits. If upstream

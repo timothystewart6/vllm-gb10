@@ -25,6 +25,17 @@ def test_flashinfer_no_isolation_builds_use_system_python():
     assert "uv build --no-build-isolation" not in stage
 
 
+def test_vllm_builders_use_vllm_tools_layout():
+    """vLLM v0.31.0 moved these build helpers under tools/."""
+    dockerfile = (ROOT / "Dockerfile").read_text()
+
+    assert "bash tools/build_rust.sh" in dockerfile
+    assert "bash build_rust.sh" not in dockerfile
+    assert "python3 tools/use_existing_torch.py" in dockerfile
+    assert "python3 use_existing_torch.py" not in dockerfile
+
+
 if __name__ == "__main__":
     test_flashinfer_no_isolation_builds_use_system_python()
-    print("PASS: FlashInfer builds use the prepared system Python")
+    test_vllm_builders_use_vllm_tools_layout()
+    print("PASS: Dockerfile build helper contracts")

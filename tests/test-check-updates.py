@@ -247,10 +247,17 @@ def test_target_vllm_requirements_are_applied():
 def test_vllm_source_layout_accepts_tags_and_resolved_commits():
     with tempfile.TemporaryDirectory() as directory:
         root, env = setup_case(directory)
-        tag_result = run_layout(root, env, "--tag", "v0.26.0")
+        for tag in (
+            "v0.26.0",
+            "v0.26.0rc1",
+            "v0.26.0.post1",
+            "v0.26.0.post1-1",
+        ):
+            tag_result = run_layout(root, env, "--tag", tag)
+            assert tag_result.returncode == 0, tag_result.stderr
+
         commit_result = run_layout(root, env, "--commit", "a" * 40)
 
-        assert tag_result.returncode == 0, tag_result.stderr
         assert commit_result.returncode == 0, commit_result.stderr
 
 

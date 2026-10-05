@@ -20,7 +20,7 @@ mode="$1"
 value="$2"
 case "${mode}" in
   --tag)
-    if ! [[ "${value}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(a[0-9]+|b[0-9]+|rc[0-9]+)?$ ]]; then
+    if ! [[ "${value}" =~ ^v[0-9]+(\.[0-9]+)+(a[0-9]+|b[0-9]+|rc[0-9]+|\.post[0-9]+)?(-[0-9]+)?$ ]]; then
       die "Invalid vLLM release tag ${value}."
     fi
     upstream_ref="refs/tags/${value}"

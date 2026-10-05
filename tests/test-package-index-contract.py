@@ -55,20 +55,18 @@ def test_quack_is_pinned_for_cutlass_dsl_compatibility():
 
 
 def test_transformers_is_a_monitored_runtime_seed():
-    # transformers is a floor-only vLLM dep (transformers>=X) with no
-    # authoritative pin, so a stale runtime-lock seed is invisible to the
-    # monitor and the image drifts behind newer model-architecture support
-    # (see issues 97 and 105). Wiring it as an explicit monitored seed means
-    # check-updates detects a newer PyPI release and run-bump regenerates the
-    # runtime lock, preventing silent model-loading breakage.
+    # Transformers is a monitored runtime seed. The update checker selects the
+    # newest release that satisfies the range in vLLM common requirements.
     assert env_value("TRANSFORMERS_VERSION")
 
     bump = read("scripts/bump.sh")
     assert "transformers==${TRANSFORMERS_VERSION}" in bump
 
     monitor = read("scripts/check-updates.sh")
+    assert 'curl -fsSL "${base}/requirements/common.txt"' in monitor
+    assert 'vllm_requirement "transformers"' in monitor
+    assert 'pypi_latest_compatible "transformers"' in monitor
     assert 'pypi_latest "transformers"' in monitor
-    assert 'report "Transformers (TRANSFORMERS_VERSION)"' in monitor
 
 
 def test_vllm_audio_extra_is_a_runtime_seed():

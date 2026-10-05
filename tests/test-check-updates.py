@@ -60,7 +60,9 @@ if os.environ.get("FAKE_FAIL_ALL") == "1":
 if "raw.githubusercontent.com" in url:
     if os.environ.get("FAKE_FAIL_RAW") == "1":
         sys.exit(22)
-    if os.environ.get("FAKE_REQUIREMENTS"):
+    if "/requirements/common.txt" in url:
+        print(os.environ.get("FAKE_COMMON_REQUIREMENTS", "transformers>=4.45.0"))
+    elif os.environ.get("FAKE_REQUIREMENTS"):
         print(os.environ["FAKE_REQUIREMENTS"])
     elif "/v0.26.0/" in url and os.environ.get("FAKE_CURRENT_REQUIREMENTS") != "1":
         print("""torch==9.9.0
@@ -112,7 +114,13 @@ elif "/pypi/triton/json" in url:
 elif "/pypi/nvidia-nvshmem-cu13/json" in url:
     print(json.dumps({"info": {"version": "3.4.5"}}))
 elif "/pypi/transformers/json" in url:
-    print(json.dumps({"info": {"version": os.environ.get("FAKE_TRANSFORMERS_VERSION", "5.8.1")}}))
+    latest = os.environ.get("FAKE_TRANSFORMERS_VERSION", "5.8.1")
+    releases = os.environ.get("FAKE_TRANSFORMERS_RELEASES", f"5.8.1,{latest}")
+    print(json.dumps({
+        "info": {"version": latest},
+        "releases": {version: [{"filename": f"transformers-{version}.whl"}]
+                     for version in releases.split(",")},
+    }))
 elif "/pypi/" in url:
     print(json.dumps({"info": {"version": "0.0.0"}}))
 elif "hub.docker.com" in url:
@@ -251,6 +259,100 @@ def test_transformers_drift_is_detected_and_bumped():
         values = parse_env(root / "versions.env")
         assert values["TRANSFORMERS_VERSION"] == "5.16.1"
         assert "Transformers (TRANSFORMERS_VERSION)" in result.stdout
+
+
+def test_transformers_update_respects_vllm_upper_bound():
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory)
+        versions_path = root / "versions.env"
+        versions_text = versions_path.read_text(encoding="utf-8").replace(
+            "TRANSFORMERS_VERSION=5.8.1",
+            "TRANSFORMERS_VERSION=5.18.0",
+            1,
+        ).replace("VLLM_REF=v0.26.0", "VLLM_REF=v0.31.0", 1)
+        versions_path.write_text(versions_text, encoding="utf-8")
+        env["FAKE_VLLM_TAG"] = "v0.31.0"
+        env["FAKE_COMMON_REQUIREMENTS"] = "transformers >= 5.10.4, < 5.18.0"
+        env["FAKE_TRANSFORMERS_VERSION"] = "5.18.0"
+        env["FAKE_TRANSFORMERS_RELEASES"] = "5.10.4,5.16.1,5.17.0,5.18.0,5.19.0rc1"
+
+        before = (root / "versions.env").read_bytes()
+        result = run_check(root, env)
+        assert result.returncode == 0, result.stderr
+        assert "compatible=5.17.0" in result.stdout
+        assert "vLLM: >= 5.10.4, < 5.18.0" in result.stdout
+        assert (root / "versions.env").read_bytes() == before
+
+        result = run_check(root, env, "--update")
+        assert result.returncode == 0, result.stderr
+        assert parse_env(root / "versions.env")["TRANSFORMERS_VERSION"] == "5.17.0"
+
+
+def test_transformers_compatible_pin_is_current_even_when_pypi_is_newer():
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory)
+        versions_path = root / "versions.env"
+        versions_text = versions_path.read_text(encoding="utf-8").replace(
+            "TRANSFORMERS_VERSION=5.8.1",
+            "TRANSFORMERS_VERSION=5.17.0",
+            1,
+        ).replace("VLLM_REF=v0.26.0", "VLLM_REF=v0.31.0", 1)
+        versions_path.write_text(versions_text, encoding="utf-8")
+        env["FAKE_VLLM_TAG"] = "v0.31.0"
+        env["FAKE_COMMON_REQUIREMENTS"] = "transformers>=5.10.4,<5.18.0"
+        env["FAKE_TRANSFORMERS_VERSION"] = "5.18.0"
+        env["FAKE_TRANSFORMERS_RELEASES"] = "5.10.4,5.17.0,5.18.0"
+
+        result = run_check(root, env)
+        assert result.returncode == 0, result.stderr
+        assert "satisfies vLLM: >=5.10.4,<5.18.0" in result.stdout
+        assert "OK      Transformers (TRANSFORMERS_VERSION)" in result.stdout
+
+
+def test_transformers_requirement_with_no_compatible_release_fails_closed():
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory)
+        env["FAKE_COMMON_REQUIREMENTS"] = "transformers>=6.0.0,<6.1.0"
+        env["FAKE_TRANSFORMERS_VERSION"] = "5.18.0"
+        env["FAKE_TRANSFORMERS_RELEASES"] = "5.17.0,5.18.0"
+        before = (root / "versions.env").read_bytes()
+
+        result = run_check(root, env, "--update")
+        assert result.returncode != 0
+        assert "no stable release satisfying the vLLM requirement" in result.stderr
+        assert (root / "versions.env").read_bytes() == before
+
+
+def test_transformers_unsupported_requirement_fails_closed():
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory)
+        env["FAKE_COMMON_REQUIREMENTS"] = "transformers>="
+        env["FAKE_TRANSFORMERS_VERSION"] = "5.18.0"
+        env["FAKE_TRANSFORMERS_RELEASES"] = "5.10.0,5.18.0"
+
+        result = run_check(root, env)
+        assert result.returncode != 0
+        assert "unsupported requirement specifier" in result.stderr
+
+
+def test_transformers_compatible_release_operator_uses_correct_upper_bound():
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory)
+        versions_path = root / "versions.env"
+        versions_text = versions_path.read_text(encoding="utf-8").replace(
+            "VLLM_REF=v0.26.0",
+            "VLLM_REF=v0.31.0",
+            1,
+        )
+        versions_path.write_text(versions_text, encoding="utf-8")
+        env["FAKE_VLLM_TAG"] = "v0.31.0"
+        env["FAKE_COMMON_REQUIREMENTS"] = "transformers~=5.10.4"
+        env["FAKE_TRANSFORMERS_VERSION"] = "5.11.0"
+        env["FAKE_TRANSFORMERS_RELEASES"] = "5.10.4,5.10.9,5.11.0"
+
+        result = run_check(root, env, "--update")
+        assert result.returncode == 0, result.stderr
+        assert parse_env(root / "versions.env")["TRANSFORMERS_VERSION"] == "5.10.9"
 
 
 def test_repository_version_drift_does_not_change_fixture_results():
@@ -672,7 +774,7 @@ def test_requirement_fetch_failure_is_fatal():
         env["FAKE_FAIL_RAW"] = "1"
         result = run_check(root, env)
         assert result.returncode != 0
-        assert "Could not fetch vLLM requirements" in result.stderr
+        assert "Could not fetch vLLM common requirements" in result.stderr
 
 
 def test_invalid_vllm_release_tag_is_fatal():
@@ -780,6 +882,11 @@ def main():
         test_mutating_modes_are_mutually_exclusive,
         test_quack_aligns_to_vllm_pin_on_update,
         test_transformers_drift_is_detected_and_bumped,
+        test_transformers_update_respects_vllm_upper_bound,
+        test_transformers_compatible_pin_is_current_even_when_pypi_is_newer,
+        test_transformers_requirement_with_no_compatible_release_fails_closed,
+        test_transformers_unsupported_requirement_fails_closed,
+        test_transformers_compatible_release_operator_uses_correct_upper_bound,
     ]
     for test in tests:
         test()

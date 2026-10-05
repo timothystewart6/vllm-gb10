@@ -282,13 +282,19 @@ VLLM_REQS_RAW=""
 load_vllm_reqs() {
   local tag="$1"
   local base="https://raw.githubusercontent.com/vllm-project/vllm/refs/tags/${tag}"
-  VLLM_REQS_RAW="$(
+  local common_requirements
+  if ! common_requirements=$(curl -fsSL "${base}/requirements/common.txt" 2>/dev/null); then
+    log "Could not fetch vLLM common requirements for ${tag}."
+    return 1
+  fi
+  VLLM_REQS_RAW="${common_requirements}
+$(
     {
       curl -fsSL "${base}/requirements/cuda.txt"       2>/dev/null || true
       printf '\n'
       curl -fsSL "${base}/requirements/build/cuda.txt" 2>/dev/null || true
     }
-  )"
+  )}"
   if [[ -z "${VLLM_REQS_RAW//[[:space:]]/}" ]]; then
     log "Could not fetch vLLM requirements for ${tag}."
     return 1
@@ -309,6 +315,120 @@ for line in sys.stdin:
         print(m.group(1))
         break
 " "${pkg}"
+}
+
+vllm_requirement() {
+  local pkg="$1"
+  printf '%s\n' "${VLLM_REQS_RAW}" \
+    | python3 -c '
+import re
+import sys
+
+pattern = re.compile(
+    r"^\s*" + re.escape(sys.argv[1]) + r"\s*(.+?)\s*(?:#.*)?$",
+    re.IGNORECASE,
+)
+matches = []
+for line in sys.stdin:
+    match = pattern.match(line)
+    if match:
+        matches.append(match.group(1).split(";", 1)[0].strip())
+if len(matches) > 1:
+    raise SystemExit(f"multiple requirements found for {sys.argv[1]}")
+if matches:
+    print(matches[0])
+' "${pkg}"
+}
+
+pypi_latest_compatible() {
+  local pkg="$1"
+  local requirement="$2"
+  curl -fsSL "https://pypi.org/pypi/${pkg}/json" \
+    | python3 -c '
+import json
+import re
+import sys
+
+requirement, package = sys.argv[1:]
+
+def version_tuple(value):
+    match = re.fullmatch(r"(\d+(?:\.\d+)*)(?:\.post(\d+))?", value)
+    if not match:
+        return None
+    release = tuple(int(part) for part in match.group(1).split("."))
+    return release, int(match.group(2) or 0)
+
+def compare(left, right):
+    left_release, left_post = left
+    right_release, right_post = right
+    width = max(len(left_release), len(right_release))
+    left_release += (0,) * (width - len(left_release))
+    right_release += (0,) * (width - len(right_release))
+    left_value = (left_release, left_post)
+    right_value = (right_release, right_post)
+    return (left_value > right_value) - (left_value < right_value)
+
+def parse_specifiers(text):
+    parsed = []
+    for item in text.split(","):
+        match = re.fullmatch(
+            r"\s*(~=|==|!=|>=|<=|>|<)\s*"
+            r"([0-9]+(?:\.[0-9]+)*(?:\.post[0-9]+)?)\s*",
+            item,
+        )
+        if not match:
+            raise ValueError(f"unsupported requirement specifier {item!r}")
+        operator, raw_version = match.groups()
+        parsed_version = version_tuple(raw_version)
+        if parsed_version is None:
+            raise ValueError(f"unsupported version {raw_version!r}")
+        parsed.append((operator, parsed_version))
+    return parsed
+
+def accepts(candidate, specifiers):
+    for operator, bound in specifiers:
+        result = compare(candidate, bound)
+        if operator == "==" and result != 0:
+            return False
+        if operator == "!=" and result == 0:
+            return False
+        if operator == ">=" and result < 0:
+            return False
+        if operator == "<=" and result > 0:
+            return False
+        if operator == ">" and result <= 0:
+            return False
+        if operator == "<" and result >= 0:
+            return False
+        if operator == "~=":
+            if result < 0:
+                return False
+            release = bound[0]
+            if len(release) > 1:
+                upper = release[:-2] + (release[-2] + 1,)
+            else:
+                upper = (release[0] + 1,)
+            if compare(candidate, (upper, 0)) >= 0:
+                return False
+    return True
+
+try:
+    specifiers = parse_specifiers(requirement)
+    data = json.load(sys.stdin)
+    candidates = []
+    for raw_version, files in data.get("releases", {}).items():
+        files = [file for file in files if not file.get("yanked", False)]
+        if not files:
+            continue
+        candidate = version_tuple(raw_version)
+        if candidate is not None and accepts(candidate, specifiers):
+            candidates.append((candidate, raw_version))
+    if not candidates:
+        raise ValueError("PyPI has no stable release satisfying the vLLM requirement")
+    print(max(candidates, key=lambda item: item[0])[1])
+except (ValueError, TypeError, json.JSONDecodeError) as error:
+    raise SystemExit(f"Could not resolve compatible {package} release: {error}")
+' "${requirement}" "${pkg}"
 }
 
 report() {
@@ -492,13 +612,26 @@ else
     "QuACK kernels (QUACK_KERNELS_VERSION)" "${QUACK_KERNELS_VERSION}"
 fi
 
-# Transformers supplies configuration support for newer model checkpoints
-# (e.g. gemma4_unified). vLLM only declares a floor (transformers>=X), so there
-# is no authoritative vLLM pin to align to. Track PyPI latest like uv so a
-# stale runtime-lock seed becomes a visible, reviewable update. The exact seed
-# is pinned in versions.env and fed into bump.sh's runtime lock.
-TRANSFORMERS_LATEST=$(pypi_latest "transformers")
-report "Transformers (TRANSFORMERS_VERSION)" "TRANSFORMERS_VERSION" "${TRANSFORMERS_VERSION}" "${TRANSFORMERS_LATEST}"
+# Transformers supplies configuration support for newer model checkpoints.
+# Resolve the newest stable release that satisfies vLLM's common requirements.
+TRANSFORMERS_REQUIREMENT=$(vllm_requirement "transformers")
+if [[ -n "${TRANSFORMERS_REQUIREMENT}" ]]; then
+  TRANSFORMERS_LATEST=$(pypi_latest_compatible "transformers" "${TRANSFORMERS_REQUIREMENT}")
+  if [ "${TRANSFORMERS_VERSION}" = "${TRANSFORMERS_LATEST}" ]; then
+    printf '%s %-30s current=%-20s (satisfies vLLM: %s)\n' \
+      "${OK}" "Transformers (TRANSFORMERS_VERSION)" "${TRANSFORMERS_VERSION}" "${TRANSFORMERS_REQUIREMENT}"
+  else
+    printf '%s %-30s current=%-20s compatible=%s (vLLM: %s)\n' \
+      "${OUT}" "Transformers (TRANSFORMERS_VERSION)" "${TRANSFORMERS_VERSION}" "${TRANSFORMERS_LATEST}" "${TRANSFORMERS_REQUIREMENT}"
+    UPDATES=$((UPDATES + 1))
+    if [ "${DO_UPDATE}" -eq 1 ]; then
+      update_env "TRANSFORMERS_VERSION" "${TRANSFORMERS_LATEST}"
+    fi
+  fi
+else
+  TRANSFORMERS_LATEST=$(pypi_latest "transformers")
+  report "Transformers (TRANSFORMERS_VERSION)" "TRANSFORMERS_VERSION" "${TRANSFORMERS_VERSION}" "${TRANSFORMERS_LATEST}"
+fi
 
 # ---------------------------------------------------------------------------
 # CUDA base image - check if the pinned digest is still current for this tag

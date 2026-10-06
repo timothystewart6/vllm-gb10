@@ -20,10 +20,7 @@ EXPECTED_KEYS = {
     "TRANSFORMERS_VERSION", "TRITON_VERSION", "TVM_FFI_VERSION",
     "UV_VERSION", "VLLM_COMMIT", "VLLM_REF", "VLLM_REPO",
 }
-# B12X is deliberately optional during the trusted-main bootstrap. The follow-up
-# input PR makes it required after run-bump.yaml can safely consume it.
-OPTIONAL_BOOTSTRAP_KEYS = {"B12X_VERSION"}
-REQUIRED_KEYS = EXPECTED_KEYS - OPTIONAL_BOOTSTRAP_KEYS
+REQUIRED_KEYS = EXPECTED_KEYS
 KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 VALUE_RE = re.compile(r"^[A-Za-z0-9._:/+@-]+$")
 MAX_VALUE_LENGTH = 2048
@@ -135,11 +132,6 @@ def main() -> int:
         choices=("increment",),
         help="print the schema keys for one GB10_BUILD change role",
     )
-    parser.add_argument(
-        "--has-key",
-        choices=sorted(EXPECTED_KEYS),
-        help="exit successfully only when a validated input is present",
-    )
     parser.add_argument("path", nargs="?", default="versions.env", type=Path)
     args = parser.parse_args()
 
@@ -151,8 +143,6 @@ def main() -> int:
     if args.list_build_inputs:
         print("\n".join(sorted(BUILD_INCREMENT_INPUT_KEYS & values.keys())))
         return 0
-    if args.has_key:
-        return 0 if args.has_key in values else 1
     print(f"Validated {args.path}")
     return 0
 

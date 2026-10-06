@@ -46,11 +46,6 @@ need curl
 # 1. Load current versions.env
 # ---------------------------------------------------------------------------
 python3 "${REPO_ROOT}/scripts/versions_env.py" "${VERSIONS}" >/dev/null
-if python3 "${REPO_ROOT}/scripts/versions_env.py" --has-key B12X_VERSION "${VERSIONS}" >/dev/null; then
-  B12X_ENABLED=1
-else
-  B12X_ENABLED=0
-fi
 set -a
 # shellcheck disable=SC1090
 source "${VERSIONS}"
@@ -148,19 +143,17 @@ log "  VLLM_COMMIT=${VLLM_COMMIT}"
 log "Validating vLLM source layout at ${VLLM_COMMIT}..."
 bash "${REPO_ROOT}/scripts/validate-vllm-source-layout.sh" --commit "${VLLM_COMMIT}"
 
-if [[ "${B12X_ENABLED}" -eq 1 ]]; then
-  log "Validating B12X compatibility policy for vLLM ${VLLM_COMMIT}..."
-  B12X_UPSTREAM_VERSION=$(curl -fsSL --retry 3 \
-    "https://raw.githubusercontent.com/vllm-project/vllm/${VLLM_COMMIT}/setup.py" \
-    | python3 "${REPO_ROOT}/scripts/vllm_optional_extras.py" /dev/stdin) \
-    || die "Could not determine the B12X version declared by vLLM ${VLLM_COMMIT}."
-  B12X_EXPECTED_VERSION=$(python3 "${REPO_ROOT}/scripts/b12x_compatibility.py" \
-    --vllm-ref "${VLLM_REF}" \
-    --upstream-version "${B12X_UPSTREAM_VERSION}") \
-    || die "Could not determine the reviewed B12X compatibility policy for ${VLLM_REF}."
-  [[ "${B12X_VERSION}" == "${B12X_EXPECTED_VERSION}" ]] \
-    || die "B12X_VERSION=${B12X_VERSION} does not match the reviewed B12X compatibility policy (${B12X_EXPECTED_VERSION})."
-fi
+log "Validating B12X compatibility policy for vLLM ${VLLM_COMMIT}..."
+B12X_UPSTREAM_VERSION=$(curl -fsSL --retry 3 \
+  "https://raw.githubusercontent.com/vllm-project/vllm/${VLLM_COMMIT}/setup.py" \
+  | python3 "${REPO_ROOT}/scripts/vllm_optional_extras.py" /dev/stdin) \
+  || die "Could not determine the B12X version declared by vLLM ${VLLM_COMMIT}."
+B12X_EXPECTED_VERSION=$(python3 "${REPO_ROOT}/scripts/b12x_compatibility.py" \
+  --vllm-ref "${VLLM_REF}" \
+  --upstream-version "${B12X_UPSTREAM_VERSION}") \
+  || die "Could not determine the reviewed B12X compatibility policy for ${VLLM_REF}."
+[[ "${B12X_VERSION}" == "${B12X_EXPECTED_VERSION}" ]] \
+  || die "B12X_VERSION=${B12X_VERSION} does not match the reviewed B12X compatibility policy (${B12X_EXPECTED_VERSION})."
 
 log "Resolving FLASHINFER_COMMIT for ${FLASHINFER_REF}..."
 FLASHINFER_COMMIT=$(resolve_git_sha "${FLASHINFER_REPO}" "${FLASHINFER_REF}")
@@ -378,9 +371,7 @@ quack-kernels==${QUACK_KERNELS_VERSION}
 transformers==${TRANSFORMERS_VERSION}
 REQS
 
-if [[ "${B12X_ENABLED}" -eq 1 ]]; then
-  printf 'b12x==%s\n' "${B12X_VERSION}" >> "${TMP_RUNTIME}"
-fi
+printf 'b12x==%s\n' "${B12X_VERSION}" >> "${TMP_RUNTIME}"
 
 # vLLM's "audio" extra, as declared by extras_require["audio"] in vLLM's
 # setup.py at VLLM_COMMIT. Unversioned here because vLLM does not pin them

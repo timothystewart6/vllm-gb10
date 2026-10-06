@@ -53,11 +53,9 @@ def test_every_schema_key_is_emitted_as_a_build_argument():
         f"unexpected={sorted(emitted - VERSIONS_ENV.EXPECTED_KEYS)}"
     )
 
-    assert "B12X_VERSION" in VERSIONS_ENV.OPTIONAL_BOOTSTRAP_KEYS
-    assert "B12X_VERSION" not in VERSIONS_ENV.parse_versions_env(
-        read("versions.env")
-    )
-    assert '--has-key B12X_VERSION "${VERSIONS}"' in build_args
+    assert "B12X_VERSION" in VERSIONS_ENV.REQUIRED_KEYS
+    assert VERSIONS_ENV.parse_versions_env(read("versions.env"))["B12X_VERSION"] == "1.3.0"
+    assert "_arg B12X_VERSION" in build_args
 
 
 def test_every_version_has_a_label_and_release_metadata():

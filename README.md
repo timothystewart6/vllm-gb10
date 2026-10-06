@@ -104,7 +104,7 @@ Each release page lists the exact versions of every component.
 | vllm-rs Rust frontend | built from source, including the axum HTTP server and PyO3 tool-parser module |
 | NVSHMEM, TVM-FFI, TileLang, Numba | exact version |
 | bitsandbytes, accelerate | exact version |
-| transformers, quack-kernels, fastsafetensors, instanttensor | exact version |
+| B12X, transformers, quack-kernels, fastsafetensors, instanttensor | exact version |
 | Ray, uv, and other runtime dependencies | lockfile hash |
 
 All pins live in [`versions.env`](versions.env). All lockfiles live in

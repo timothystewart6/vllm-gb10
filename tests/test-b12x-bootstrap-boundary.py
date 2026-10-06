@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression tests for B12X bootstrap activation boundaries."""
+"""Regression tests for B12X declarative input boundaries."""
 
 import os
 import subprocess
@@ -39,15 +39,18 @@ def main():
     )
 
     build_args = run(["bash", "scripts/build-args.sh"], env)
-    assert "B12X_VERSION" not in build_args
+    assert "--build-arg B12X_VERSION=1.3.0" in build_args
+    assert "99.99.99" not in build_args
 
     metadata = run(["bash", "scripts/render-metadata.sh"], env)
-    assert "\n  b12x:" not in metadata
+    assert '\n  b12x: "1.3.0"' in metadata
+    assert "99.99.99" not in metadata
 
     release_notes = run(["bash", "scripts/generate-release-notes.sh"], env)
-    assert "**B12X**" not in release_notes
+    assert "| **B12X** | 1.3.0 | - |" in release_notes
+    assert "99.99.99" not in release_notes
 
-    print("PASS: inherited B12X_VERSION cannot activate bootstrap consumers")
+    print("PASS: declared B12X_VERSION overrides inherited values")
 
 
 if __name__ == "__main__":

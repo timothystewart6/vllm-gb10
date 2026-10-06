@@ -26,16 +26,12 @@ ALLOWED_UPDATE_KEYS = {
     "UV_VERSION",
     "VLLM_REF",
 }
-BOOTSTRAP_ADDITION_KEYS = {"B12X_VERSION"}
-
-
 def render_expected_candidate(
     base_text: str,
     candidate_values: dict[str, str],
     changed_keys: set[str],
 ) -> str:
     rendered = []
-    base_values = parse_versions_env(base_text)
     for raw_line in base_text.splitlines(keepends=True):
         content = raw_line.rstrip("\r\n")
         line_ending = raw_line[len(content):]
@@ -45,11 +41,6 @@ def render_expected_candidate(
             if key in changed_keys:
                 raw_line = f"{key}={candidate_values[key]}{line_ending}"
         rendered.append(raw_line)
-        if key == "TRANSFORMERS_VERSION" and "B12X_VERSION" in changed_keys \
-                and "B12X_VERSION" not in base_values:
-            rendered.append(
-                f"B12X_VERSION={candidate_values['B12X_VERSION']}{line_ending}"
-            )
     return "".join(rendered)
 
 
@@ -71,7 +62,7 @@ def validate_monitor_update(base_text: str, candidate_text: str) -> set[str]:
         )
     additions = set(candidate_values) - set(base_values)
     removals = set(base_values) - set(candidate_values)
-    if additions - BOOTSTRAP_ADDITION_KEYS:
+    if additions:
         raise VersionsEnvError(
             "release monitor added disallowed keys: " + ", ".join(sorted(additions))
         )

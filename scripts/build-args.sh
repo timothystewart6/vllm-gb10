@@ -16,17 +16,11 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VERSIONS="${REPO_ROOT}/versions.env"
 
-python3 "${REPO_ROOT}/scripts/versions_env.py" "${VERSIONS}" >/dev/null
-if python3 "${REPO_ROOT}/scripts/versions_env.py" --has-key B12X_VERSION "${VERSIONS}" >/dev/null; then
-  B12X_ENABLED=1
-else
-  B12X_ENABLED=0
-fi
+python3 "${REPO_ROOT}/scripts/versions_env.py" "${REPO_ROOT}/versions.env" >/dev/null
 set -a
-# shellcheck disable=SC1090,SC1091
-source "${VERSIONS}"
+# shellcheck disable=SC1091
+source "${REPO_ROOT}/versions.env"
 set +a
 
 _arg() {
@@ -81,9 +75,7 @@ _arg FASTSAFETENSORS_VERSION
 _arg INSTANTTENSOR_VERSION
 _arg BITSANDBYTES_VERSION
 _arg ACCELERATE_VERSION
-if [[ "${B12X_ENABLED}" -eq 1 ]]; then
-  _arg B12X_VERSION
-fi
+_arg B12X_VERSION
 _arg QUACK_KERNELS_VERSION
 _arg TRANSFORMERS_VERSION
 

@@ -180,7 +180,14 @@ def test_vllm_source_layout_is_checked_before_dependency_generation():
     assert validator in check_updates
     assert '"${REPO_ROOT}/scripts/validate-vllm-source-layout.sh" --tag "${VLLM_TARGET}"' in check_updates
     assert validator in bump
-    assert '"${REPO_ROOT}/scripts/validate-vllm-source-layout.sh" --commit "${VLLM_COMMIT}"' in bump
+    bump_validator = (
+        '"${REPO_ROOT}/scripts/validate-vllm-source-layout.sh" '
+        '--commit "${VLLM_COMMIT}"'
+    )
+    assert bump_validator in bump
+    assert bump.index(bump_validator) < bump.index(
+        'log "Generating locks/python-bootstrap.txt..."'
+    )
 
 
 def test_workflows_preserve_generated_pr_handoff_order():

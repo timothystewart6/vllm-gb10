@@ -118,6 +118,7 @@ ENV FLASHINFER_CUDA_ARCH_LIST=${FLASHINFER_CUDA_ARCH_LIST}
 # flashinfer-jit-cache v0.7+ is a shim wheel. Its provider dependencies must
 # target the same CUDA architectures as the FlashInfer source build.
 ENV FLASHINFER_JIT_CACHE_PROVIDER_ARCHS=${FLASHINFER_CUDA_ARCH_LIST}
+ENV FLASHINFER_JIT_CACHE_PROVIDER_ARCH=${FLASHINFER_CUDA_ARCH_LIST}
 
 RUN git clone --recursive ${FLASHINFER_REPO} /workspace/flashinfer \
  && cd /workspace/flashinfer \
@@ -140,6 +141,8 @@ RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
             && { echo "flashinfer-cubin: attempt ${_try}/10 failed (cubin CDN), retrying in ${_wait}s..."; sleep "${_wait}"; } \
             || { echo "flashinfer-cubin: all 10 attempts failed"; exit 1; }; \
     done \
+ && cd ../flashinfer-jit-cache-provider \
+ && uv build --python /usr/bin/python3 --no-build-isolation --wheel . --out-dir=/wheels -v \
  && cd ../flashinfer-jit-cache \
  && uv build --python /usr/bin/python3 --no-build-isolation --wheel . --out-dir=/wheels -v
 

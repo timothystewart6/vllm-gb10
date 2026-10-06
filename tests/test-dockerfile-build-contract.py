@@ -21,7 +21,7 @@ def test_flashinfer_no_isolation_builds_use_system_python():
     stage = match.group(1)
     pinned = "uv build --python /usr/bin/python3 --no-build-isolation"
 
-    assert stage.count(pinned) == 3
+    assert stage.count(pinned) == 4
     assert "uv build --no-build-isolation" not in stage
 
 
@@ -40,6 +40,22 @@ def test_flashinfer_jit_cache_provider_arches_follow_cuda_arch_input():
     assert (
         "ENV FLASHINFER_JIT_CACHE_PROVIDER_ARCHS=${FLASHINFER_CUDA_ARCH_LIST}"
         in stage
+    )
+    assert (
+        "ENV FLASHINFER_JIT_CACHE_PROVIDER_ARCH=${FLASHINFER_CUDA_ARCH_LIST}"
+        in stage
+    )
+    assert "cd ../flashinfer-jit-cache-provider" in stage
+
+    runner = re.search(
+        r"^FROM base AS runner$(.*)$",
+        dockerfile,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert runner, "runner stage not found"
+    assert (
+        "uv pip install --no-deps /fi-wheels/*.whl /vllm-wheels/*.whl"
+        in runner.group(1)
     )
 
 

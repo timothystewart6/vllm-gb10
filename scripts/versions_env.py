@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 EXPECTED_KEYS = {
-    "ACCELERATE_VERSION", "BITSANDBYTES_VERSION", "CUDA_BASE_DIGEST",
+    "ACCELERATE_VERSION", "B12X_VERSION", "BITSANDBYTES_VERSION", "CUDA_BASE_DIGEST",
     "CUDA_BASE_IMAGE", "FASTSAFETENSORS_VERSION", "FLASHINFER_COMMIT",
     "FLASHINFER_CUDA_ARCH_LIST", "FLASHINFER_INDEX_URL", "FLASHINFER_REF",
     "FLASHINFER_REPO", "GB10_BUILD", "INSTANTTENSOR_VERSION", "NCCL_COMMIT",
@@ -20,6 +20,10 @@ EXPECTED_KEYS = {
     "TRANSFORMERS_VERSION", "TRITON_VERSION", "TVM_FFI_VERSION",
     "UV_VERSION", "VLLM_COMMIT", "VLLM_REF", "VLLM_REPO",
 }
+# B12X is deliberately optional during the trusted-main bootstrap. The follow-up
+# input PR makes it required after run-bump.yaml can safely consume it.
+OPTIONAL_BOOTSTRAP_KEYS = {"B12X_VERSION"}
+REQUIRED_KEYS = EXPECTED_KEYS - OPTIONAL_BOOTSTRAP_KEYS
 KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 VALUE_RE = re.compile(r"^[A-Za-z0-9._:/+@-]+$")
 MAX_VALUE_LENGTH = 2048
@@ -95,7 +99,7 @@ def parse_versions_env(text: str) -> dict[str, str]:
                 f"line {line_number}: unsafe or empty value for {key}"
             )
         values[key] = value
-    missing = sorted(EXPECTED_KEYS - values.keys())
+    missing = sorted(REQUIRED_KEYS - values.keys())
     if missing:
         raise VersionsEnvError(f"missing required keys: {', '.join(missing)}")
     for key, expected in EXACT_VALUES.items():
@@ -107,7 +111,7 @@ def parse_versions_env(text: str) -> dict[str, str]:
     for key in REF_KEYS:
         if not REF_RE.fullmatch(values[key]):
             raise VersionsEnvError(f"{key} must be a released v-prefixed tag")
-    for key in VERSION_KEYS:
+    for key in VERSION_KEYS & values.keys():
         if not VERSION_RE.fullmatch(values[key]):
             raise VersionsEnvError(f"{key} must be an exact numeric version")
     if not DIGEST_RE.fullmatch(values["CUDA_BASE_DIGEST"]):
@@ -134,7 +138,8 @@ def main() -> int:
     parser.add_argument("path", nargs="?", default="versions.env", type=Path)
     args = parser.parse_args()
     if args.list_build_inputs:
-        print("\n".join(sorted(BUILD_INCREMENT_INPUT_KEYS)))
+        values = parse_versions_env(args.path.read_text(encoding="utf-8"))
+        print("\n".join(sorted(BUILD_INCREMENT_INPUT_KEYS & values.keys())))
         return 0
     try:
         parse_versions_env(args.path.read_text(encoding="utf-8"))

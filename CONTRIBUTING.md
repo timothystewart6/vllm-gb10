@@ -168,6 +168,19 @@ branch `GB10_BUILD` value does not override trusted build-number policy.
 Never weaken the trusted-main execution boundary to make a new variable easier
 to bootstrap.
 
+### GB10-relevant vLLM optional extras
+
+Normal CUDA requirements are not the same as vLLM optional extras. This image
+tracks only explicitly reviewed GB10 runtime extras. An enabled extra must be
+represented by a first-class `versions.env` input, checked against the selected
+vLLM source without executing upstream packaging code, seeded into a generated
+lockfile, and included in build and release metadata.
+
+The current policy covers B12X only. It does not imply support for unrelated
+vLLM extras. If upstream changes the B12X extra from its supported exact-pin
+shape, the monitor and trusted generator must fail rather than retain a stale
+runtime package.
+
 ### Maintainer approval flow
 
 Contributor code is not executed by `run-bump.yaml`. The workflow imports only

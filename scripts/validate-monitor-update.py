@@ -10,6 +10,7 @@ from versions_env import VersionsEnvError, parse_versions_env
 
 
 ALLOWED_UPDATE_KEYS = {
+    "B12X_VERSION",
     "CUDA_BASE_DIGEST",
     "FLASHINFER_REF",
     "NCCL_REF",
@@ -25,6 +26,7 @@ ALLOWED_UPDATE_KEYS = {
     "UV_VERSION",
     "VLLM_REF",
 }
+BOOTSTRAP_ADDITION_KEYS = {"B12X_VERSION"}
 
 
 def render_expected_candidate(
@@ -33,14 +35,21 @@ def render_expected_candidate(
     changed_keys: set[str],
 ) -> str:
     rendered = []
+    base_values = parse_versions_env(base_text)
     for raw_line in base_text.splitlines(keepends=True):
         content = raw_line.rstrip("\r\n")
         line_ending = raw_line[len(content):]
+        key = ""
         if "=" in content:
             key = content.split("=", 1)[0]
             if key in changed_keys:
                 raw_line = f"{key}={candidate_values[key]}{line_ending}"
         rendered.append(raw_line)
+        if key == "TRANSFORMERS_VERSION" and "B12X_VERSION" in changed_keys \
+                and "B12X_VERSION" not in base_values:
+            rendered.append(
+                f"B12X_VERSION={candidate_values['B12X_VERSION']}{line_ending}"
+            )
     return "".join(rendered)
 
 
@@ -48,7 +57,9 @@ def validate_monitor_update(base_text: str, candidate_text: str) -> set[str]:
     base_values = parse_versions_env(base_text)
     candidate_values = parse_versions_env(candidate_text)
     changed_keys = {
-        key for key in base_values if base_values[key] != candidate_values[key]
+        key
+        for key in base_values.keys() | candidate_values.keys()
+        if base_values.get(key) != candidate_values.get(key)
     }
     if not changed_keys:
         raise VersionsEnvError("release monitor candidate has no changes")
@@ -57,6 +68,16 @@ def validate_monitor_update(base_text: str, candidate_text: str) -> set[str]:
         raise VersionsEnvError(
             "release monitor changed disallowed keys: "
             + ", ".join(sorted(unexpected))
+        )
+    additions = set(candidate_values) - set(base_values)
+    removals = set(base_values) - set(candidate_values)
+    if additions - BOOTSTRAP_ADDITION_KEYS:
+        raise VersionsEnvError(
+            "release monitor added disallowed keys: " + ", ".join(sorted(additions))
+        )
+    if removals:
+        raise VersionsEnvError(
+            "release monitor removed keys: " + ", ".join(sorted(removals))
         )
     if "TRITON_VERSION" in changed_keys and "TORCH_VERSION" not in changed_keys:
         raise VersionsEnvError(

@@ -75,6 +75,16 @@ def main():
     expect_rejected(valid + f"\n{uv_line}\n", "duplicate key")
     expect_rejected(valid + "\nUNREVIEWED_INPUT=1\n", "unknown key")
     expect_rejected(valid.replace(f"{uv_line}\n", ""), "missing key")
+    enabled_b12x = valid.replace(
+        "TRANSFORMERS_VERSION=" + parsed["TRANSFORMERS_VERSION"] + "\n",
+        "TRANSFORMERS_VERSION=" + parsed["TRANSFORMERS_VERSION"]
+        + "\nB12X_VERSION=1.3.0\n",
+    )
+    assert VERSIONS_ENV.parse_versions_env(enabled_b12x)["B12X_VERSION"] == "1.3.0"
+    expect_rejected(
+        enabled_b12x.replace("B12X_VERSION=1.3.0", "B12X_VERSION=>=1.3.0"),
+        "B12X version range",
+    )
     expect_rejected(
         replace_value(valid, "VLLM_REPO", "https://attacker.example/vllm.git"),
         "unapproved source repository",

@@ -29,6 +29,13 @@ _arg() {
   printf ' --build-arg %s=%s' "${name}" "${val}"
 }
 
+_arg_optional() {
+  local name="$1"
+  if [[ -v "${name}" ]]; then
+    _arg "${name}"
+  fi
+}
+
 # Base image
 _arg CUDA_BASE_IMAGE
 _arg CUDA_BASE_DIGEST
@@ -75,6 +82,7 @@ _arg FASTSAFETENSORS_VERSION
 _arg INSTANTTENSOR_VERSION
 _arg BITSANDBYTES_VERSION
 _arg ACCELERATE_VERSION
+_arg_optional B12X_VERSION
 _arg QUACK_KERNELS_VERSION
 _arg TRANSFORMERS_VERSION
 

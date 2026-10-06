@@ -47,10 +47,15 @@ def test_build_revision_roles_are_exhaustive():
 
 def test_every_schema_key_is_emitted_as_a_build_argument():
     build_args = read("scripts/build-args.sh")
-    emitted = set(re.findall(r"^_arg ([A-Z][A-Z0-9_]*)$", build_args, re.MULTILINE))
+    emitted = set(re.findall(r"^_arg(?:_optional)? ([A-Z][A-Z0-9_]*)$", build_args, re.MULTILINE))
     assert emitted == VERSIONS_ENV.EXPECTED_KEYS, (
         f"missing={sorted(VERSIONS_ENV.EXPECTED_KEYS - emitted)}, "
         f"unexpected={sorted(emitted - VERSIONS_ENV.EXPECTED_KEYS)}"
+    )
+
+    assert "B12X_VERSION" in VERSIONS_ENV.OPTIONAL_BOOTSTRAP_KEYS
+    assert "B12X_VERSION" not in VERSIONS_ENV.parse_versions_env(
+        read("versions.env")
     )
 
 

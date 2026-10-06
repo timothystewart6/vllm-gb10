@@ -530,6 +530,7 @@ if [[ "${B12X_VERSION}" != "${B12X_TARGET}" ]]; then
   UPDATES=$((UPDATES + 1))
   if [[ "${DO_UPDATE}" -eq 1 ]]; then
     update_env "B12X_VERSION" "${B12X_TARGET}"
+  fi
 else
   printf '%s %-30s current=%-20s (reviewed for VLLM %s, extra=%s)\n' \
     "${OK}" "B12X (B12X_VERSION)" "${B12X_VERSION}" "${VLLM_TARGET}" "${B12X_UPSTREAM_VERSION}"

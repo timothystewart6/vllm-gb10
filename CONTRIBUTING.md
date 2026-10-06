@@ -177,9 +177,10 @@ vLLM source without executing upstream packaging code, seeded into a generated
 lockfile, and included in build and release metadata.
 
 The current policy covers B12X only. It does not imply support for unrelated
-vLLM extras. If upstream changes the B12X extra from its supported exact-pin
-shape, the monitor and trusted generator must fail rather than retain a stale
-runtime package.
+vLLM extras. B12X compatibility is a reviewed decision for each vLLM release.
+If the vLLM release or its declared B12X pin changes, the monitor and trusted
+generator fail until the B12X and CUTLASS dependency graph is recomputed. See
+[issue 160](https://github.com/timothystewart6/vllm-gb10/issues/160).
 
 ### Maintainer approval flow
 

@@ -56,12 +56,6 @@ def candidate_for(key):
     if key == "TRITON_VERSION":
         keys.add("TORCH_VERSION")
     candidate = BASE_TEXT
-    if key == "B12X_VERSION":
-        marker = f"TRANSFORMERS_VERSION={BASE_VALUES['TRANSFORMERS_VERSION']}\n"
-        candidate = candidate.replace(
-            marker, marker + f"B12X_VERSION={replacement_for(key)}\n", 1
-        )
-        return candidate, keys
     for changed_key in keys:
         old = f"{changed_key}={BASE_VALUES[changed_key]}"
         assert old in candidate

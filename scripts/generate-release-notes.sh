@@ -77,7 +77,7 @@ flashinfer_commit = os.environ["FLASHINFER_COMMIT"]
 ray_version       = os.environ["RAY_VERSION"]
 fastsafe_version  = os.environ["FASTSAFETENSORS_VERSION"]
 instant_version   = os.environ["INSTANTTENSOR_VERSION"]
-b12x_version      = current_env.get("B12X_VERSION")
+b12x_version      = current_env["B12X_VERSION"]
 arch_list         = os.environ["TORCH_CUDA_ARCH_LIST"]
 
 # e.g. "nvidia/cuda:13.2.0-devel-ubuntu24.04" -> cu13.2
@@ -252,7 +252,7 @@ docker pull {tag_canonical}
 | **Numba** | {numba_version} | - |
 | **fastsafetensors** | {fastsafe_version} | - |
 | **instanttensor** | {instant_version} | - |
-{f'| **B12X** | {b12x_version} | - |' if b12x_version else ''}
+| **B12X** | {b12x_version} | - |
 | **Target arch** | {arch_list} | - |
 | **GB10_BUILD** | {gb10_build} | - |
 | **Repo SHA** | {short_sha} | [{short_sha}](https://github.com/timothystewart6/vllm-gb10/commit/{full_sha}) |

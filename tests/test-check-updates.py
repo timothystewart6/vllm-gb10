@@ -30,6 +30,7 @@ assert VERSIONS_DIFF_SPEC.loader is not None
 VERSIONS_DIFF_SPEC.loader.exec_module(VERSIONS_DIFF)
 
 MONITOR_FIXTURE_BASELINE = {
+    "B12X_VERSION": "1.5.0",
     "CUDA_BASE_DIGEST": (
         "sha256:a5b6256e470196fc1d5f8f62139d57d3662867746dfe1cb"
         "352d7652024047020"
@@ -148,9 +149,7 @@ else:
 def write_monitor_fixture_baseline(path):
     text = path.read_text(encoding="utf-8")
     current_values = parse_env(path)
-    assert set(MONITOR_FIXTURE_BASELINE) == (
-        MONITOR_POLICY.ALLOWED_UPDATE_KEYS - {"B12X_VERSION"}
-    )
+    assert set(MONITOR_FIXTURE_BASELINE) == MONITOR_POLICY.ALLOWED_UPDATE_KEYS
     for key, value in MONITOR_FIXTURE_BASELINE.items():
         current = f"{key}={current_values[key]}"
         assert current in text
@@ -184,7 +183,8 @@ def setup_case(directory, source_versions=None):
     compatibility.write_text(
         compatibility.read_text(encoding="utf-8").replace(
             'POLICIES = {',
-            'POLICIES = {\n    "v0.26.0": ("1.3.0", "1.5.0"),',
+            'POLICIES = {\n    "v0.26.0": ("1.3.0", "1.5.0"),\n'
+            '    "v0.27.0rc1": ("1.3.0", "1.5.0"),',
             1,
         ),
         encoding="utf-8",
@@ -352,28 +352,20 @@ quack-kernels==0.6.2"""
 
 def test_b12x_uses_the_reviewed_compatibility_policy_and_fails_closed():
     source_versions = (SOURCE_ROOT / "versions.env").read_text(encoding="utf-8")
-    marker = "TRANSFORMERS_VERSION=5.17.0\n"
-    enabled_versions = source_versions.replace(
-        marker, marker + "B12X_VERSION=1.5.0\n", 1
-    )
 
     with tempfile.TemporaryDirectory() as directory:
-        root, env = setup_case(directory, enabled_versions)
-        enabled_path = root / "versions.env"
-        enabled_path.write_text(
-            enabled_path.read_text(encoding="utf-8").replace(
-                "B12X_VERSION=1.5.0", "B12X_VERSION=1.3.0", 1
-            ),
-            encoding="utf-8",
+        root, env = setup_case(
+            directory,
+            source_versions.replace("B12X_VERSION=1.5.0", "B12X_VERSION=1.3.0"),
         )
         result = run_check(root, env, "--update")
 
         assert result.returncode == 0, result.stderr
-        assert parse_env(enabled_path)["B12X_VERSION"] == "1.5.0"
+        assert parse_env(root / "versions.env")["B12X_VERSION"] == "1.5.0"
         assert "B12X (B12X_VERSION)" in result.stdout
 
     with tempfile.TemporaryDirectory() as directory:
-        root, env = setup_case(directory, enabled_versions)
+        root, env = setup_case(directory, source_versions)
         env["FAKE_B12X_SETUP"] = (
             "setup(name='vllm', extras_require={'b12x': ['b12x==1.4.0']})"
         )
@@ -385,7 +377,7 @@ def test_b12x_uses_the_reviewed_compatibility_policy_and_fails_closed():
         assert (root / "versions.env").read_bytes() == before
 
     with tempfile.TemporaryDirectory() as directory:
-        root, env = setup_case(directory, enabled_versions)
+        root, env = setup_case(directory, source_versions)
         env["FAKE_B12X_SETUP"] = "setup(name='vllm', extras_require={})"
         before = (root / "versions.env").read_bytes()
         result = run_check(root, env, "--update")
@@ -395,19 +387,19 @@ def test_b12x_uses_the_reviewed_compatibility_policy_and_fails_closed():
         assert (root / "versions.env").read_bytes() == before
 
 
-def test_inherited_b12x_version_does_not_enable_the_bootstrap_monitor():
+def test_declared_b12x_version_overrides_the_inherited_monitor_value():
     with tempfile.TemporaryDirectory() as directory:
         root, env = setup_case(directory)
-        env["B12X_VERSION"] = "1.3.0"
+        env["B12X_VERSION"] = "99.99.99"
         env["FAKE_B12X_SETUP"] = (
-            "setup(name='vllm', extras_require={'b12x': ['b12x==1.4.0']})"
+            "setup(name='vllm', extras_require={'b12x': ['b12x==1.3.0']})"
         )
 
         result = run_check(root, env, "--update")
 
         assert result.returncode == 0, result.stderr
-        assert "B12X (B12X_VERSION)" not in result.stdout
-        assert "B12X_VERSION" not in parse_env(root / "versions.env")
+        assert "B12X (B12X_VERSION)" in result.stdout
+        assert parse_env(root / "versions.env")["B12X_VERSION"] == "1.5.0"
 
 
 def test_transformers_drift_is_detected_and_bumped():
@@ -551,8 +543,6 @@ def test_every_monitored_repository_value_is_normalized():
         )
         source_values = parse_env(SOURCE_ROOT / "versions.env")
         for key in MONITOR_POLICY.ALLOWED_UPDATE_KEYS:
-            if key == "B12X_VERSION":
-                continue
             if key == "CUDA_BASE_DIGEST":
                 drifted = "sha256:" + "9" * 64
             elif key == "NCCL_REF":
@@ -720,7 +710,7 @@ def test_detected_updates_are_published_in_release_notes():
             "VLLM_REF": "v0.27.0",
         }
         for scenario_number, key in enumerate(
-            sorted(MONITOR_POLICY.ALLOWED_UPDATE_KEYS - {"B12X_VERSION"}), start=2
+            sorted(MONITOR_POLICY.ALLOWED_UPDATE_KEYS), start=2
         ):
             if key not in scenario_values:
                 scenario_values[key] = "99.99.99"
@@ -1057,7 +1047,7 @@ def main():
         test_mutating_modes_are_mutually_exclusive,
         test_quack_aligns_to_vllm_pin_on_update,
         test_b12x_uses_the_reviewed_compatibility_policy_and_fails_closed,
-        test_inherited_b12x_version_does_not_enable_the_bootstrap_monitor,
+        test_declared_b12x_version_overrides_the_inherited_monitor_value,
         test_transformers_drift_is_detected_and_bumped,
         test_transformers_update_respects_vllm_upper_bound,
         test_transformers_compatible_pin_is_current_even_when_pypi_is_newer,

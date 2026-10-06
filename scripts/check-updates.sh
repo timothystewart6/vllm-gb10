@@ -100,14 +100,6 @@ need() { command -v "$1" &>/dev/null || { log "Required tool '$1' not found."; e
 need curl
 need python3
 
-# The monitor may inspect a proposed versions.env before the trusted workflow
-# validates the complete candidate. Gate only on the declarative file entry so
-# an inherited shell variable cannot enable the bootstrap path.
-if grep -q '^B12X_VERSION=' "${VERSIONS}"; then
-  B12X_ENABLED=1
-else
-  B12X_ENABLED=0
-fi
 set -a
 # shellcheck disable=SC1090,SC1091
 source "${VERSIONS}"
@@ -515,37 +507,34 @@ fi
 log "Fetching vLLM ${VLLM_TARGET} requirements for cross-checks..."
 load_vllm_reqs "${VLLM_TARGET}"
 
-# B12X is a GB10-specific vLLM optional extra, not a normal CUDA requirement.
-# During the trusted-main bootstrap it is intentionally absent from production
-# versions.env. Once enabled, it needs a reviewed compatibility decision.
-if [[ "${B12X_ENABLED}" -eq 1 ]]; then
-  B12X_UPSTREAM_VERSION=$(vllm_b12x_version "${VLLM_TARGET}") || {
-    log "Could not determine the B12X version declared by vLLM ${VLLM_TARGET}."
-    exit 1
-  }
-  B12X_TARGET=$(python3 "${REPO_ROOT}/scripts/b12x_compatibility.py" \
-    --vllm-ref "${VLLM_TARGET}" \
-    --upstream-version "${B12X_UPSTREAM_VERSION}") || {
-    log "Could not determine the reviewed B12X compatibility policy for ${VLLM_TARGET}."
-    exit 1
-  }
-  if [[ "${B12X_VERSION}" != "${B12X_TARGET}" ]]; then
-    printf '%s %-30s current=%-20s compatible=%s (vLLM extra=%s)\n' \
-      "${OUT}" "B12X (B12X_VERSION)" "${B12X_VERSION}" "${B12X_TARGET}" "${B12X_UPSTREAM_VERSION}"
-    UPDATES=$((UPDATES + 1))
-    if [[ "${DO_UPDATE}" -eq 1 ]]; then
-      update_env "B12X_VERSION" "${B12X_TARGET}"
-    fi
-  else
-    printf '%s %-30s current=%-20s (reviewed for VLLM %s, extra=%s)\n' \
-      "${OK}" "B12X (B12X_VERSION)" "${B12X_VERSION}" "${VLLM_TARGET}" "${B12X_UPSTREAM_VERSION}"
-  fi
-fi
-
 # The Dockerfile calls vLLM helper scripts directly. Fail before generating a
 # dependency PR when an upstream release moves one of those source paths.
 log "Validating vLLM ${VLLM_TARGET} source layout..."
 bash "${REPO_ROOT}/scripts/validate-vllm-source-layout.sh" --tag "${VLLM_TARGET}"
+
+# B12X is a GB10-specific vLLM optional extra, not a normal CUDA requirement.
+# A reviewed compatibility decision is required for every selected vLLM release.
+B12X_UPSTREAM_VERSION=$(vllm_b12x_version "${VLLM_TARGET}") || {
+  log "Could not determine the B12X version declared by vLLM ${VLLM_TARGET}."
+  exit 1
+}
+B12X_TARGET=$(python3 "${REPO_ROOT}/scripts/b12x_compatibility.py" \
+  --vllm-ref "${VLLM_TARGET}" \
+  --upstream-version "${B12X_UPSTREAM_VERSION}") || {
+  log "Could not determine the reviewed B12X compatibility policy for ${VLLM_TARGET}."
+  exit 1
+}
+if [[ "${B12X_VERSION}" != "${B12X_TARGET}" ]]; then
+  printf '%s %-30s current=%-20s compatible=%s (vLLM extra=%s)\n' \
+    "${OUT}" "B12X (B12X_VERSION)" "${B12X_VERSION}" "${B12X_TARGET}" "${B12X_UPSTREAM_VERSION}"
+  UPDATES=$((UPDATES + 1))
+  if [[ "${DO_UPDATE}" -eq 1 ]]; then
+    update_env "B12X_VERSION" "${B12X_TARGET}"
+  fi
+else
+  printf '%s %-30s current=%-20s (reviewed for VLLM %s, extra=%s)\n' \
+    "${OK}" "B12X (B12X_VERSION)" "${B12X_VERSION}" "${VLLM_TARGET}" "${B12X_UPSTREAM_VERSION}"
+fi
 
 NCCL_LATEST=$(gh_latest_tag "NVIDIA/nccl")
 report "NCCL (NCCL_REF)" "NCCL_REF" "${NCCL_REF}" "${NCCL_LATEST}"

@@ -33,7 +33,7 @@ echo "[1/5] Python imports"
 python3 - <<'PYEOF'
 import sys, importlib
 
-for pkg in ("torch", "vllm", "flashinfer"):
+for pkg in ("torch", "vllm", "flashinfer", "b12x"):
     try:
         mod = importlib.import_module(pkg)
         print(f"  {pkg}: {getattr(mod, '__version__', '(no __version__)')}")
@@ -41,7 +41,7 @@ for pkg in ("torch", "vllm", "flashinfer"):
         print(f"  MISSING: {pkg} - {e}", file=sys.stderr)
         sys.exit(1)
 PYEOF
-pass "torch / vllm / flashinfer all importable"
+pass "torch / vllm / flashinfer / b12x all importable"
 
 # -----------------------------------------------------------------
 # 2. CUDA availability

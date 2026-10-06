@@ -62,16 +62,6 @@ def replace_env_value(path, key, value):
     path.write_text("\n".join(updated) + "\n")
 
 
-def add_b12x_value(path, value):
-    text = path.read_text()
-    marker = next(
-        line + "\n"
-        for line in text.splitlines()
-        if line.startswith("TRANSFORMERS_VERSION=")
-    )
-    path.write_text(text.replace(marker, marker + f"B12X_VERSION={value}\n", 1))
-
-
 def test_pr_body_uses_worktree_and_fallback_base():
     with tempfile.TemporaryDirectory() as directory:
         repo = Path(directory) / "repo"
@@ -161,6 +151,15 @@ def test_release_notes_compare_real_tags_and_lockfiles():
         copy_runtime(repo)
         init_repo(repo)
 
+        versions = repo / "versions.env"
+        versions.write_text(
+            "\n".join(
+                line
+                for line in versions.read_text().splitlines()
+                if not line.startswith("B12X_VERSION=")
+            )
+            + "\n"
+        )
         replace_env_value(repo / "versions.env", "UV_VERSION", "0.0.1")
         replace_env_value(repo / "versions.env", "FLASHINFER_REF", "v0.6.14")
         (repo / "locks" / "python-runtime.txt").write_text("old lock\n")
@@ -171,7 +170,6 @@ def test_release_notes_compare_real_tags_and_lockfiles():
         replace_env_value(
             repo / "versions.env", "FLASHINFER_REF", "v0.6.16.post3"
         )
-        add_b12x_value(repo / "versions.env", "1.3.0")
         shutil.copy2(
             SOURCE_ROOT / "locks" / "python-runtime.txt",
             repo / "locks" / "python-runtime.txt",
@@ -189,8 +187,8 @@ def test_release_notes_compare_real_tags_and_lockfiles():
         assert "Changed components (vs v0.1.0-gb10.0)" in result.stdout
         assert "**uv**: 0.0.1 ->" in result.stdout
         assert "**FlashInfer**: v0.6.14 -> v0.6.16.post3" in result.stdout
-        assert "**B12X**:  -> 1.3.0" in result.stdout
-        assert "| **B12X** | 1.3.0 | - |" in result.stdout
+        assert "**B12X**:  -> 1.5.0" in result.stdout
+        assert "| **B12X** | 1.5.0 | - |" in result.stdout
         assert "**python runtime lock**:" in result.stdout
         assert f"commit/{current_sha}" in result.stdout
 

@@ -45,12 +45,6 @@ def replace_value(text, key, value):
     return text.replace(old, f"{key}={value}", 1)
 
 
-def add_b12x_value(text, value):
-    marker = f"TRANSFORMERS_VERSION={BASE_VALUES['TRANSFORMERS_VERSION']}\n"
-    assert marker in text
-    return text.replace(marker, marker + f"B12X_VERSION={value}\n", 1)
-
-
 def assert_rejected(candidate, reason):
     try:
         VALIDATOR.validate_monitor_update(BASE_TEXT, candidate)
@@ -64,11 +58,7 @@ def test_every_monitor_key_is_individually_allowed():
     for key, value in VALID_REPLACEMENTS.items():
         if key == "TRITON_VERSION":
             continue
-        candidate = (
-            add_b12x_value(BASE_TEXT, value)
-            if key == "B12X_VERSION"
-            else replace_value(BASE_TEXT, key, value)
-        )
+        candidate = replace_value(BASE_TEXT, key, value)
         assert VALIDATOR.validate_monitor_update(BASE_TEXT, candidate) == {key}
 
 

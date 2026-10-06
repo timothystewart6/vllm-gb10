@@ -30,7 +30,7 @@ assert VERSIONS_DIFF_SPEC.loader is not None
 VERSIONS_DIFF_SPEC.loader.exec_module(VERSIONS_DIFF)
 
 MONITOR_FIXTURE_BASELINE = {
-    "B12X_VERSION": "1.3.0",
+    "B12X_VERSION": "1.5.0",
     "CUDA_BASE_DIGEST": (
         "sha256:a5b6256e470196fc1d5f8f62139d57d3662867746dfe1cb"
         "352d7652024047020"
@@ -183,7 +183,8 @@ def setup_case(directory, source_versions=None):
     compatibility.write_text(
         compatibility.read_text(encoding="utf-8").replace(
             'POLICIES = {',
-            'POLICIES = {\n    "v0.26.0": ("1.3.0", "1.5.0"),',
+            'POLICIES = {\n    "v0.26.0": ("1.3.0", "1.5.0"),\n'
+            '    "v0.27.0rc1": ("1.3.0", "1.5.0"),',
             1,
         ),
         encoding="utf-8",

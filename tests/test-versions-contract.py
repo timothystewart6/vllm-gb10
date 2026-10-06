@@ -54,7 +54,7 @@ def test_every_schema_key_is_emitted_as_a_build_argument():
     )
 
     assert "B12X_VERSION" in VERSIONS_ENV.REQUIRED_KEYS
-    assert VERSIONS_ENV.parse_versions_env(read("versions.env"))["B12X_VERSION"] == "1.3.0"
+    assert VERSIONS_ENV.parse_versions_env(read("versions.env"))["B12X_VERSION"] == "1.5.0"
     assert "_arg B12X_VERSION" in build_args
 
 

@@ -187,8 +187,8 @@ def test_release_notes_compare_real_tags_and_lockfiles():
         assert "Changed components (vs v0.1.0-gb10.0)" in result.stdout
         assert "**uv**: 0.0.1 ->" in result.stdout
         assert "**FlashInfer**: v0.6.14 -> v0.6.16.post3" in result.stdout
-        assert "**B12X**:  -> 1.3.0" in result.stdout
-        assert "| **B12X** | 1.3.0 | - |" in result.stdout
+        assert "**B12X**:  -> 1.5.0" in result.stdout
+        assert "| **B12X** | 1.5.0 | - |" in result.stdout
         assert "**python runtime lock**:" in result.stdout
         assert f"commit/{current_sha}" in result.stdout
 

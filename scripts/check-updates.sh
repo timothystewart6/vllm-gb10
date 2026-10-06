@@ -507,6 +507,11 @@ fi
 log "Fetching vLLM ${VLLM_TARGET} requirements for cross-checks..."
 load_vllm_reqs "${VLLM_TARGET}"
 
+# The Dockerfile calls vLLM helper scripts directly. Fail before generating a
+# dependency PR when an upstream release moves one of those source paths.
+log "Validating vLLM ${VLLM_TARGET} source layout..."
+bash "${REPO_ROOT}/scripts/validate-vllm-source-layout.sh" --tag "${VLLM_TARGET}"
+
 # B12X is a GB10-specific vLLM optional extra, not a normal CUDA requirement.
 # A reviewed compatibility decision is required for every selected vLLM release.
 B12X_UPSTREAM_VERSION=$(vllm_b12x_version "${VLLM_TARGET}") || {
@@ -529,11 +534,6 @@ else
   printf '%s %-30s current=%-20s (reviewed for VLLM %s, extra=%s)\n' \
     "${OK}" "B12X (B12X_VERSION)" "${B12X_VERSION}" "${VLLM_TARGET}" "${B12X_UPSTREAM_VERSION}"
 fi
-
-# The Dockerfile calls vLLM helper scripts directly. Fail before generating a
-# dependency PR when an upstream release moves one of those source paths.
-log "Validating vLLM ${VLLM_TARGET} source layout..."
-bash "${REPO_ROOT}/scripts/validate-vllm-source-layout.sh" --tag "${VLLM_TARGET}"
 
 NCCL_LATEST=$(gh_latest_tag "NVIDIA/nccl")
 report "NCCL (NCCL_REF)" "NCCL_REF" "${NCCL_REF}" "${NCCL_LATEST}"

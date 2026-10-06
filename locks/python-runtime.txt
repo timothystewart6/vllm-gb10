@@ -206,6 +206,7 @@ apache-tvm-ffi==0.1.11 \
     --hash=sha256:fd587ecd8ee843bbec467762490c8347af3dfe997608f9841b48a98f5fffac7f
     # via
     #   -r /tmp/vllm-gb10-runtime.in
+    #   b12x
     #   flashinfer-python
     #   nvidia-cudnn-frontend
     #   quack-kernels
@@ -243,6 +244,10 @@ av==18.1.0 \
     --hash=sha256:e4d48b9f12cad009cc72fe4f4099107de5e819c95f82767f4fd01a01481c0661 \
     --hash=sha256:e7ea063f6690193ea335a1d592d6e0274350d45e2ed6af83ee107cb90cbfd84f \
     --hash=sha256:ea1480b7a8d5405cb5f382b344731bf125fd2c1c6fae3964f6c48595628387ff
+    # via -r /tmp/vllm-gb10-runtime.in
+b12x==1.5.0 \
+    --hash=sha256:20d2c80d6590a0e4f622f89055cfb1fee92b08c427b6df1bc6b82b68759dbab2 \
+    --hash=sha256:4b6635e93ce672db1415cca1817c81eab461a245fb96a5e2de7efa2e36a36114
     # via -r /tmp/vllm-gb10-runtime.in
 bitsandbytes==0.49.2 \
     --hash=sha256:2e0ddd09cd778155388023cbe81f00afbb7c000c214caef3ce83386e7144df7d \
@@ -776,6 +781,7 @@ cuda-pathfinder==1.5.4 \
 cuda-python==13.2.0 \
     --hash=sha256:2f092b0ec13a860115fa595411889ee939ad203450ea4f91e9461b174ea7b084
     # via
+    #   b12x
     #   flashinfer-python
     #   nvidia-cutlass-dsl-libs-base
     #   nvidia-cutlass-dsl-libs-core
@@ -2306,6 +2312,7 @@ nvidia-cutlass-dsl==4.7.1 \
     --hash=sha256:765850c74868a0b5a02fefbfc1b380842b64e5f7a1c8b1655e322a3b14c01726
     # via
     #   -r /tmp/vllm-gb10-runtime.in
+    #   b12x
     #   flashinfer-python
     #   nvidia-cudnn-frontend
     #   quack-kernels
@@ -2324,12 +2331,15 @@ nvidia-cutlass-dsl-libs-base==4.7.1 \
     --hash=sha256:d01420777ac1ff22ee0c7842b6779fa58271b37c9a57cbd0bfff3eea932d35c7 \
     --hash=sha256:e86c55a5010a7edfc067648a75cb29d0c5bd67d75210168cf507b0d0e4d15ba7
     # via
+    #   b12x
     #   nvidia-cutlass-dsl
     #   nvidia-cutlass-dsl-libs-cu12
     #   nvidia-cutlass-dsl-libs-cu13
 nvidia-cutlass-dsl-libs-core==4.7.1 \
     --hash=sha256:c65662abc9ab18fd997c57547895736928e559f4624bbe2aa1aa91418ea014ca
-    # via nvidia-cutlass-dsl-libs-base
+    # via
+    #   b12x
+    #   nvidia-cutlass-dsl-libs-base
 nvidia-cutlass-dsl-libs-cu12==4.7.1 \
     --hash=sha256:06f53df4ada14043b459993a6dc469d0505ad9a144d101b5f40461a58a8e80e3 \
     --hash=sha256:10f98e415188e582a0159ed1bb375f4f18e5652bac286621e4362c0ad51ee845 \
@@ -2343,7 +2353,9 @@ nvidia-cutlass-dsl-libs-cu12==4.7.1 \
     --hash=sha256:f37fcbd94aad66b016dcea483db50ddb0fcaab7130c538df20ef29ddeeb8ba85 \
     --hash=sha256:f57a3955c17b7dcd5472aa47c46513e5f3914e1325fc308afca1b9063a8f897b \
     --hash=sha256:f5ab528aeb4548261fab7f393f2d119909f792c7165c986e98479ce2345a125d
-    # via nvidia-cutlass-dsl
+    # via
+    #   b12x
+    #   nvidia-cutlass-dsl
 nvidia-cutlass-dsl-libs-cu13==4.7.1 \
     --hash=sha256:20c14e16125cb8e36bc9947a9f0a57a660f44651365337b911c84abde4967f5f \
     --hash=sha256:2f86fe8d1a7ef510b853a3800cbf324401a12fdc770cccf4ac5e20a9d0c7d1bd \
@@ -2357,7 +2369,9 @@ nvidia-cutlass-dsl-libs-cu13==4.7.1 \
     --hash=sha256:990baa4dc8b6b0c7710afc89411e8eb05099a4c9bd01162bcbd365bd876edf59 \
     --hash=sha256:a1d23cef44675e63825c3f5d773e7b4228802ca155eab61c0bc5e551caf35ad2 \
     --hash=sha256:e675bf04dc6c91f7c4d5540699b7a031f2b8b44cd2687b32c20892f112f7e0d9
-    # via nvidia-cutlass-dsl
+    # via
+    #   b12x
+    #   nvidia-cutlass-dsl
 nvidia-ml-py==13.595.45 \
     --hash=sha256:b65a7977f503d56154b14d683710125ef93594adb63fbf7e559336e3318f1376 \
     --hash=sha256:c9f34897fe0441ff35bc8f35baf80f830a20b0f4e6ce71e0a325bc0e66acf079
@@ -3666,6 +3680,7 @@ rich==15.0.0 \
     --hash=sha256:33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb \
     --hash=sha256:edd07a4824c6b40189fb7ac9bc4c52536e9780fbbfbddf6f1e2502c31b068c36
     # via
+    #   b12x
     #   rich-toolkit
     #   typer
 rich-toolkit==0.19.9 \
@@ -3970,6 +3985,7 @@ safetensors==0.8.0 \
     # via
     #   -r /tmp/vllm-gb10-runtime.in
     #   accelerate
+    #   b12x
     #   humming-kernels
     #   transformers
 scipy==1.18.1 \
@@ -4417,6 +4433,7 @@ torch==2.13.0+cu130 \
     # via
     #   -r /tmp/vllm-gb10-runtime.in
     #   accelerate
+    #   b12x
     #   bitsandbytes
     #   compressed-tensors
     #   flashinfer-python
@@ -4531,6 +4548,7 @@ transformers==5.17.0 \
     --hash=sha256:a153be279169b55b92d8000bf4af294aed684503d091cca7804da2dd8a9de000
     # via
     #   -r /tmp/vllm-gb10-runtime.in
+    #   b12x
     #   compressed-tensors
     #   xgrammar
 triton==3.7.1 \

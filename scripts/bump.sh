@@ -46,6 +46,11 @@ need curl
 # 1. Load current versions.env
 # ---------------------------------------------------------------------------
 python3 "${REPO_ROOT}/scripts/versions_env.py" "${VERSIONS}" >/dev/null
+if python3 "${REPO_ROOT}/scripts/versions_env.py" --has-key B12X_VERSION "${VERSIONS}" >/dev/null; then
+  B12X_ENABLED=1
+else
+  B12X_ENABLED=0
+fi
 set -a
 # shellcheck disable=SC1090
 source "${VERSIONS}"
@@ -143,7 +148,7 @@ log "  VLLM_COMMIT=${VLLM_COMMIT}"
 log "Validating vLLM source layout at ${VLLM_COMMIT}..."
 bash "${REPO_ROOT}/scripts/validate-vllm-source-layout.sh" --commit "${VLLM_COMMIT}"
 
-if [[ -v B12X_VERSION ]]; then
+if [[ "${B12X_ENABLED}" -eq 1 ]]; then
   log "Validating B12X version against vLLM ${VLLM_COMMIT}..."
   B12X_UPSTREAM_VERSION=$(curl -fsSL --retry 3 \
     "https://raw.githubusercontent.com/vllm-project/vllm/${VLLM_COMMIT}/setup.py" \
@@ -369,7 +374,7 @@ quack-kernels==${QUACK_KERNELS_VERSION}
 transformers==${TRANSFORMERS_VERSION}
 REQS
 
-if [[ -v B12X_VERSION ]]; then
+if [[ "${B12X_ENABLED}" -eq 1 ]]; then
   printf 'b12x==%s\n' "${B12X_VERSION}" >> "${TMP_RUNTIME}"
 fi
 

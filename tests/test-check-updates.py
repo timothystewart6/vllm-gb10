@@ -369,6 +369,21 @@ def test_b12x_tracks_the_selected_vllm_extra_and_fails_closed():
         assert (root / "versions.env").read_bytes() == before
 
 
+def test_inherited_b12x_version_does_not_enable_the_bootstrap_monitor():
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory)
+        env["B12X_VERSION"] = "1.3.0"
+        env["FAKE_B12X_SETUP"] = (
+            "setup(name='vllm', extras_require={'b12x': ['b12x==1.4.0']})"
+        )
+
+        result = run_check(root, env, "--update")
+
+        assert result.returncode == 0, result.stderr
+        assert "B12X (B12X_VERSION)" not in result.stdout
+        assert "B12X_VERSION" not in parse_env(root / "versions.env")
+
+
 def test_transformers_drift_is_detected_and_bumped():
     # Root-cause regression for issue 105/97: transformers is a floor-only vLLM
     # dep (transformers>=X) with no authoritative pin, so a stale runtime-lock
@@ -1016,6 +1031,7 @@ def main():
         test_mutating_modes_are_mutually_exclusive,
         test_quack_aligns_to_vllm_pin_on_update,
         test_b12x_tracks_the_selected_vllm_extra_and_fails_closed,
+        test_inherited_b12x_version_does_not_enable_the_bootstrap_monitor,
         test_transformers_drift_is_detected_and_bumped,
         test_transformers_update_respects_vllm_upper_bound,
         test_transformers_compatible_pin_is_current_even_when_pypi_is_newer,

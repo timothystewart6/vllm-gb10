@@ -15,12 +15,18 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+VERSIONS="${REPO_ROOT}/versions.env"
 
 # Load versions.env
-python3 "${REPO_ROOT}/scripts/versions_env.py" "${REPO_ROOT}/versions.env" >/dev/null
+python3 "${REPO_ROOT}/scripts/versions_env.py" "${VERSIONS}" >/dev/null
+if python3 "${REPO_ROOT}/scripts/versions_env.py" --has-key B12X_VERSION "${VERSIONS}" >/dev/null; then
+  B12X_ENABLED=1
+else
+  B12X_ENABLED=0
+fi
 set -a
-# shellcheck disable=SC1091
-source "${REPO_ROOT}/versions.env"
+# shellcheck disable=SC1090,SC1091
+source "${VERSIONS}"
 set +a
 
 # Git SHA of this repo (env override allows use on hosts without .git, e.g. rsync deployments)
@@ -49,7 +55,7 @@ LOCK_RUNTIME_SHA256="$(sha256_of "${REPO_ROOT}/locks/python-runtime.txt")"
 LOCK_APT_PACKAGES_SHA256="$(sha256_of "${REPO_ROOT}/locks/apt-packages.txt")"
 LOCK_APT_SOURCES_SHA256="$(sha256_of "${REPO_ROOT}/locks/apt-sources.list")"
 B12X_METADATA=""
-if [[ -v B12X_VERSION ]]; then
+if [[ "${B12X_ENABLED}" -eq 1 ]]; then
   B12X_METADATA="  b12x: \"${B12X_VERSION}\""
 fi
 

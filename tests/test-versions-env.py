@@ -2,6 +2,9 @@
 """Security tests for strict versions.env parsing."""
 
 import importlib.util
+import subprocess
+import sys
+import tempfile
 from pathlib import Path
 
 
@@ -81,6 +84,34 @@ def main():
         + "\nB12X_VERSION=1.3.0\n",
     )
     assert VERSIONS_ENV.parse_versions_env(enabled_b12x)["B12X_VERSION"] == "1.3.0"
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "versions.env"
+        path.write_text(valid, encoding="utf-8")
+        missing = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "scripts" / "versions_env.py"),
+                "--has-key",
+                "B12X_VERSION",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert missing.returncode == 1
+        path.write_text(enabled_b12x, encoding="utf-8")
+        present = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "scripts" / "versions_env.py"),
+                "--has-key",
+                "B12X_VERSION",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert present.returncode == 0
     expect_rejected(
         enabled_b12x.replace("B12X_VERSION=1.3.0", "B12X_VERSION=>=1.3.0"),
         "B12X version range",

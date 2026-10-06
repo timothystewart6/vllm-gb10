@@ -135,16 +135,24 @@ def main() -> int:
         choices=("increment",),
         help="print the schema keys for one GB10_BUILD change role",
     )
+    parser.add_argument(
+        "--has-key",
+        choices=sorted(EXPECTED_KEYS),
+        help="exit successfully only when a validated input is present",
+    )
     parser.add_argument("path", nargs="?", default="versions.env", type=Path)
     args = parser.parse_args()
-    if args.list_build_inputs:
-        values = parse_versions_env(args.path.read_text(encoding="utf-8"))
-        print("\n".join(sorted(BUILD_INCREMENT_INPUT_KEYS & values.keys())))
-        return 0
+
     try:
-        parse_versions_env(args.path.read_text(encoding="utf-8"))
+        values = parse_versions_env(args.path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, VersionsEnvError) as error:
         parser.error(str(error))
+
+    if args.list_build_inputs:
+        print("\n".join(sorted(BUILD_INCREMENT_INPUT_KEYS & values.keys())))
+        return 0
+    if args.has_key:
+        return 0 if args.has_key in values else 1
     print(f"Validated {args.path}")
     return 0
 

@@ -75,8 +75,9 @@ def test_b12x_is_a_fail_closed_optional_runtime_seed():
 
     assert 'b12x==%s' in bump
     assert '"${B12X_VERSION}" >> "${TMP_RUNTIME}"' in bump
+    assert '"${B12X_ENABLED}" -eq 1' in bump
     assert 'vllm_optional_extras.py' in monitor
-    assert 'B12X_VERSION' in monitor
+    assert "grep -q '^B12X_VERSION=' \"${VERSIONS}\"" in monitor
 
 
 def test_vllm_audio_extra_is_a_runtime_seed():

@@ -517,22 +517,28 @@ load_vllm_reqs "${VLLM_TARGET}"
 
 # B12X is a GB10-specific vLLM optional extra, not a normal CUDA requirement.
 # During the trusted-main bootstrap it is intentionally absent from production
-# versions.env. Once enabled, it must exactly match upstream's selected extra.
+# versions.env. Once enabled, it needs a reviewed compatibility decision.
 if [[ "${B12X_ENABLED}" -eq 1 ]]; then
-  B12X_TARGET=$(vllm_b12x_version "${VLLM_TARGET}") || {
+  B12X_UPSTREAM_VERSION=$(vllm_b12x_version "${VLLM_TARGET}") || {
     log "Could not determine the B12X version declared by vLLM ${VLLM_TARGET}."
     exit 1
   }
+  B12X_TARGET=$(python3 "${REPO_ROOT}/scripts/b12x_compatibility.py" \
+    --vllm-ref "${VLLM_TARGET}" \
+    --upstream-version "${B12X_UPSTREAM_VERSION}") || {
+    log "Could not determine the reviewed B12X compatibility policy for ${VLLM_TARGET}."
+    exit 1
+  }
   if [[ "${B12X_VERSION}" != "${B12X_TARGET}" ]]; then
-    printf '%s %-30s current=%-20s vLLM=%s (mismatch!)\n' \
-      "${OUT}" "B12X (B12X_VERSION)" "${B12X_VERSION}" "${B12X_TARGET}"
+    printf '%s %-30s current=%-20s compatible=%s (vLLM extra=%s)\n' \
+      "${OUT}" "B12X (B12X_VERSION)" "${B12X_VERSION}" "${B12X_TARGET}" "${B12X_UPSTREAM_VERSION}"
     UPDATES=$((UPDATES + 1))
     if [[ "${DO_UPDATE}" -eq 1 ]]; then
       update_env "B12X_VERSION" "${B12X_TARGET}"
     fi
   else
-    printf '%s %-30s current=%-20s (aligned to VLLM %s extra)\n' \
-      "${OK}" "B12X (B12X_VERSION)" "${B12X_VERSION}" "${VLLM_TARGET}"
+    printf '%s %-30s current=%-20s (reviewed for VLLM %s, extra=%s)\n' \
+      "${OK}" "B12X (B12X_VERSION)" "${B12X_VERSION}" "${VLLM_TARGET}" "${B12X_UPSTREAM_VERSION}"
   fi
 fi
 

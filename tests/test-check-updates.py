@@ -179,6 +179,16 @@ def setup_case(directory, source_versions=None):
     shutil.copy2(
         SOURCE_ROOT / "scripts" / "vllm_optional_extras.py", root / "scripts"
     )
+    compatibility = root / "scripts" / "b12x_compatibility.py"
+    shutil.copy2(SOURCE_ROOT / "scripts" / "b12x_compatibility.py", compatibility)
+    compatibility.write_text(
+        compatibility.read_text(encoding="utf-8").replace(
+            'POLICIES = {',
+            'POLICIES = {\n    "v0.26.0": ("1.3.0", "1.5.0"),',
+            1,
+        ),
+        encoding="utf-8",
+    )
     versions = root / "versions.env"
     if source_versions is None:
         shutil.copy2(SOURCE_ROOT / "versions.env", versions)
@@ -340,23 +350,39 @@ quack-kernels==0.6.2"""
         assert "QuACK kernels (QUACK_KERNELS_VERSION)" in result.stdout
 
 
-def test_b12x_tracks_the_selected_vllm_extra_and_fails_closed():
+def test_b12x_uses_the_reviewed_compatibility_policy_and_fails_closed():
     source_versions = (SOURCE_ROOT / "versions.env").read_text(encoding="utf-8")
     marker = "TRANSFORMERS_VERSION=5.17.0\n"
     enabled_versions = source_versions.replace(
-        marker, marker + "B12X_VERSION=1.3.0\n", 1
+        marker, marker + "B12X_VERSION=1.5.0\n", 1
     )
+
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory, enabled_versions)
+        enabled_path = root / "versions.env"
+        enabled_path.write_text(
+            enabled_path.read_text(encoding="utf-8").replace(
+                "B12X_VERSION=1.5.0", "B12X_VERSION=1.3.0", 1
+            ),
+            encoding="utf-8",
+        )
+        result = run_check(root, env, "--update")
+
+        assert result.returncode == 0, result.stderr
+        assert parse_env(enabled_path)["B12X_VERSION"] == "1.5.0"
+        assert "B12X (B12X_VERSION)" in result.stdout
 
     with tempfile.TemporaryDirectory() as directory:
         root, env = setup_case(directory, enabled_versions)
         env["FAKE_B12X_SETUP"] = (
             "setup(name='vllm', extras_require={'b12x': ['b12x==1.4.0']})"
         )
+        before = (root / "versions.env").read_bytes()
         result = run_check(root, env, "--update")
 
-        assert result.returncode == 0, result.stderr
-        assert parse_env(root / "versions.env")["B12X_VERSION"] == "1.4.0"
-        assert "B12X (B12X_VERSION)" in result.stdout
+        assert result.returncode != 0
+        assert "Could not determine the reviewed B12X compatibility policy" in result.stderr
+        assert (root / "versions.env").read_bytes() == before
 
     with tempfile.TemporaryDirectory() as directory:
         root, env = setup_case(directory, enabled_versions)
@@ -1030,7 +1056,7 @@ def main():
         test_upstream_failure_is_fatal,
         test_mutating_modes_are_mutually_exclusive,
         test_quack_aligns_to_vllm_pin_on_update,
-        test_b12x_tracks_the_selected_vllm_extra_and_fails_closed,
+        test_b12x_uses_the_reviewed_compatibility_policy_and_fails_closed,
         test_inherited_b12x_version_does_not_enable_the_bootstrap_monitor,
         test_transformers_drift_is_detected_and_bumped,
         test_transformers_update_respects_vllm_upper_bound,

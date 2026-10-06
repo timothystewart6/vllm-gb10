@@ -69,6 +69,17 @@ def test_transformers_is_a_monitored_runtime_seed():
     assert 'pypi_latest "transformers"' in monitor
 
 
+def test_b12x_is_a_fail_closed_optional_runtime_seed():
+    bump = read("scripts/bump.sh")
+    monitor = read("scripts/check-updates.sh")
+
+    assert 'b12x==%s' in bump
+    assert '"${B12X_VERSION}" >> "${TMP_RUNTIME}"' in bump
+    assert '"${B12X_ENABLED}" -eq 1' in bump
+    assert 'vllm_optional_extras.py' in monitor
+    assert "grep -q '^B12X_VERSION=' \"${VERSIONS}\"" in monitor
+
+
 def test_vllm_audio_extra_is_a_runtime_seed():
     # vLLM publishes these as its audio extra. Keep them in the runtime seed
     # so the generated lock installs the modules used to decode and resample
@@ -141,6 +152,7 @@ def main():
         test_lock_generation_and_runtime_use_the_same_indexes,
         test_quack_is_pinned_for_cutlass_dsl_compatibility,
         test_transformers_is_a_monitored_runtime_seed,
+        test_b12x_is_a_fail_closed_optional_runtime_seed,
         test_vllm_audio_extra_is_a_runtime_seed,
         test_instanttensor_supports_vllm_copy_api,
         test_random_lock_paths_are_normalized,

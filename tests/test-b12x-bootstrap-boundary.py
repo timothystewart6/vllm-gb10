@@ -1,0 +1,54 @@
+#!/usr/bin/env python3
+"""Regression tests for B12X bootstrap activation boundaries."""
+
+import os
+import subprocess
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parent.parent
+SHA = "0123456789abcdef0123456789abcdef01234567"
+
+
+def run(command, env):
+    result = subprocess.run(
+        command,
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        raise AssertionError(
+            f"Command failed ({result.returncode}): {command}\n{result.stderr}"
+        )
+    return result.stdout
+
+
+def main():
+    env = os.environ.copy()
+    env.update(
+        {
+            "B12X_VERSION": "99.99.99",
+            "SOURCE_DATE_EPOCH": "0",
+            "REPO_COMMIT": SHA,
+            "TAG": "v0.31.0-gb10.0",
+            "GITHUB_SHA": SHA,
+        }
+    )
+
+    build_args = run(["bash", "scripts/build-args.sh"], env)
+    assert "B12X_VERSION" not in build_args
+
+    metadata = run(["bash", "scripts/render-metadata.sh"], env)
+    assert "\n  b12x:" not in metadata
+
+    release_notes = run(["bash", "scripts/generate-release-notes.sh"], env)
+    assert "**B12X**" not in release_notes
+
+    print("PASS: inherited B12X_VERSION cannot activate bootstrap consumers")
+
+
+if __name__ == "__main__":
+    main()

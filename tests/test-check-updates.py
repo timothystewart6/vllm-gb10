@@ -66,7 +66,12 @@ if "raw.githubusercontent.com" in url:
     empty_helper = os.environ.get("FAKE_EMPTY_VLLM_HELPER")
     if empty_helper and url.endswith(f"/{empty_helper}"):
         sys.exit(0)
-    if "/requirements/common.txt" in url:
+    if url.endswith("/setup.py"):
+        print(os.environ.get(
+            "FAKE_B12X_SETUP",
+            "setup(name='vllm', extras_require={'b12x': ['b12x==1.3.0']})",
+        ))
+    elif "/requirements/common.txt" in url:
         print(os.environ.get("FAKE_COMMON_REQUIREMENTS", "transformers>=4.45.0"))
     elif os.environ.get("FAKE_REQUIREMENTS"):
         print(os.environ["FAKE_REQUIREMENTS"])
@@ -143,7 +148,9 @@ else:
 def write_monitor_fixture_baseline(path):
     text = path.read_text(encoding="utf-8")
     current_values = parse_env(path)
-    assert set(MONITOR_FIXTURE_BASELINE) == MONITOR_POLICY.ALLOWED_UPDATE_KEYS
+    assert set(MONITOR_FIXTURE_BASELINE) == (
+        MONITOR_POLICY.ALLOWED_UPDATE_KEYS - {"B12X_VERSION"}
+    )
     for key, value in MONITOR_FIXTURE_BASELINE.items():
         current = f"{key}={current_values[key]}"
         assert current in text
@@ -169,6 +176,9 @@ def setup_case(directory, source_versions=None):
         root / "scripts",
     )
     shutil.copy2(SOURCE_ROOT / "scripts" / "versions_env.py", root / "scripts")
+    shutil.copy2(
+        SOURCE_ROOT / "scripts" / "vllm_optional_extras.py", root / "scripts"
+    )
     versions = root / "versions.env"
     if source_versions is None:
         shutil.copy2(SOURCE_ROOT / "versions.env", versions)
@@ -330,6 +340,50 @@ quack-kernels==0.6.2"""
         assert "QuACK kernels (QUACK_KERNELS_VERSION)" in result.stdout
 
 
+def test_b12x_tracks_the_selected_vllm_extra_and_fails_closed():
+    source_versions = (SOURCE_ROOT / "versions.env").read_text(encoding="utf-8")
+    marker = "TRANSFORMERS_VERSION=5.17.0\n"
+    enabled_versions = source_versions.replace(
+        marker, marker + "B12X_VERSION=1.3.0\n", 1
+    )
+
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory, enabled_versions)
+        env["FAKE_B12X_SETUP"] = (
+            "setup(name='vllm', extras_require={'b12x': ['b12x==1.4.0']})"
+        )
+        result = run_check(root, env, "--update")
+
+        assert result.returncode == 0, result.stderr
+        assert parse_env(root / "versions.env")["B12X_VERSION"] == "1.4.0"
+        assert "B12X (B12X_VERSION)" in result.stdout
+
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory, enabled_versions)
+        env["FAKE_B12X_SETUP"] = "setup(name='vllm', extras_require={})"
+        before = (root / "versions.env").read_bytes()
+        result = run_check(root, env, "--update")
+
+        assert result.returncode != 0
+        assert "Could not determine the B12X version" in result.stderr
+        assert (root / "versions.env").read_bytes() == before
+
+
+def test_inherited_b12x_version_does_not_enable_the_bootstrap_monitor():
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory)
+        env["B12X_VERSION"] = "1.3.0"
+        env["FAKE_B12X_SETUP"] = (
+            "setup(name='vllm', extras_require={'b12x': ['b12x==1.4.0']})"
+        )
+
+        result = run_check(root, env, "--update")
+
+        assert result.returncode == 0, result.stderr
+        assert "B12X (B12X_VERSION)" not in result.stdout
+        assert "B12X_VERSION" not in parse_env(root / "versions.env")
+
+
 def test_transformers_drift_is_detected_and_bumped():
     # Root-cause regression for issue 105/97: transformers is a floor-only vLLM
     # dep (transformers>=X) with no authoritative pin, so a stale runtime-lock
@@ -471,6 +525,8 @@ def test_every_monitored_repository_value_is_normalized():
         )
         source_values = parse_env(SOURCE_ROOT / "versions.env")
         for key in MONITOR_POLICY.ALLOWED_UPDATE_KEYS:
+            if key == "B12X_VERSION":
+                continue
             if key == "CUDA_BASE_DIGEST":
                 drifted = "sha256:" + "9" * 64
             elif key == "NCCL_REF":
@@ -638,7 +694,7 @@ def test_detected_updates_are_published_in_release_notes():
             "VLLM_REF": "v0.27.0",
         }
         for scenario_number, key in enumerate(
-            sorted(MONITOR_POLICY.ALLOWED_UPDATE_KEYS), start=2
+            sorted(MONITOR_POLICY.ALLOWED_UPDATE_KEYS - {"B12X_VERSION"}), start=2
         ):
             if key not in scenario_values:
                 scenario_values[key] = "99.99.99"
@@ -974,6 +1030,8 @@ def main():
         test_upstream_failure_is_fatal,
         test_mutating_modes_are_mutually_exclusive,
         test_quack_aligns_to_vllm_pin_on_update,
+        test_b12x_tracks_the_selected_vllm_extra_and_fails_closed,
+        test_inherited_b12x_version_does_not_enable_the_bootstrap_monitor,
         test_transformers_drift_is_detected_and_bumped,
         test_transformers_update_respects_vllm_upper_bound,
         test_transformers_compatible_pin_is_current_even_when_pypi_is_newer,

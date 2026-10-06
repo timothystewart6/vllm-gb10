@@ -100,6 +100,14 @@ need() { command -v "$1" &>/dev/null || { log "Required tool '$1' not found."; e
 need curl
 need python3
 
+# The monitor may inspect a proposed versions.env before the trusted workflow
+# validates the complete candidate. Gate only on the declarative file entry so
+# an inherited shell variable cannot enable the bootstrap path.
+if grep -q '^B12X_VERSION=' "${VERSIONS}"; then
+  B12X_ENABLED=1
+else
+  B12X_ENABLED=0
+fi
 set -a
 # shellcheck disable=SC1090,SC1091
 source "${VERSIONS}"
@@ -340,6 +348,18 @@ if matches:
 ' "${pkg}"
 }
 
+vllm_b12x_version() {
+  local ref="$1"
+  local setup_py
+  if ! setup_py=$(curl -fsSL \
+      "https://raw.githubusercontent.com/vllm-project/vllm/refs/tags/${ref}/setup.py" \
+      2>/dev/null); then
+    log "Could not fetch vLLM setup.py for ${ref}."
+    return 1
+  fi
+  printf '%s' "${setup_py}" | python3 "${REPO_ROOT}/scripts/vllm_optional_extras.py" /dev/stdin
+}
+
 pypi_latest_compatible() {
   local pkg="$1"
   local requirement="$2"
@@ -494,6 +514,27 @@ fi
 # below can be aligned to it (rather than blindly tracking PyPI latest).
 log "Fetching vLLM ${VLLM_TARGET} requirements for cross-checks..."
 load_vllm_reqs "${VLLM_TARGET}"
+
+# B12X is a GB10-specific vLLM optional extra, not a normal CUDA requirement.
+# During the trusted-main bootstrap it is intentionally absent from production
+# versions.env. Once enabled, it must exactly match upstream's selected extra.
+if [[ "${B12X_ENABLED}" -eq 1 ]]; then
+  B12X_TARGET=$(vllm_b12x_version "${VLLM_TARGET}") || {
+    log "Could not determine the B12X version declared by vLLM ${VLLM_TARGET}."
+    exit 1
+  }
+  if [[ "${B12X_VERSION}" != "${B12X_TARGET}" ]]; then
+    printf '%s %-30s current=%-20s vLLM=%s (mismatch!)\n' \
+      "${OUT}" "B12X (B12X_VERSION)" "${B12X_VERSION}" "${B12X_TARGET}"
+    UPDATES=$((UPDATES + 1))
+    if [[ "${DO_UPDATE}" -eq 1 ]]; then
+      update_env "B12X_VERSION" "${B12X_TARGET}"
+    fi
+  else
+    printf '%s %-30s current=%-20s (aligned to VLLM %s extra)\n' \
+      "${OK}" "B12X (B12X_VERSION)" "${B12X_VERSION}" "${VLLM_TARGET}"
+  fi
+fi
 
 # The Dockerfile calls vLLM helper scripts directly. Fail before generating a
 # dependency PR when an upstream release moves one of those source paths.

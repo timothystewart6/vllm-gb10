@@ -2,6 +2,9 @@
 """Security tests for strict versions.env parsing."""
 
 import importlib.util
+import subprocess
+import sys
+import tempfile
 from pathlib import Path
 
 
@@ -75,6 +78,44 @@ def main():
     expect_rejected(valid + f"\n{uv_line}\n", "duplicate key")
     expect_rejected(valid + "\nUNREVIEWED_INPUT=1\n", "unknown key")
     expect_rejected(valid.replace(f"{uv_line}\n", ""), "missing key")
+    enabled_b12x = valid.replace(
+        "TRANSFORMERS_VERSION=" + parsed["TRANSFORMERS_VERSION"] + "\n",
+        "TRANSFORMERS_VERSION=" + parsed["TRANSFORMERS_VERSION"]
+        + "\nB12X_VERSION=1.3.0\n",
+    )
+    assert VERSIONS_ENV.parse_versions_env(enabled_b12x)["B12X_VERSION"] == "1.3.0"
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "versions.env"
+        path.write_text(valid, encoding="utf-8")
+        missing = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "scripts" / "versions_env.py"),
+                "--has-key",
+                "B12X_VERSION",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert missing.returncode == 1
+        path.write_text(enabled_b12x, encoding="utf-8")
+        present = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "scripts" / "versions_env.py"),
+                "--has-key",
+                "B12X_VERSION",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert present.returncode == 0
+    expect_rejected(
+        enabled_b12x.replace("B12X_VERSION=1.3.0", "B12X_VERSION=>=1.3.0"),
+        "B12X version range",
+    )
     expect_rejected(
         replace_value(valid, "VLLM_REPO", "https://attacker.example/vllm.git"),
         "unapproved source repository",

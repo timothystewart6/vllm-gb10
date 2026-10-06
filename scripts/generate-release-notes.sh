@@ -48,6 +48,10 @@ from versions_diff import (
     format_change_lines,
 )
 
+current_env = parse_versions_env(
+    open(os.path.join(os.environ["REPO_ROOT"], "versions.env"), encoding="utf-8").read()
+)
+
 tag               = os.environ["TAG"]
 short_sha         = os.environ["GITHUB_SHA"][:7]
 full_sha          = os.environ["GITHUB_SHA"]
@@ -73,6 +77,7 @@ flashinfer_commit = os.environ["FLASHINFER_COMMIT"]
 ray_version       = os.environ["RAY_VERSION"]
 fastsafe_version  = os.environ["FASTSAFETENSORS_VERSION"]
 instant_version   = os.environ["INSTANTTENSOR_VERSION"]
+b12x_version      = current_env.get("B12X_VERSION")
 arch_list         = os.environ["TORCH_CUDA_ARCH_LIST"]
 
 # e.g. "nvidia/cuda:13.2.0-devel-ubuntu24.04" -> cu13.2
@@ -145,7 +150,7 @@ if prev_tag:
         changes = {}
         for var, label in COMPONENTS:
             old_val = prev_env.get(var, "")
-            new_val = os.environ.get(var, "")
+            new_val = current_env.get(var, "")
             if old_val != new_val:
                 changes[var] = (old_val, new_val)
         changed_lines = format_change_lines(changes, COMPONENT_LABELS)
@@ -247,6 +252,7 @@ docker pull {tag_canonical}
 | **Numba** | {numba_version} | - |
 | **fastsafetensors** | {fastsafe_version} | - |
 | **instanttensor** | {instant_version} | - |
+{f'| **B12X** | {b12x_version} | - |' if b12x_version else ''}
 | **Target arch** | {arch_list} | - |
 | **GB10_BUILD** | {gb10_build} | - |
 | **Repo SHA** | {short_sha} | [{short_sha}](https://github.com/timothystewart6/vllm-gb10/commit/{full_sha}) |

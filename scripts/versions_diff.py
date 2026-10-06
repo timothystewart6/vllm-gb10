@@ -35,6 +35,7 @@ COMPONENT_LABELS = {
     "CUDA_BASE_DIGEST": "CUDA base digest",
     "BITSANDBYTES_VERSION": "bitsandbytes",
     "ACCELERATE_VERSION": "Accelerate",
+    "B12X_VERSION": "B12X",
     "QUACK_KERNELS_VERSION": "QuACK kernels",
     "TRANSFORMERS_VERSION": "Transformers",
     "TORCH_CUDA_ARCH_LIST": "Target arch",

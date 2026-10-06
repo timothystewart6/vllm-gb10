@@ -21,6 +21,7 @@ BASE_TEXT = (ROOT / "versions.env").read_text(encoding="utf-8")
 BASE_VALUES = VALIDATOR.parse_versions_env(BASE_TEXT)
 
 VALID_REPLACEMENTS = {
+    "B12X_VERSION": "9.8.7",
     "CUDA_BASE_DIGEST": "sha256:" + "1" * 64,
     "FLASHINFER_REF": "v9.8.7",
     "NCCL_REF": "v9.8.7-1",
@@ -44,6 +45,12 @@ def replace_value(text, key, value):
     return text.replace(old, f"{key}={value}", 1)
 
 
+def add_b12x_value(text, value):
+    marker = f"TRANSFORMERS_VERSION={BASE_VALUES['TRANSFORMERS_VERSION']}\n"
+    assert marker in text
+    return text.replace(marker, marker + f"B12X_VERSION={value}\n", 1)
+
+
 def assert_rejected(candidate, reason):
     try:
         VALIDATOR.validate_monitor_update(BASE_TEXT, candidate)
@@ -57,7 +64,11 @@ def test_every_monitor_key_is_individually_allowed():
     for key, value in VALID_REPLACEMENTS.items():
         if key == "TRITON_VERSION":
             continue
-        candidate = replace_value(BASE_TEXT, key, value)
+        candidate = (
+            add_b12x_value(BASE_TEXT, value)
+            if key == "B12X_VERSION"
+            else replace_value(BASE_TEXT, key, value)
+        )
         assert VALIDATOR.validate_monitor_update(BASE_TEXT, candidate) == {key}
 
 

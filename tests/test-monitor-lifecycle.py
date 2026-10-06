@@ -56,6 +56,12 @@ def candidate_for(key):
     if key == "TRITON_VERSION":
         keys.add("TORCH_VERSION")
     candidate = BASE_TEXT
+    if key == "B12X_VERSION":
+        marker = f"TRANSFORMERS_VERSION={BASE_VALUES['TRANSFORMERS_VERSION']}\n"
+        candidate = candidate.replace(
+            marker, marker + f"B12X_VERSION={replacement_for(key)}\n", 1
+        )
+        return candidate, keys
     for changed_key in keys:
         old = f"{changed_key}={BASE_VALUES[changed_key]}"
         assert old in candidate
@@ -75,7 +81,7 @@ def test_every_monitored_change_survives_pr_contracts():
         changes = DIFF.diff_env_dicts(BASE_VALUES, candidate_values)
         assert changes == {
             changed_key: (
-                BASE_VALUES[changed_key],
+                BASE_VALUES.get(changed_key, "(added)"),
                 candidate_values[changed_key],
             )
             for changed_key in expected_keys
@@ -85,12 +91,13 @@ def test_every_monitored_change_survives_pr_contracts():
             assert changed_key in DIFF.COMPONENT_LABELS
             if changed_key != "CUDA_BASE_DIGEST":
                 assert changed_key in {name for name, _ in DIFF.COMPONENTS}
+            old_value = BASE_VALUES.get(changed_key, "(added)")
             assert (
                 f"- **{DIFF.COMPONENT_LABELS[changed_key]}**: "
-                f"{BASE_VALUES[changed_key]} -> {candidate_values[changed_key]}"
+                f"{old_value} -> {candidate_values[changed_key]}"
             ) in formatted
         unified = "".join(
-            f"-{changed_key}={BASE_VALUES[changed_key]}\n"
+            f"-{changed_key}={BASE_VALUES.get(changed_key, '(added)')}\n"
             f"+{changed_key}={candidate_values[changed_key]}\n"
             for changed_key in expected_keys
         )
@@ -131,7 +138,7 @@ def test_every_monitored_change_reaches_build_and_release_metadata():
     build_args = read("scripts/build-args.sh")
     metadata = read("scripts/render-metadata.sh")
     for key in MONITOR.ALLOWED_UPDATE_KEYS:
-        assert f"_arg {key}" in build_args
+        assert f"_arg {key}" in build_args or f"_arg_optional {key}" in build_args
         assert f"${{{key}}}" in metadata
 
 

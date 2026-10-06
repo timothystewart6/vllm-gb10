@@ -25,6 +25,24 @@ def test_flashinfer_no_isolation_builds_use_system_python():
     assert "uv build --no-build-isolation" not in stage
 
 
+def test_flashinfer_jit_cache_provider_arches_follow_cuda_arch_input():
+    """FlashInfer shim wheels need a provider for every source-build target."""
+    dockerfile = (ROOT / "Dockerfile").read_text()
+    match = re.search(
+        r"^FROM base AS flashinfer-builder$(.*?)(?=^FROM )",
+        dockerfile,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert match, "flashinfer-builder stage not found"
+
+    stage = match.group(1)
+    assert "ENV FLASHINFER_CUDA_ARCH_LIST=${FLASHINFER_CUDA_ARCH_LIST}" in stage
+    assert (
+        "ENV FLASHINFER_JIT_CACHE_PROVIDER_ARCHS=${FLASHINFER_CUDA_ARCH_LIST}"
+        in stage
+    )
+
+
 def test_vllm_builders_use_vllm_tools_layout():
     """vLLM v0.31.0 moved these build helpers under tools/."""
     dockerfile = (ROOT / "Dockerfile").read_text()
@@ -37,5 +55,6 @@ def test_vllm_builders_use_vllm_tools_layout():
 
 if __name__ == "__main__":
     test_flashinfer_no_isolation_builds_use_system_python()
+    test_flashinfer_jit_cache_provider_arches_follow_cuda_arch_input()
     test_vllm_builders_use_vllm_tools_layout()
     print("PASS: Dockerfile build helper contracts")

@@ -115,6 +115,9 @@ ARG FLASHINFER_CUDA_ARCH_LIST=12.1a
 ARG SOURCE_DATE_EPOCH
 ARG BUILD_JOBS
 ENV FLASHINFER_CUDA_ARCH_LIST=${FLASHINFER_CUDA_ARCH_LIST}
+# flashinfer-jit-cache v0.7+ is a shim wheel. Its provider dependencies must
+# target the same CUDA architectures as the FlashInfer source build.
+ENV FLASHINFER_JIT_CACHE_PROVIDER_ARCHS=${FLASHINFER_CUDA_ARCH_LIST}
 
 RUN git clone --recursive ${FLASHINFER_REPO} /workspace/flashinfer \
  && cd /workspace/flashinfer \

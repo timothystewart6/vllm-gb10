@@ -50,6 +50,12 @@ For a pinned version, see the
 full component table, model verification results, benchmarks, and immutable
 tag for each build.
 
+
+## Examples
+
+- [Two-node Ray cluster](examples/two-node-cluster/): generic two-node deployment example.
+- [DeepSeek V4 Flash 0731 on two GB10 nodes](examples/deepseek-v4-flash-0731/): qualified TP2 recipe with pinned image, Docker Compose, benchmarks and provenance.
+
 ## Model verification
 
 Every release is verified against real models on a DGX Spark before it is

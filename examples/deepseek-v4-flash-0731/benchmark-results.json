@@ -1,0 +1,199 @@
+{
+  "schema_version": 1,
+  "description": "Sanitized public results for the pinned dual-GB10 DeepSeek V4 Flash 0731 recipe",
+  "measured_on": "2026-10-09 and 2026-10-10",
+  "hardware": {
+    "systems": 2,
+    "platform": "ASUS GX10",
+    "gpu": "NVIDIA GB10",
+    "gpu_arch": "SM121",
+    "unified_memory_gb_per_node": 128,
+    "interconnect": "CX-7 QSFP, RoCE v2, selected NCCL IB HCA mlx5_0:1 GID 3",
+    "tensor_parallel_size": 2
+  },
+  "software": {
+    "image": "ghcr.io/timothystewart6/vllm-gb10@sha256:39fc41b2e0a91d0c75fe03cbf00a715524bd8fab23114d37710a26e1de034333",
+    "image_release": "v0.31.0-gb10.1",
+    "model": "deepseek-ai/DeepSeek-V4-Flash-0731",
+    "model_revision": "7872f01b1d1fe23eabc4c98b48bffcef5a386062",
+    "vllm_commit": "db9527a46873454610df6dbedf79a36d6bf1a7f6",
+    "vllm_runtime": "0.31.1.dev0+gdb9527a46.d20261006",
+    "cuda": "13.2.0",
+    "pytorch": "2.13.0",
+    "triton": "3.7.1",
+    "nccl": "2.32.3",
+    "flashinfer": "0.7.0.post1",
+    "b12x": "1.5.0",
+    "ray": "2.59.0",
+    "benchmark": "llama-benchy 0.3.8"
+  },
+  "runtime": {
+    "max_model_len": 524288,
+    "kv_cache_dtype": "fp8",
+    "kv_cache_memory_bytes_per_gpu": 21474836480,
+    "kv_cache_reported_aggregate_tokens": 1286757,
+    "max_num_seqs": 8,
+    "max_num_batched_tokens": 8192,
+    "block_size": 256,
+    "linear_backend": "auto",
+    "moe_backend": "b12x",
+    "observed_moe": "B12X_MXFP4_BF16",
+    "speculative": {
+      "method": "dspark",
+      "num_speculative_tokens": 3,
+      "draft_sample_method": "greedy"
+    },
+    "cuda_graph_mode": "FULL_AND_PIECEWISE",
+    "cuda_graph_breakable": true,
+    "max_cudagraph_capture_size": 32,
+    "sparse_indexer_topk_backend": "auto",
+    "sparse_workspace_mb": 128,
+    "prefix_caching": true,
+    "async_scheduling": true
+  },
+  "protocol": {
+    "endpoint": "direct vLLM",
+    "cache_mode": "no-cache",
+    "latency_mode": "generation",
+    "temperature": 0,
+    "exact_generation": true,
+    "generated_tokens_per_request": 512,
+    "final_control_seed": 20261010,
+    "final_control_runs_per_startup": 5,
+    "independent_final_startups": 3,
+    "soak_seed": 20261009
+  },
+  "short_context": [
+    {
+      "id": "final-control-C1-512",
+      "campaign": "final matched three-startup control",
+      "concurrency": 1,
+      "input_tokens": 512,
+      "generation_tps": 43.745,
+      "prefill_tps": 1355.751,
+      "ttft_ms": 505.366,
+      "measurements": 15
+    },
+    {
+      "id": "final-control-C1-2048",
+      "campaign": "final matched three-startup control",
+      "concurrency": 1,
+      "input_tokens": 2048,
+      "generation_tps": 39.953,
+      "prefill_tps": 2148.566,
+      "ttft_ms": 1083.329,
+      "measurements": 15
+    },
+    {
+      "id": "qual-C2-512",
+      "campaign": "earlier A16 qualification",
+      "concurrency": 2,
+      "input_tokens": 512,
+      "generation_tps_aggregate": 63.08348023401165
+    },
+    {
+      "id": "qual-C4-512",
+      "campaign": "earlier A16 qualification",
+      "concurrency": 4,
+      "input_tokens": 512,
+      "generation_tps_aggregate": 82.89443729364224
+    },
+    {
+      "id": "final-control-C8-512",
+      "campaign": "final matched three-startup control",
+      "concurrency": 8,
+      "input_tokens": 512,
+      "generation_tps_aggregate": 113.098,
+      "prefill_tps": 1718.773,
+      "ttft_ms": 2223.049,
+      "measurements": 15
+    }
+  ],
+  "startup_means": [
+    {
+      "startup": "S1",
+      "c1_512_tps": 40.451,
+      "c1_2048_tps": 41.506,
+      "c8_512_aggregate_tps": 112.667
+    },
+    {
+      "startup": "S2",
+      "c1_512_tps": 43.943,
+      "c1_2048_tps": 38.864,
+      "c8_512_aggregate_tps": 113.725
+    },
+    {
+      "startup": "S3",
+      "c1_512_tps": 46.84,
+      "c1_2048_tps": 39.489,
+      "c8_512_aggregate_tps": 112.901
+    }
+  ],
+  "c1_512_distribution": {
+    "n": 15,
+    "mean_tps": 43.745,
+    "median_tps": 39.912,
+    "sd_tps": 9.336,
+    "min_tps": 32.343,
+    "max_tps": 60.32
+  },
+  "long_context": [
+    {
+      "input_tokens": 8192,
+      "generation_tps": 42.17661350565224,
+      "ttft_ms": 4066.9585180003196
+    },
+    {
+      "input_tokens": 32768,
+      "generation_tps": 38.96531852483704,
+      "ttft_ms": 16274.923319001875
+    },
+    {
+      "input_tokens": 131072,
+      "generation_tps": 44.40281953394945,
+      "ttft_ms": 70575.31867599755
+    },
+    {
+      "input_tokens": 262144,
+      "generation_tps": 52.58336525727671,
+      "ttft_ms": 159473.09182366493
+    }
+  ],
+  "near_limit": {
+    "concurrency": 2,
+    "input_tokens_each": 523520,
+    "generated_tokens_each": 512,
+    "success": true,
+    "ttft_ms": 590904.3244694986,
+    "generation_tps_aggregate": 2.4763323785991824
+  },
+  "soak": {
+    "concurrency": 8,
+    "prompt_tokens": 512,
+    "generated_tokens_each": 512,
+    "runs": 30,
+    "generation_tps_aggregate": 115.06414763148288,
+    "failures": 0,
+    "engine_restarts": 0,
+    "oom_events": 0
+  },
+  "operational_soak": {
+    "successful_requests": 15,
+    "total_requests": 15,
+    "prefix_cache_hit_tokens_delta": 1024
+  },
+  "rejected_candidate": {
+    "kind": "explicit-flashinfer-topk",
+    "c1_512_generation_tps": 34.898,
+    "c1_2048_generation_tps": 46.473,
+    "c8_512_generation_tps_aggregate": 112.569,
+    "disposition": "rejected"
+  },
+  "limitations": [
+    "Mixed-depth concurrent workload not scored",
+    "Full B12X linear backend incompatible with DeepSeek V4 wo_a in this image",
+    "Sparse MLA autotuning used default tactic fallback",
+    "Not a 1M-context or expert-parallel qualification",
+    "Near-limit TTFT is not a low-latency result"
+  ]
+}

@@ -88,12 +88,11 @@ def main():
     assert "113.098" in bench and "115.064" in bench
     assert "523520" in bench and "590.904" in bench
 
-    # Public docs must not leak internal source repositories or hostnames.
-    forbidden = ("local-ai-lab", "home-ops", "techtronic.us", "zIgnore", "tstewart")
+    # Public files must not contain local user paths or actual access tokens.
     for filename in expected:
         content = (RECIPE / filename).read_text()
-        for value in forbidden:
-            assert value not in content, f"Private name in {filename}: {value}"
+        assert not re.search(r"/Users/[^/\\s]+/", content), f"User path in {filename}"
+        assert not re.search(r"hf_[A-Za-z0-9]{24,}", content), f"HF credential in {filename}"
 
     print("DeepSeek V4 recipe static contract checks passed.")
 

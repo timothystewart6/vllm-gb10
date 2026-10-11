@@ -7,6 +7,7 @@ The hardware-only live serving checks remain documented in the example README.
 
 import json
 import re
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,7 +42,11 @@ def main():
     assert f"IMAGE={IMAGE}" in env
     assert f"MODEL_REVISION={REVISION}" in env
     assert "MODEL=deepseek-ai/DeepSeek-V4-Flash-0731" in env
+    for script in ("start-head.sh", "start-worker.sh"):
+        subprocess.run(["bash", "-n", str(RECIPE / script)], check=True)
+
     assert "IMAGE" in head and "IMAGE" in worker
+    assert "services:" in head and "services:" in worker
     assert "HF_CACHE_DIR" in head and "HF_CACHE_DIR" in worker
     assert "HF_HUB_OFFLINE=0" in env  # allow download on first boot
     assert "HF_HUB_OFFLINE" in head and "HF_HUB_OFFLINE" in worker

@@ -51,21 +51,21 @@ To reproduce the final short-context controls (run on the head after `/health` s
 
 ```bash
 llama-benchy --base-url http://127.0.0.1:8000/v1 \
-  --model DeepSeek-V4-Flash-0731 \
+  --model deepseek-ai/DeepSeek-V4-Flash-0731 \
   --pp 512 2048 --tg 512 --runs 5 \
   --latency-mode generation --concurrency 1 \
   --no-cache --exact-tg --extra-body temperature=0,seed=20261010 \
   --save-result c1.json --format json
 
 llama-benchy --base-url http://127.0.0.1:8000/v1 \
-  --model DeepSeek-V4-Flash-0731 \
+  --model deepseek-ai/DeepSeek-V4-Flash-0731 \
   --pp 512 --tg 512 --runs 5 \
   --latency-mode generation --concurrency 8 \
   --no-cache --exact-tg --extra-body temperature=0,seed=20261010 \
   --save-result c8.json --format json
 ```
 
-Repeat on three independently started clean instances to characterize variability. The earlier C2/C4 and long-context campaigns used their own pinned definitions, and the 30-run C8 soak used seed `20261009`; they must not be represented as a single matched session.
+The original qualification's llama-benchy definitions used the short model label `DeepSeek-V4-Flash-0731`; these copy/paste commands use the full served model name configured in this standalone example. Repeat on three independently started clean instances to characterize variability. The earlier C2/C4 and long-context campaigns used their own pinned definitions, and the 30-run C8 soak used seed `20261009`; they must not be represented as a single matched session.
 
 ## Hardware and software provenance
 

@@ -178,7 +178,7 @@ jobs:
         # The encoded tag is safe for an artifact name: a full verification tag
         # is always bare (validated above), so it contains no `/` or `:`.
         # actions/upload-artifact v7
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: serve-bench-results-${{ github.sha }}-${{ env.IMAGE_TAG }}
           path: verify/results/

@@ -26,8 +26,10 @@ def expect_rejected(vllm_ref, upstream_version):
 
 def main():
     assert MODULE.expected_b12x_version("v0.31.0", "1.3.0") == "1.5.0"
+    assert MODULE.expected_b12x_version("v0.32.0", "1.5.1") == "1.5.1"
     expect_rejected("v0.31.0", "1.4.0")
     expect_rejected("v0.31.1", "1.3.0")
+    expect_rejected("v0.32.0", "1.5.0")
     print("All B12X compatibility policy tests passed.")
 
 

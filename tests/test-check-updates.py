@@ -50,6 +50,15 @@ MONITOR_FIXTURE_BASELINE = {
     "VLLM_REF": "v0.26.0",
 }
 
+MONITOR_FIXTURE_REQUIREMENTS = """torch==2.11.0
+torchvision==0.26.0
+torchaudio==2.11.0
+apache-tvm-ffi==0.1.10
+tilelang==0.1.9
+numba==0.65.0
+flashinfer-python==0.6.14
+quack-kernels==0.6.1"""
+
 FAKE_CURL = r'''#!/usr/bin/env python3
 import json
 import os
@@ -184,7 +193,8 @@ def setup_case(directory, source_versions=None):
         compatibility.read_text(encoding="utf-8").replace(
             'POLICIES = {',
             'POLICIES = {\n    "v0.26.0": ("1.3.0", "1.5.0"),\n'
-            '    "v0.27.0rc1": ("1.3.0", "1.5.0"),',
+            '    "v0.27.0rc1": ("1.3.0", "1.5.0"),\n'
+            '    "v0.32.0": ("1.5.1", "1.5.1"),\n',
             1,
         ),
         encoding="utf-8",
@@ -385,6 +395,24 @@ def test_b12x_uses_the_reviewed_compatibility_policy_and_fails_closed():
         assert result.returncode != 0
         assert "Could not determine the B12X version" in result.stderr
         assert (root / "versions.env").read_bytes() == before
+
+
+def test_vllm_032_update_uses_its_reviewed_b12x_compatibility_policy():
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory)
+        env["FAKE_VLLM_TAG"] = "v0.32.0"
+        env["FAKE_B12X_SETUP"] = (
+            "setup(name='vllm', extras_require={'b12x': ['b12x==1.5.1']})"
+        )
+        env["FAKE_REQUIREMENTS"] = MONITOR_FIXTURE_REQUIREMENTS
+
+        result = run_check(root, env, "--update")
+
+        assert result.returncode == 0, result.stderr
+        values = parse_env(root / "versions.env")
+        assert values["VLLM_REF"] == "v0.32.0"
+        assert values["B12X_VERSION"] == "1.5.1"
+        assert "compatible=1.5.1 (vLLM extra=1.5.1)" in result.stdout
 
 
 def test_declared_b12x_version_overrides_the_inherited_monitor_value():
@@ -1047,6 +1075,7 @@ def main():
         test_mutating_modes_are_mutually_exclusive,
         test_quack_aligns_to_vllm_pin_on_update,
         test_b12x_uses_the_reviewed_compatibility_policy_and_fails_closed,
+        test_vllm_032_update_uses_its_reviewed_b12x_compatibility_policy,
         test_declared_b12x_version_overrides_the_inherited_monitor_value,
         test_transformers_drift_is_detected_and_bumped,
         test_transformers_update_respects_vllm_upper_bound,

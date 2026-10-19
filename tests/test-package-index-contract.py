@@ -103,10 +103,15 @@ def test_vllm_audio_extra_is_a_runtime_seed():
 
 
 def test_instanttensor_supports_vllm_copy_api():
-    assert env_value("INSTANTTENSOR_VERSION") == "0.1.9"
+    assert env_value("INSTANTTENSOR_VERSION")
 
     bump = read("scripts/bump.sh")
     assert "instanttensor==${INSTANTTENSOR_VERSION}" in bump
+
+    monitor = read("scripts/check-updates.sh")
+    assert 'vllm_requirement "instanttensor"' in monitor
+    assert 'pypi_latest_compatible "instanttensor"' in monitor
+    assert 'update_env "INSTANTTENSOR_VERSION"' in monitor
 
 
 def test_random_lock_paths_are_normalized():

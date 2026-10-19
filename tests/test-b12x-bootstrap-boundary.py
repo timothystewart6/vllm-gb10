@@ -27,6 +27,11 @@ def run(command, env):
 
 
 def main():
+    b12x_version = next(
+        line.split("=", 1)[1]
+        for line in (ROOT / "versions.env").read_text().splitlines()
+        if line.startswith("B12X_VERSION=")
+    )
     env = os.environ.copy()
     env.update(
         {
@@ -39,15 +44,15 @@ def main():
     )
 
     build_args = run(["bash", "scripts/build-args.sh"], env)
-    assert "--build-arg B12X_VERSION=1.5.0" in build_args
+    assert f"--build-arg B12X_VERSION={b12x_version}" in build_args
     assert "99.99.99" not in build_args
 
     metadata = run(["bash", "scripts/render-metadata.sh"], env)
-    assert '\n  b12x: "1.5.0"' in metadata
+    assert f'\n  b12x: "{b12x_version}"' in metadata
     assert "99.99.99" not in metadata
 
     release_notes = run(["bash", "scripts/generate-release-notes.sh"], env)
-    assert "| **B12X** | 1.5.0 | - |" in release_notes
+    assert f"| **B12X** | {b12x_version} | - |" in release_notes
     assert "99.99.99" not in release_notes
 
     print("PASS: declared B12X_VERSION overrides inherited values")

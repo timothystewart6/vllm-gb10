@@ -167,6 +167,11 @@ def test_release_notes_compare_real_tags_and_lockfiles():
         run(["git", "tag", "v0.1.0-gb10.0"], repo)
 
         shutil.copy2(SOURCE_ROOT / "versions.env", repo / "versions.env")
+        source_b12x = next(
+            line.split("=", 1)[1]
+            for line in (repo / "versions.env").read_text().splitlines()
+            if line.startswith("B12X_VERSION=")
+        )
         replace_env_value(
             repo / "versions.env", "FLASHINFER_REF", "v0.6.16.post3"
         )
@@ -187,8 +192,8 @@ def test_release_notes_compare_real_tags_and_lockfiles():
         assert "Changed components (vs v0.1.0-gb10.0)" in result.stdout
         assert "**uv**: 0.0.1 ->" in result.stdout
         assert "**FlashInfer**: v0.6.14 -> v0.6.16.post3" in result.stdout
-        assert "**B12X**:  -> 1.5.0" in result.stdout
-        assert "| **B12X** | 1.5.0 | - |" in result.stdout
+        assert f"**B12X**:  -> {source_b12x}" in result.stdout
+        assert f"| **B12X** | {source_b12x} | - |" in result.stdout
         assert "**python runtime lock**:" in result.stdout
         assert f"commit/{current_sha}" in result.stdout
 

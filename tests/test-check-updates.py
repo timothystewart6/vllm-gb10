@@ -193,8 +193,7 @@ def setup_case(directory, source_versions=None):
         compatibility.read_text(encoding="utf-8").replace(
             'POLICIES = {',
             'POLICIES = {\n    "v0.26.0": ("1.3.0", "1.5.0"),\n'
-            '    "v0.27.0rc1": ("1.3.0", "1.5.0"),\n'
-            '    "v0.32.0": ("1.5.1", "1.5.1"),\n',
+            '    "v0.27.0rc1": ("1.3.0", "1.5.0"),\n',
             1,
         ),
         encoding="utf-8",
@@ -362,11 +361,14 @@ quack-kernels==0.6.2"""
 
 def test_b12x_uses_the_reviewed_compatibility_policy_and_fails_closed():
     source_versions = (SOURCE_ROOT / "versions.env").read_text(encoding="utf-8")
+    source_b12x = parse_env(SOURCE_ROOT / "versions.env")["B12X_VERSION"]
 
     with tempfile.TemporaryDirectory() as directory:
         root, env = setup_case(
             directory,
-            source_versions.replace("B12X_VERSION=1.5.0", "B12X_VERSION=1.3.0"),
+            source_versions.replace(
+                f"B12X_VERSION={source_b12x}", "B12X_VERSION=1.3.0"
+            ),
         )
         result = run_check(root, env, "--update")
 
@@ -413,6 +415,18 @@ def test_vllm_032_update_uses_its_reviewed_b12x_compatibility_policy():
         assert values["VLLM_REF"] == "v0.32.0"
         assert values["B12X_VERSION"] == "1.5.1"
         assert "compatible=1.5.1 (vLLM extra=1.5.1)" in result.stdout
+        validation = subprocess.run(
+            [
+                "python3",
+                str(root / "scripts" / "versions_env.py"),
+                str(root / "versions.env"),
+            ],
+            cwd=Path(directory),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert validation.returncode == 0, validation.stderr
 
 
 def test_declared_b12x_version_overrides_the_inherited_monitor_value():

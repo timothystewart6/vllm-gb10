@@ -81,9 +81,25 @@ def test_vllm_rust_extensions_are_optional():
     assert "_rust_tool_parser.abi3.so" not in dockerfile
 
 
+def test_nccl_build_has_bounded_parallelism():
+    """The NCCL build must receive a bounded job count when not overridden."""
+    dockerfile = (ROOT / "Dockerfile").read_text()
+    match = re.search(
+        r"^FROM torch-base AS base$(.*?)(?=^FROM )",
+        dockerfile,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert match, "base stage not found"
+
+    stage = match.group(1)
+    assert "ARG BUILD_JOBS=2" in stage
+    assert "make -j ${BUILD_JOBS} src.build" in stage
+
+
 if __name__ == "__main__":
     test_flashinfer_no_isolation_builds_use_system_python()
     test_flashinfer_jit_cache_provider_arches_follow_cuda_arch_input()
     test_vllm_builders_use_vllm_tools_layout()
     test_vllm_rust_extensions_are_optional()
+    test_nccl_build_has_bounded_parallelism()
     print("PASS: Dockerfile build helper contracts")

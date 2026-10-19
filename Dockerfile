@@ -18,9 +18,9 @@ ARG TORCH_CUDA_ARCH_LIST=12.1a
 # Placing them in apt-base would bust the layer cache for ALL downstream stages
 # (torch-base, base/NCCL, flashinfer-builder, vllm-builder) on every change.
 # SOURCE_DATE_EPOCH is declared only in the three builder stages that use it.
-# BUILD_JOBS is declared only in flashinfer-builder and vllm-builder so that
-# tuning parallelism on a new runner does not evict the expensive apt/torch/
-# NCCL cache layers.
+# BUILD_JOBS is declared in base, flashinfer-builder, and vllm-builder. It is
+# used by the NCCL build in base, so changing parallelism invalidates NCCL and
+# downstream layers without evicting the apt or torch cache layers.
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_BREAK_SYSTEM_PACKAGES=1 \
@@ -92,6 +92,7 @@ ARG NUMBA_VERSION
 ARG NCCL_REPO
 ARG NCCL_REF
 ARG NCCL_COMMIT
+ARG BUILD_JOBS=2
 
 # NCCL - clone the exact tag, verify the commit SHA matches versions.env,
 # then build with sm_121 gencode and install as .deb so it replaces the

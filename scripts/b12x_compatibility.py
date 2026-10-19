@@ -14,6 +14,10 @@ class CompatibilityError(ValueError):
 # fallback that carries a B12X pin to a different vLLM release.
 POLICIES = {
     "v0.31.0": ("1.3.0", "1.5.0"),
+    # vLLM 0.32.0 declares B12X 1.5.1 and its CUDA requirements use CUTLASS
+    # DSL 4.8.0. B12X 1.5.1 uses the same CUTLASS DSL release, so the upstream
+    # pin is also the reviewed compatible runtime version.
+    "v0.32.0": ("1.5.1", "1.5.1"),
 }
 
 

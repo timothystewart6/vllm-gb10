@@ -78,8 +78,9 @@ def main():
     expect_rejected(valid + f"\n{uv_line}\n", "duplicate key")
     expect_rejected(valid + "\nUNREVIEWED_INPUT=1\n", "unknown key")
     expect_rejected(valid.replace(f"{uv_line}\n", ""), "missing key")
-    assert parsed["B12X_VERSION"] == "1.5.0"
-    missing_b12x = valid.replace("B12X_VERSION=1.5.0\n", "", 1)
+    b12x_line = f"B12X_VERSION={parsed['B12X_VERSION']}"
+    assert parsed["B12X_VERSION"]
+    missing_b12x = valid.replace(f"{b12x_line}\n", "", 1)
     expect_rejected(missing_b12x, "missing required B12X version")
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory) / "versions.env"
@@ -95,7 +96,9 @@ def main():
         )
         assert present.returncode == 0
     expect_rejected(
-        valid.replace("B12X_VERSION=1.5.0", "B12X_VERSION=>=1.5.0"),
+        valid.replace(
+            b12x_line, f"B12X_VERSION=>={parsed['B12X_VERSION']}"
+        ),
         "B12X version range",
     )
     expect_rejected(

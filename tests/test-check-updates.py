@@ -388,6 +388,61 @@ def test_instanttensor_update_respects_vllm_floor():
         assert "instanttensor (INSTANTTENSOR_VERSION)" in result.stdout
 
 
+def test_instanttensor_missing_requirement_is_not_bumped():
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory)
+        before = (root / "versions.env").read_bytes()
+
+        result = run_check(root, env)
+
+        assert result.returncode == 0, result.stderr
+        assert "instanttensor (INSTANTTENSOR_VERSION)" in result.stdout
+        assert "not declared by vLLM - not tracked" in result.stdout
+        assert (root / "versions.env").read_bytes() == before
+
+
+def test_instanttensor_duplicate_requirements_fail_closed():
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory)
+        env["FAKE_COMMON_REQUIREMENTS"] = (
+            "transformers>=4.45.0\ninstanttensor>=0.1.9"
+        )
+        env["FAKE_REQUIREMENTS"] = "instanttensor>=0.2.2"
+        before = (root / "versions.env").read_bytes()
+
+        result = run_check(root, env, "--update")
+
+        assert result.returncode != 0
+        assert "multiple requirements found for instanttensor" in result.stderr
+        assert (root / "versions.env").read_bytes() == before
+
+
+def test_instanttensor_without_compatible_release_fails_closed():
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory)
+        env["FAKE_REQUIREMENTS"] = "instanttensor>=6.0.0,<6.1.0"
+        env["FAKE_INSTANTTENSOR_VERSION"] = "5.18.0"
+        env["FAKE_INSTANTTENSOR_RELEASES"] = "5.17.0,5.18.0"
+        before = (root / "versions.env").read_bytes()
+
+        result = run_check(root, env, "--update")
+
+        assert result.returncode != 0
+        assert "no stable release satisfying the vLLM requirement" in result.stderr
+        assert (root / "versions.env").read_bytes() == before
+
+
+def test_instanttensor_unsupported_requirement_fails_closed():
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory)
+        env["FAKE_REQUIREMENTS"] = "instanttensor>="
+
+        result = run_check(root, env)
+
+        assert result.returncode != 0
+        assert "unsupported requirement specifier" in result.stderr
+
+
 def test_b12x_uses_the_reviewed_compatibility_policy_and_fails_closed():
     source_versions = (SOURCE_ROOT / "versions.env").read_text(encoding="utf-8")
     source_b12x = parse_env(SOURCE_ROOT / "versions.env")["B12X_VERSION"]
@@ -1123,6 +1178,10 @@ def main():
         test_mutating_modes_are_mutually_exclusive,
         test_quack_aligns_to_vllm_pin_on_update,
         test_instanttensor_update_respects_vllm_floor,
+        test_instanttensor_missing_requirement_is_not_bumped,
+        test_instanttensor_duplicate_requirements_fail_closed,
+        test_instanttensor_without_compatible_release_fails_closed,
+        test_instanttensor_unsupported_requirement_fails_closed,
         test_b12x_uses_the_reviewed_compatibility_policy_and_fails_closed,
         test_vllm_032_update_uses_its_reviewed_b12x_compatibility_policy,
         test_declared_b12x_version_overrides_the_inherited_monitor_value,

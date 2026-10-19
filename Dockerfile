@@ -207,9 +207,9 @@ RUN git clone --recursive ${VLLM_REPO} /workspace/vllm \
 
 # Drop pre-built Rust artifacts into the source tree. setup.py detects them
 # and ships them as-is, skipping the local Rust build.
-# vllm-rs is the axum HTTP server binary; _rust_tool_parser is a PyO3 module.
+# vllm-rs is the axum HTTP server binary. PyO3 modules are optional.
 COPY --from=rust-builder /workspace/vllm/vllm/vllm-rs vllm/vllm-rs
-COPY --from=rust-builder /workspace/vllm/vllm/_rust_tool_parser.abi3.so vllm/
+COPY --from=rust-builder /workspace/vllm/vllm/_rust_*.so vllm/
 
 WORKDIR /workspace/vllm
 RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \

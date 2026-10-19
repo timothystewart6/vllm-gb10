@@ -514,7 +514,8 @@ log "Validating vLLM ${VLLM_TARGET} source layout..."
 bash "${REPO_ROOT}/scripts/validate-vllm-source-layout.sh" --tag "${VLLM_TARGET}"
 
 # B12X is a GB10-specific vLLM optional extra, not a normal CUDA requirement.
-# A reviewed compatibility decision is required for every selected vLLM release.
+# Follow vLLM's declared B12X version unless a demonstrated compatibility
+# conflict requires an explicit override in b12x_compatibility.py.
 B12X_UPSTREAM_VERSION=$(vllm_b12x_version "${VLLM_TARGET}") || {
   log "Could not determine the B12X version declared by vLLM ${VLLM_TARGET}."
   exit 1
@@ -522,7 +523,7 @@ B12X_UPSTREAM_VERSION=$(vllm_b12x_version "${VLLM_TARGET}") || {
 B12X_TARGET=$(python3 "${REPO_ROOT}/scripts/b12x_compatibility.py" \
   --vllm-ref "${VLLM_TARGET}" \
   --upstream-version "${B12X_UPSTREAM_VERSION}") || {
-  log "Could not determine the reviewed B12X compatibility policy for ${VLLM_TARGET}."
+  log "Could not determine the B12X version for ${VLLM_TARGET}."
   exit 1
 }
 if [[ "${B12X_VERSION}" != "${B12X_TARGET}" ]]; then
@@ -533,8 +534,8 @@ if [[ "${B12X_VERSION}" != "${B12X_TARGET}" ]]; then
     update_env "B12X_VERSION" "${B12X_TARGET}"
   fi
 else
-  printf '%s %-30s current=%-20s (reviewed for VLLM %s, extra=%s)\n' \
-    "${OK}" "B12X (B12X_VERSION)" "${B12X_VERSION}" "${VLLM_TARGET}" "${B12X_UPSTREAM_VERSION}"
+  printf '%s %-30s current=%-20s (follows vLLM extra=%s)\n' \
+    "${OK}" "B12X (B12X_VERSION)" "${B12X_VERSION}" "${B12X_UPSTREAM_VERSION}"
 fi
 
 NCCL_LATEST=$(gh_latest_tag "NVIDIA/nccl")

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Resolve the reviewed B12X version policy for a vLLM release."""
+"""Resolve the B12X version for a vLLM release."""
 
 from __future__ import annotations
 
@@ -7,36 +7,30 @@ import argparse
 
 
 class CompatibilityError(ValueError):
-    """Raised when no reviewed B12X compatibility decision exists."""
+    """Raised when a reviewed B12X override does not match upstream."""
 
 
-# Each vLLM release needs an explicit compatibility decision. Do not add a
-# fallback that carries a B12X pin to a different vLLM release.
-POLICIES = {
+# vLLM 0.31.0 declares b12x==1.3.0, but that release conflicts with the
+# CUTLASS DSL version selected by vLLM. B12X 1.5.0 is the reviewed override.
+OVERRIDES = {
     "v0.31.0": ("1.3.0", "1.5.0"),
-    # vLLM 0.32.0 declares B12X 1.5.1 and its CUDA requirements use CUTLASS
-    # DSL 4.8.0. B12X 1.5.1 uses the same CUTLASS DSL release, so the upstream
-    # pin is also the reviewed compatible runtime version.
-    "v0.32.0": ("1.5.1", "1.5.1"),
 }
 
 
 def expected_b12x_version(vllm_ref: str, upstream_version: str) -> str:
-    """Return the reviewed B12X version for one vLLM release."""
-    policy = POLICIES.get(vllm_ref)
-    if policy is None:
-        raise CompatibilityError(
-            f"No B12X compatibility policy exists for {vllm_ref}. "
-            "Recompute the B12X and CUTLASS dependency graph before updating VLLM_REF."
-        )
-    expected_upstream_version, resolved_version = policy
-    if upstream_version != expected_upstream_version:
-        raise CompatibilityError(
-            f"vLLM {vllm_ref} declares b12x=={upstream_version}, but the reviewed "
-            f"policy expects b12x=={expected_upstream_version}. Recompute the B12X and "
-            "CUTLASS dependency graph before updating the policy."
-        )
-    return resolved_version
+    """Return an override when needed, otherwise follow vLLM upstream."""
+    override = OVERRIDES.get(vllm_ref)
+    if override is not None:
+        expected_upstream_version, resolved_version = override
+        if upstream_version != expected_upstream_version:
+            raise CompatibilityError(
+                f"vLLM {vllm_ref} declares b12x=={upstream_version}, but the reviewed "
+                f"override expects b12x=={expected_upstream_version}. Recompute the "
+                "B12X and CUTLASS dependency graph before updating the override."
+            )
+        return resolved_version
+
+    return upstream_version
 
 
 def main() -> int:

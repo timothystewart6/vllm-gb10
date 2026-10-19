@@ -534,7 +534,7 @@ if [[ "${B12X_VERSION}" != "${B12X_TARGET}" ]]; then
     update_env "B12X_VERSION" "${B12X_TARGET}"
   fi
 else
-  printf '%s %-30s current=%-20s (follows vLLM extra=%s)\n' \
+  printf '%s %-30s current=%-20s (vLLM extra=%s)\n' \
     "${OK}" "B12X (B12X_VERSION)" "${B12X_VERSION}" "${B12X_UPSTREAM_VERSION}"
 fi
 

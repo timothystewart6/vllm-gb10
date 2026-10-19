@@ -462,6 +462,15 @@ def test_b12x_uses_overrides_only_when_needed_and_follows_upstream_by_default():
 
     with tempfile.TemporaryDirectory() as directory:
         root, env = setup_case(directory, source_versions)
+        env["FAKE_VLLM_TAG"] = "v0.31.0"
+        result = run_check(root, env)
+
+        assert result.returncode == 0, result.stderr
+        assert "(vLLM extra=1.3.0)" in result.stdout
+        assert "follows vLLM extra" not in result.stdout
+
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory, source_versions)
         env["FAKE_VLLM_TAG"] = "v0.33.0"
         env["FAKE_B12X_SETUP"] = (
             "setup(name='vllm', extras_require={'b12x': ['b12x==1.4.0']})"

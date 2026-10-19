@@ -18,6 +18,7 @@
 #   TVM FFI      - PyPI (tvm-ffi)
 #   TileLang     - PyPI (tilelang)
 #   Numba        - PyPI (numba)
+#   instanttensor - PyPI, constrained by vLLM requirements
 #   QuACK kernels - vLLM requirements pin (requirements/cuda.txt)
 #   apt snapshot - age of the Ubuntu snapshot in locks/apt-sources.list
 #
@@ -631,6 +632,29 @@ report "TileLang (TILELANG_VERSION)" "TILELANG_VERSION" "${TILELANG_VERSION}" "$
 
 NUMBA_LATEST=$(vllm_or_pypi "numba")
 report "Numba (NUMBA_VERSION)" "NUMBA_VERSION" "${NUMBA_VERSION}" "${NUMBA_LATEST}"
+
+# instanttensor is a runtime seed whose minimum version can change with vLLM.
+# Resolve the newest stable release that satisfies the selected vLLM
+# requirement so bump.sh cannot combine a newer upstream floor with a stale
+# exact seed.
+INSTANTTENSOR_REQUIREMENT=$(vllm_requirement "instanttensor")
+if [[ -n "${INSTANTTENSOR_REQUIREMENT}" ]]; then
+  INSTANTTENSOR_LATEST=$(pypi_latest_compatible "instanttensor" "${INSTANTTENSOR_REQUIREMENT}")
+  if [ "${INSTANTTENSOR_VERSION}" = "${INSTANTTENSOR_LATEST}" ]; then
+    printf '%s %-30s current=%-20s (satisfies vLLM: %s)\n' \
+      "${OK}" "instanttensor (INSTANTTENSOR_VERSION)" "${INSTANTTENSOR_VERSION}" "${INSTANTTENSOR_REQUIREMENT}"
+  else
+    printf '%s %-30s current=%-20s compatible=%s (vLLM: %s)\n' \
+      "${OUT}" "instanttensor (INSTANTTENSOR_VERSION)" "${INSTANTTENSOR_VERSION}" "${INSTANTTENSOR_LATEST}" "${INSTANTTENSOR_REQUIREMENT}"
+    UPDATES=$((UPDATES + 1))
+    if [ "${DO_UPDATE}" -eq 1 ]; then
+      update_env "INSTANTTENSOR_VERSION" "${INSTANTTENSOR_LATEST}"
+    fi
+  fi
+else
+  printf 'INFO   %-30s current=%-20s (not declared by vLLM - not tracked)\n' \
+    "instanttensor (INSTANTTENSOR_VERSION)" "${INSTANTTENSOR_VERSION}"
+fi
 
 # QuACK kernels is pinned by vLLM's requirements (cutlass DSL / FA4 MSA) and
 # must stay aligned with the selected VLLM_REF, or the runtime lock resolution

@@ -36,6 +36,7 @@ MONITOR_FIXTURE_BASELINE = {
         "352d7652024047020"
     ),
     "FLASHINFER_REF": "v0.6.14",
+    "INSTANTTENSOR_VERSION": "0.1.9",
     "NCCL_REF": "v2.30.7-1",
     "NUMBA_VERSION": "0.65.0",
     "QUACK_KERNELS_VERSION": "0.6.1",
@@ -57,6 +58,7 @@ apache-tvm-ffi==0.1.10
 tilelang==0.1.9
 numba==0.65.0
 flashinfer-python==0.6.14
+instanttensor>=0.1.9
 quack-kernels==0.6.1"""
 
 FAKE_CURL = r'''#!/usr/bin/env python3
@@ -83,7 +85,7 @@ if "raw.githubusercontent.com" in url:
         ))
     elif "/requirements/common.txt" in url:
         print(os.environ.get("FAKE_COMMON_REQUIREMENTS", "transformers>=4.45.0"))
-    elif os.environ.get("FAKE_REQUIREMENTS"):
+    elif os.environ.get("FAKE_REQUIREMENTS") and "/requirements/build/" not in url:
         print(os.environ["FAKE_REQUIREMENTS"])
     elif "/v0.26.0/" in url and os.environ.get("FAKE_CURRENT_REQUIREMENTS") != "1":
         print("""torch==9.9.0
@@ -140,6 +142,14 @@ elif "/pypi/transformers/json" in url:
     print(json.dumps({
         "info": {"version": latest},
         "releases": {version: [{"filename": f"transformers-{version}.whl"}]
+                     for version in releases.split(",")},
+    }))
+elif "/pypi/instanttensor/json" in url:
+    latest = os.environ.get("FAKE_INSTANTTENSOR_VERSION", "0.1.9")
+    releases = os.environ.get("FAKE_INSTANTTENSOR_RELEASES", f"0.1.9,{latest}")
+    print(json.dumps({
+        "info": {"version": latest},
+        "releases": {version: [{"filename": f"instanttensor-{version}.whl"}]
                      for version in releases.split(",")},
     }))
 elif "/pypi/" in url:
@@ -359,6 +369,80 @@ quack-kernels==0.6.2"""
         assert "QuACK kernels (QUACK_KERNELS_VERSION)" in result.stdout
 
 
+def test_instanttensor_update_respects_vllm_floor():
+    # Regression: vLLM 0.32.0 raised instanttensor's minimum from 0.1.9 to
+    # 0.2.2. The monitor must update the exact runtime seed before bump.sh
+    # resolves the generated lockfile.
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory)
+        env["FAKE_REQUIREMENTS"] = MONITOR_FIXTURE_REQUIREMENTS.replace(
+            "instanttensor>=0.1.9", "instanttensor>=0.2.2"
+        )
+        env["FAKE_INSTANTTENSOR_VERSION"] = "0.2.2"
+        env["FAKE_INSTANTTENSOR_RELEASES"] = "0.1.9,0.2.2"
+
+        result = run_check(root, env, "--update")
+
+        assert result.returncode == 0, result.stderr
+        assert parse_env(root / "versions.env")["INSTANTTENSOR_VERSION"] == "0.2.2"
+        assert "instanttensor (INSTANTTENSOR_VERSION)" in result.stdout
+
+
+def test_instanttensor_missing_requirement_is_not_bumped():
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory)
+        before = (root / "versions.env").read_bytes()
+
+        result = run_check(root, env)
+
+        assert result.returncode == 0, result.stderr
+        assert "instanttensor (INSTANTTENSOR_VERSION)" in result.stdout
+        assert "not declared by vLLM - not tracked" in result.stdout
+        assert (root / "versions.env").read_bytes() == before
+
+
+def test_instanttensor_duplicate_requirements_fail_closed():
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory)
+        env["FAKE_COMMON_REQUIREMENTS"] = (
+            "transformers>=4.45.0\ninstanttensor>=0.1.9"
+        )
+        env["FAKE_REQUIREMENTS"] = "instanttensor>=0.2.2"
+        before = (root / "versions.env").read_bytes()
+
+        result = run_check(root, env, "--update")
+
+        assert result.returncode != 0
+        assert "multiple requirements found for instanttensor" in result.stderr
+        assert (root / "versions.env").read_bytes() == before
+
+
+def test_instanttensor_without_compatible_release_fails_closed():
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory)
+        env["FAKE_REQUIREMENTS"] = "instanttensor>=6.0.0,<6.1.0"
+        env["FAKE_INSTANTTENSOR_VERSION"] = "5.18.0"
+        env["FAKE_INSTANTTENSOR_RELEASES"] = "5.17.0,5.18.0"
+        before = (root / "versions.env").read_bytes()
+
+        result = run_check(root, env, "--update")
+
+        assert result.returncode != 0
+        assert "no stable release satisfying the vLLM requirement" in result.stderr
+        assert (root / "versions.env").read_bytes() == before
+
+
+def test_instanttensor_unsupported_requirement_fails_closed():
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory)
+        env["FAKE_REQUIREMENTS"] = "instanttensor>="
+
+        result = run_check(root, env)
+
+        assert result.returncode != 0
+        assert "unsupported requirement specifier" in result.stderr
+
+
 def test_b12x_uses_the_reviewed_compatibility_policy_and_fails_closed():
     source_versions = (SOURCE_ROOT / "versions.env").read_text(encoding="utf-8")
     source_b12x = parse_env(SOURCE_ROOT / "versions.env")["B12X_VERSION"]
@@ -406,7 +490,11 @@ def test_vllm_032_update_uses_its_reviewed_b12x_compatibility_policy():
         env["FAKE_B12X_SETUP"] = (
             "setup(name='vllm', extras_require={'b12x': ['b12x==1.5.1']})"
         )
-        env["FAKE_REQUIREMENTS"] = MONITOR_FIXTURE_REQUIREMENTS
+        env["FAKE_REQUIREMENTS"] = MONITOR_FIXTURE_REQUIREMENTS.replace(
+            "instanttensor>=0.1.9", "instanttensor>=0.2.2"
+        )
+        env["FAKE_INSTANTTENSOR_VERSION"] = "0.2.2"
+        env["FAKE_INSTANTTENSOR_RELEASES"] = "0.1.9,0.2.2"
 
         result = run_check(root, env, "--update")
 
@@ -414,6 +502,7 @@ def test_vllm_032_update_uses_its_reviewed_b12x_compatibility_policy():
         values = parse_env(root / "versions.env")
         assert values["VLLM_REF"] == "v0.32.0"
         assert values["B12X_VERSION"] == "1.5.1"
+        assert values["INSTANTTENSOR_VERSION"] == "0.2.2"
         assert "compatible=1.5.1 (vLLM extra=1.5.1)" in result.stdout
         validation = subprocess.run(
             [
@@ -1088,6 +1177,11 @@ def main():
         test_upstream_failure_is_fatal,
         test_mutating_modes_are_mutually_exclusive,
         test_quack_aligns_to_vllm_pin_on_update,
+        test_instanttensor_update_respects_vllm_floor,
+        test_instanttensor_missing_requirement_is_not_bumped,
+        test_instanttensor_duplicate_requirements_fail_closed,
+        test_instanttensor_without_compatible_release_fails_closed,
+        test_instanttensor_unsupported_requirement_fails_closed,
         test_b12x_uses_the_reviewed_compatibility_policy_and_fails_closed,
         test_vllm_032_update_uses_its_reviewed_b12x_compatibility_policy,
         test_declared_b12x_version_overrides_the_inherited_monitor_value,

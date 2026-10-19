@@ -24,6 +24,7 @@ VALID_REPLACEMENTS = {
     "B12X_VERSION": "9.8.7",
     "CUDA_BASE_DIGEST": "sha256:" + "1" * 64,
     "FLASHINFER_REF": "v9.8.7",
+    "INSTANTTENSOR_VERSION": "9.8.7",
     "NCCL_REF": "v9.8.7-1",
     "NUMBA_VERSION": "9.8.7",
     "QUACK_KERNELS_VERSION": "9.8.7",

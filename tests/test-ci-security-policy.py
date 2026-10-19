@@ -16,8 +16,8 @@ ANY_ACTION = re.compile(r"^\s*uses:\s*([^#\s]+)@([^#\s]+)\s*$", re.MULTILINE)
 # procedure.
 APPROVED_ACTIONS = {
     "actions/checkout": "3d3c42e5aac5ba805825da76410c181273ba90b1",
-    "actions/download-artifact": "3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
-    "actions/upload-artifact": "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+    "actions/download-artifact": "9000827ccba6bdab643e8b6fd33ac0654aef8333",
+    "actions/upload-artifact": "cf430e030ddbb5b0abf93d22962f4752f3646cd9",
     "docker/build-push-action": "c3c9e263c25d99ce0380d002d59b67737d91b0dc",
     "docker/login-action": "dbcb813823bdd20940b903addbd779551569679f",
     "docker/metadata-action": "dc802804100637a589fabce1cb79ff13a1411302",

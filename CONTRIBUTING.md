@@ -177,10 +177,10 @@ vLLM source without executing upstream packaging code, seeded into a generated
 lockfile, and included in build and release metadata.
 
 The current policy covers B12X only. It does not imply support for unrelated
-vLLM extras. B12X compatibility is a reviewed decision for each vLLM release.
-If the vLLM release or its declared B12X pin changes, the monitor and trusted
-generator fail until the B12X and CUTLASS dependency graph is recomputed. See
-[issue 160](https://github.com/timothystewart6/vllm-gb10/issues/160).
+vLLM extras. B12X follows the version declared by vLLM by default, and the
+normal dependency resolver determines whether that graph is compatible. Keep
+an explicit override only for a demonstrated conflict, with a regression test
+and the supporting dependency evidence. See [issue 160](https://github.com/timothystewart6/vllm-gb10/issues/160).
 
 ### Maintainer approval flow
 

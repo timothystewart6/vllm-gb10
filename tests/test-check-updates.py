@@ -201,8 +201,8 @@ def setup_case(directory, source_versions=None):
     shutil.copy2(SOURCE_ROOT / "scripts" / "b12x_compatibility.py", compatibility)
     compatibility.write_text(
         compatibility.read_text(encoding="utf-8").replace(
-            'POLICIES = {',
-            'POLICIES = {\n    "v0.26.0": ("1.3.0", "1.5.0"),\n'
+            'OVERRIDES = {',
+            'OVERRIDES = {\n    "v0.26.0": ("1.3.0", "1.5.0"),\n'
             '    "v0.27.0rc1": ("1.3.0", "1.5.0"),\n',
             1,
         ),
@@ -443,7 +443,7 @@ def test_instanttensor_unsupported_requirement_fails_closed():
         assert "unsupported requirement specifier" in result.stderr
 
 
-def test_b12x_uses_the_reviewed_compatibility_policy_and_fails_closed():
+def test_b12x_uses_overrides_only_when_needed_and_follows_upstream_by_default():
     source_versions = (SOURCE_ROOT / "versions.env").read_text(encoding="utf-8")
     source_b12x = parse_env(SOURCE_ROOT / "versions.env")["B12X_VERSION"]
 
@@ -462,15 +462,24 @@ def test_b12x_uses_the_reviewed_compatibility_policy_and_fails_closed():
 
     with tempfile.TemporaryDirectory() as directory:
         root, env = setup_case(directory, source_versions)
+        env["FAKE_VLLM_TAG"] = "v0.31.0"
+        result = run_check(root, env)
+
+        assert result.returncode == 0, result.stderr
+        assert "(vLLM extra=1.3.0)" in result.stdout
+        assert "follows vLLM extra" not in result.stdout
+
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory, source_versions)
+        env["FAKE_VLLM_TAG"] = "v0.33.0"
         env["FAKE_B12X_SETUP"] = (
             "setup(name='vllm', extras_require={'b12x': ['b12x==1.4.0']})"
         )
-        before = (root / "versions.env").read_bytes()
         result = run_check(root, env, "--update")
 
-        assert result.returncode != 0
-        assert "Could not determine the reviewed B12X compatibility policy" in result.stderr
-        assert (root / "versions.env").read_bytes() == before
+        assert result.returncode == 0, result.stderr
+        assert parse_env(root / "versions.env")["B12X_VERSION"] == "1.4.0"
+        assert "B12X (B12X_VERSION)" in result.stdout
 
     with tempfile.TemporaryDirectory() as directory:
         root, env = setup_case(directory, source_versions)
@@ -483,7 +492,7 @@ def test_b12x_uses_the_reviewed_compatibility_policy_and_fails_closed():
         assert (root / "versions.env").read_bytes() == before
 
 
-def test_vllm_032_update_uses_its_reviewed_b12x_compatibility_policy():
+def test_vllm_032_update_follows_the_reviewed_upstream_b12x_pin():
     with tempfile.TemporaryDirectory() as directory:
         root, env = setup_case(directory)
         env["FAKE_VLLM_TAG"] = "v0.32.0"
@@ -1182,8 +1191,8 @@ def main():
         test_instanttensor_duplicate_requirements_fail_closed,
         test_instanttensor_without_compatible_release_fails_closed,
         test_instanttensor_unsupported_requirement_fails_closed,
-        test_b12x_uses_the_reviewed_compatibility_policy_and_fails_closed,
-        test_vllm_032_update_uses_its_reviewed_b12x_compatibility_policy,
+        test_b12x_uses_overrides_only_when_needed_and_follows_upstream_by_default,
+        test_vllm_032_update_follows_the_reviewed_upstream_b12x_pin,
         test_declared_b12x_version_overrides_the_inherited_monitor_value,
         test_transformers_drift_is_detected_and_bumped,
         test_transformers_update_respects_vllm_upper_bound,

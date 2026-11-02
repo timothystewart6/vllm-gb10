@@ -164,6 +164,38 @@ gh_latest_tag() {
     | python3 -c "import json,sys; print(json.load(sys.stdin)['tag_name'])"
 }
 
+gh_latest_vllm_tag() {
+  # vLLM can publish a stable release with a prerelease tag but a stable name.
+  # Accept that stable name only when it has the same version base as the tag.
+  curl -fsSL "https://api.github.com/repos/vllm-project/vllm/releases/latest" \
+    | python3 -c '
+import json
+import re
+import sys
+
+release = json.load(sys.stdin)
+tag = release.get("tag_name", "")
+name = release.get("name", "")
+stable = r"v[0-9]+(?:\.[0-9]+)+(?:\.post[0-9]+)?(?:-[0-9]+)?"
+prerelease = r"(v[0-9]+(?:\.[0-9]+)+)(?:a|b|rc)[0-9]+"
+
+if release.get("draft") or release.get("prerelease"):
+    raise SystemExit("latest vLLM release is not a stable release")
+if re.fullmatch(stable, tag):
+    print(tag)
+elif (
+    re.fullmatch(prerelease, tag)
+    and re.fullmatch(stable, name)
+    and re.fullmatch(prerelease, tag).group(1) == name
+):
+    print(name)
+else:
+    raise SystemExit(
+        "latest vLLM release has no stable tag matching its release metadata"
+    )
+'
+}
+
 pypi_latest() {
   # Returns the latest stable version from PyPI for a package.
   local pkg="$1"
@@ -172,12 +204,13 @@ pypi_latest() {
 }
 
 torch_triton_pin() {
-  # Returns the exact Triton dependency for Torch's Python 3.12 arm64 wheel.
+  # Returns the selected Triton version for Torch's Python 3.12 arm64 wheel.
   local torch_version="$1"
   local torch_index="${PYTORCH_INDEX_URL%/}/torch/"
   local torch_variant="${PYTORCH_INDEX_URL%/}"
   torch_variant="${torch_variant##*/}"
   local metadata_url
+  local requirement
   metadata_url=$(curl -fsSL "${torch_index}" \
   | python3 -c '
 import html.parser
@@ -209,7 +242,7 @@ parser.feed(sys.stdin.read())
   log "Could not identify one Python 3.12 arm64 Torch wheel for ${torch_version}."
   return 1
   fi
-  curl -fsSL "${metadata_url}" \
+  requirement=$(curl -fsSL "${metadata_url}" \
     | python3 -c '
 import re
 import sys
@@ -253,22 +286,33 @@ def marker_applies(marker):
       return False
   return True
 
-pins = set()
+requirements = set()
 for line in sys.stdin:
   match = re.match(
-    r"^Requires-Dist:\s*triton\s*==\s*([^\s;]+)(?:\s*;\s*(.*))?$",
+    r"^Requires-Dist:\s*triton\s*(==|~=)\s*([^\s;]+)(?:\s*;\s*(.*))?$",
     line.strip(),
     re.IGNORECASE,
   )
-  if match and marker_applies(match.group(2)):
-    pins.add(match.group(1))
+  if match and marker_applies(match.group(3)):
+    requirements.add((match.group(1), match.group(2)))
 
-if len(pins) != 1:
+if len(requirements) != 1:
   raise SystemExit(
-    "arm64 Torch metadata must have one applicable exact Triton dependency"
+    "arm64 Torch metadata must have one applicable exact or compatible Triton dependency"
   )
-print(pins.pop())
+operator, version = requirements.pop()
+print(operator + version)
 '
+  )
+
+  case "${requirement}" in
+    '=='*) printf '%s\n' "${requirement#==}" ;;
+    '~='*) pypi_latest_compatible "triton" "${requirement}" ;;
+    *)
+      log "Unsupported Triton requirement from Torch metadata"
+      return 1
+      ;;
+  esac
 }
 
 # ---------------------------------------------------------------------------
@@ -466,7 +510,7 @@ report() {
 
 log "Checking GitHub releases..."
 
-VLLM_LATEST=$(gh_latest_tag "vllm-project/vllm")
+VLLM_LATEST=$(gh_latest_vllm_tag)
 # Use semver comparison so that a pinned pre-release (e.g. v0.23.1rc0) that is
 # newer than the latest stable (e.g. v0.23.0) is reported as INFO, not UPDATE.
 # Only flag UPDATE when the stable release is genuinely ahead of our pin.

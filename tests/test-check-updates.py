@@ -1153,7 +1153,7 @@ def test_invalid_vllm_release_tag_is_fatal():
         env["FAKE_VLLM_TAG"] = "nightly"
         result = run_check(root, env)
         assert result.returncode != 0
-        assert "Could not compare vLLM versions" in result.stderr
+        assert "no stable tag matching its release metadata" in result.stderr
 
 
 def test_vllm_release_tag_cannot_inject_python():

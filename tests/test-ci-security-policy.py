@@ -19,7 +19,7 @@ APPROVED_ACTIONS = {
     "actions/download-artifact": "9000827ccba6bdab643e8b6fd33ac0654aef8333",
     "actions/upload-artifact": "cf430e030ddbb5b0abf93d22962f4752f3646cd9",
     "docker/build-push-action": "c3c9e263c25d99ce0380d002d59b67737d91b0dc",
-    "docker/login-action": "dbcb813823bdd20940b903addbd779551569679f",
+    "docker/login-action": "81c6f93d4bc991e510b342a00b419b3bb4efc5c6",
     "docker/metadata-action": "dc802804100637a589fabce1cb79ff13a1411302",
     "docker/setup-buildx-action": "f87e5991a6d7451dcb8d9637bfbc97413f497069",
     "peter-evans/create-pull-request": "5f6978faf089d4d20b00c7766989d076bb2fc7f1",

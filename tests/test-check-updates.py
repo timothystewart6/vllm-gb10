@@ -106,7 +106,12 @@ numba==0.65.0
 flashinfer-python==0.6.14
 quack-kernels==0.6.1""")
 elif "vllm-project/vllm/releases/latest" in url:
-    print(json.dumps({"tag_name": os.environ.get("FAKE_VLLM_TAG", "v0.26.0")}))
+    release = {"tag_name": os.environ.get("FAKE_VLLM_TAG", "v0.26.0")}
+    if "FAKE_VLLM_RELEASE_NAME" in os.environ:
+        release["name"] = os.environ["FAKE_VLLM_RELEASE_NAME"]
+    if os.environ.get("FAKE_VLLM_RELEASE_PRERELEASE") == "1":
+        release["prerelease"] = True
+    print(json.dumps(release))
 elif "NVIDIA/nccl/releases/latest" in url:
     print(json.dumps({"tag_name": os.environ.get("FAKE_NCCL_TAG", "v2.30.7-1")}))
 elif "astral-sh/uv/releases/latest" in url:
@@ -133,7 +138,13 @@ elif url.endswith("aarch64.whl.metadata"):
         metadata = f"Requires-Dist: {requirement}"
     print(metadata)
 elif "/pypi/triton/json" in url:
-    print(json.dumps({"info": {"version": "3.6.0"}}))
+    latest = os.environ.get("FAKE_TRITON_LATEST", "3.6.0")
+    releases = os.environ.get("FAKE_TRITON_RELEASES", "3.6.0")
+    print(json.dumps({
+        "info": {"version": latest},
+        "releases": {version: [{"filename": f"triton-{version}.whl"}]
+                     for version in releases.split(",")},
+    }))
 elif "/pypi/nvidia-nvshmem-cu13/json" in url:
     print(json.dumps({"info": {"version": "3.4.5"}}))
 elif "/pypi/transformers/json" in url:
@@ -281,6 +292,46 @@ def test_target_vllm_requirements_are_applied():
         assert values["QUACK_KERNELS_VERSION"] == "9.3.0"
         assert (root / "versions.env").stat().st_mode & 0o777 == 0o644
         assert "9 component(s) updated in versions.env" in result.stdout
+
+
+def test_mistagged_stable_vllm_release_uses_release_name():
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory)
+        env["FAKE_VLLM_TAG"] = "v0.33.0rc3"
+        env["FAKE_VLLM_RELEASE_NAME"] = "v0.33.0"
+
+        result = run_check(root, env, "--update")
+
+        assert result.returncode == 0, result.stderr
+        assert parse_env(root / "versions.env")["VLLM_REF"] == "v0.33.0"
+        assert "latest=v0.33.0" in result.stdout
+
+
+def test_mistagged_vllm_release_with_unrelated_name_fails_closed():
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory)
+        env["FAKE_VLLM_TAG"] = "v0.33.0rc3"
+        env["FAKE_VLLM_RELEASE_NAME"] = "v0.34.0"
+        before = (root / "versions.env").read_bytes()
+
+        result = run_check(root, env, "--update")
+
+        assert result.returncode != 0
+        assert "no stable tag matching its release metadata" in result.stderr
+        assert (root / "versions.env").read_bytes() == before
+
+
+def test_prerelease_vllm_release_is_not_promoted_by_stable_name():
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory)
+        env["FAKE_VLLM_TAG"] = "v0.33.0rc3"
+        env["FAKE_VLLM_RELEASE_NAME"] = "v0.33.0"
+        env["FAKE_VLLM_RELEASE_PRERELEASE"] = "1"
+
+        result = run_check(root, env, "--update")
+
+        assert result.returncode != 0
+        assert "not a stable release" in result.stderr
 
 
 def test_vllm_source_layout_accepts_tags_and_resolved_commits():
@@ -907,7 +958,7 @@ def test_x86_only_triton_requirement_is_rejected_for_arm64():
         )
         result = run_check(root, env, "--update")
         assert result.returncode != 0
-        assert "must have one applicable exact Triton dependency" in result.stderr
+        assert "must have one applicable exact or compatible Triton dependency" in result.stderr
 
 
 def test_torch_wheel_selection_fails_closed():
@@ -965,7 +1016,7 @@ def test_torch_metadata_failures_are_fatal():
             env["FAKE_TORCH_METADATA"] = metadata
             result = run_check(root, env)
             assert result.returncode != 0, reason
-            assert "must have one applicable exact Triton dependency" in result.stderr
+            assert "must have one applicable exact or compatible Triton dependency" in result.stderr
 
 
 def test_torch_metadata_fetch_failure_is_fatal():
@@ -991,6 +1042,24 @@ def test_one_applicable_triton_pin_is_selected():
         result = run_check(root, env)
         assert result.returncode == 0, result.stderr
         assert "All components are current" in result.stdout
+
+
+def test_compatible_triton_requirement_selects_within_the_declared_range():
+    with tempfile.TemporaryDirectory() as directory:
+        root, env = setup_case(directory)
+        env["FAKE_VLLM_TAG"] = "v0.26.0"
+        env["FAKE_CURRENT_REQUIREMENTS"] = "1"
+        env["FAKE_TRITON_REQUIREMENT"] = (
+            'triton~=3.6.0; platform_system == "Linux" and '
+            'python_version < "3.15"'
+        )
+        env["FAKE_TRITON_LATEST"] = "3.9.0"
+        env["FAKE_TRITON_RELEASES"] = "3.6.0,3.6.1,3.9.0"
+
+        result = run_check(root, env)
+
+        assert result.returncode == 0, result.stderr
+        assert "current=3.6.0              torch=3.6.1" in result.stdout
 
 
 def test_configured_pytorch_index_variant_selects_matching_wheel():
@@ -1084,7 +1153,7 @@ def test_invalid_vllm_release_tag_is_fatal():
         env["FAKE_VLLM_TAG"] = "nightly"
         result = run_check(root, env)
         assert result.returncode != 0
-        assert "Could not compare vLLM versions" in result.stderr
+        assert "no stable tag matching its release metadata" in result.stderr
 
 
 def test_vllm_release_tag_cannot_inject_python():

@@ -182,6 +182,8 @@ def test_verify_image_models_workflow_is_dispatch_only_and_catalog_gated():
     # Manual dispatch form inputs for picking a tag and a model subset.
     assert "image_tag:" in workflow
     assert "models:" in workflow
+    assert "v0.33.0-gb10.1" in workflow
+    assert "TAG='v0.33.0-gb10.1'" in workflow
 
 
 def test_upload_artifact_if_no_files_found_uses_supported_values():

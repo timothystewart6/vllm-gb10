@@ -24,8 +24,8 @@ on:
     inputs:
       image_tag:
         description: >-
-          Image to verify. Either a bare tag such as v0.30.0-gb10.2 or a full
-          reference such as ghcr.io/timothystewart6/vllm-gb10:v0.30.0-gb10.2.
+          Image to verify. Either a bare tag such as v0.33.0-gb10.1 or a full
+          reference such as ghcr.io/timothystewart6/vllm-gb10:v0.33.0-gb10.1.
           Leave blank to use the default image.
         required: false
         type: string
@@ -86,7 +86,7 @@ jobs:
           set -euo pipefail
           IMAGE_REF='ghcr.io/timothystewart6/vllm-gb10'
           if [[ -z "$IMAGE_TAG_INPUT" ]]; then
-            TAG='v0.30.0-gb10.2'
+            TAG='v0.33.0-gb10.1'
           elif [[ "$IMAGE_TAG_INPUT" == "${IMAGE_REF}:"* ]]; then
             # shellcheck disable=SC2295  # $IMAGE_REF is a literal image name.
             TAG="${IMAGE_TAG_INPUT#"$IMAGE_REF":}"

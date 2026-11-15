@@ -22,9 +22,11 @@ image.
 `verify-image-models.yaml` is a separate, dispatch-only workflow (manual trigger,
 from `main` only, pinned actions). It lets a codeowner re-verify any already
 published image tag or any model subset against the catalog without rebuilding
-and without touching the release. Because model additions must be a reviewed
-change to `verify/models.json`, the catalog is the single source of truth and
-there is no ad-hoc model override path.
+and without touching the release. Leaving the image tag input blank verifies
+`latest`, the current published release. Enter a release tag to re-verify a
+specific immutable image. Because model additions must be a reviewed change to
+`verify/models.json`, the catalog is the single source of truth and there is no
+ad-hoc model override path.
 
 Both workflows invoke the same `verify/run-verify.sh`, so the shared logic lives
 in one script. GitHub Actions does not share YAML anchors across files, so each

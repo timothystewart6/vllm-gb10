@@ -163,9 +163,19 @@ maintainer must re-review the security posture before setting
 Run from a repo checkout on the runner:
 
 ```sh
+# Latest published release (the default; no IMAGE needed).
+bash verify/run-verify.sh
+
+# Or a specific published tag.
 IMAGE="ghcr.io/timothystewart6/vllm-gb10:v0.30.0-gb10.2" \
   bash verify/run-verify.sh
 ```
+
+The default image is `ghcr.io/timothystewart6/vllm-gb10:latest`. `latest` is
+promoted only after a release passes verification, so it is the current
+published release. The driver refreshes a cached `latest` before use, so local
+runs don't silently verify an older image. Set `IMAGE` to an immutable release
+tag, as shown above, when you want to test a specific version.
 
 This runs every model in `verify/models.json`, tearing down between models. To
 run a subset:

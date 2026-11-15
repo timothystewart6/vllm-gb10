@@ -24,9 +24,12 @@ on:
     inputs:
       image_tag:
         description: >-
-          Image to verify. Either a bare tag such as v0.30.0-gb10.2 or a full
-          reference such as ghcr.io/timothystewart6/vllm-gb10:v0.30.0-gb10.2.
-          Leave blank to use the default image.
+          Image to verify. Either a bare tag in the shape vX.Y.Z-gb10.N or a
+          full ghcr.io/timothystewart6/vllm-gb10 reference. Leave blank to
+          verify the current published release (the latest tag, which the
+          build pipeline promotes only after verification passes). The tag
+          deliberately carries no version number so this description never
+          goes stale.
         required: false
         type: string
       models:
@@ -80,13 +83,21 @@ jobs:
         # accepting an arbitrary reference would let a typo or malicious tag
         # execute arbitrary code inside that container. Bare tags are
         # validated: they must be a plausible vllm-gb10 release tag
-        # (v<major>.<minor>.<patch>-gb10.<n>).
+        # (v<major>.<minor>.<patch>-gb10.<n>) or `latest`.
         # A full reference is accepted only when it is exactly this image.
+        #
+        # A blank input resolves to `latest`, never to a hardcoded literal.
+        # build-image.yaml promotes `latest` only after a release passes
+        # verification, so `latest` is by construction the current published
+        # release. `workflow_dispatch` defaults cannot be computed, so any
+        # fallback version stored here (or in the description above) can only
+        # go stale and silently re-verify a months-old image.
         run: |
           set -euo pipefail
           IMAGE_REF='ghcr.io/timothystewart6/vllm-gb10'
           if [[ -z "$IMAGE_TAG_INPUT" ]]; then
-            TAG='v0.30.0-gb10.2'
+            TAG='latest'
+            echo "No image tag given; verifying ${IMAGE_REF}:latest, the current published release."
           elif [[ "$IMAGE_TAG_INPUT" == "${IMAGE_REF}:"* ]]; then
             # shellcheck disable=SC2295  # $IMAGE_REF is a literal image name.
             TAG="${IMAGE_TAG_INPUT#"$IMAGE_REF":}"
@@ -96,8 +107,9 @@ jobs:
           else
             TAG="$IMAGE_TAG_INPUT"
           fi
-          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-gb10\.[0-9]+$ ]]; then
-            echo "Refusing: invalid vllm-gb10 tag '$TAG'." >&2
+          if [[ "$TAG" != latest ]] &&
+            ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-gb10\.[0-9]+$ ]]; then
+            echo "Refusing: invalid tag '$TAG'. Use bare form v<major>.<minor>.<patch>-gb10.<n> (or 'latest')." >&2
             exit 1
           fi
           echo "IMAGE=${IMAGE_REF}:${TAG}" >> "$GITHUB_ENV"
@@ -145,6 +157,8 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Pull image
+        # For a blank input this pulls `latest`; the step log records the
+        # digest the pointer resolved to, which is the provenance for the run.
         run: docker pull "${IMAGE}"
 
       - name: Serve and bench the published image
@@ -175,8 +189,9 @@ jobs:
       - name: Upload serve and bench results
         # Preserve the functional + benchy JSON as a CI artifact so results can
         # be compared across runs without rerunning the benchmark.
-        # The encoded tag is safe for an artifact name: a full verification tag
-        # is always bare (validated above), so it contains no `/` or `:`.
+        # The encoded tag is safe for an artifact name: a verification tag is
+        # always bare (validated above), so it contains no `/` or `:`. The run
+        # SHA in the name keeps artifacts unique when the tag is `latest`.
         # actions/upload-artifact v7
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:

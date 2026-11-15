@@ -57,7 +57,10 @@ GENERATED_DIR="${DIR}/generated"
 RESULT_DIR="${VERIFY_RESULT_DIR:-${DIR}/results}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 
-IMAGE="${IMAGE:-ghcr.io/timothystewart6/vllm-gb10:v0.30.0-gb10.2}"
+# Default to `latest`: build-image.yaml promotes `latest` only after a release
+# passes verification, so it is always the current published release. A pinned
+# default here would silently verify a stale image after the next release.
+IMAGE="${IMAGE:-ghcr.io/timothystewart6/vllm-gb10:latest}"
 VLLM_PORT="${VLLM_PORT:-8010}"
 MODELS="${MODELS:-}"
 # Legacy single-model override (kept for local convenience): if MODEL is set,
@@ -207,7 +210,13 @@ trap cleanup EXIT
 
 # --- 1. ensure the image is present ----------------------------------------
 say "=== [1] image present? ==="
-if docker image inspect "${IMAGE}" >/dev/null 2>&1; then
+if [[ "${IMAGE}" == *:latest ]] && docker image inspect "${IMAGE}" >/dev/null 2>&1; then
+  # A cached `latest` can lag the registry pointer, and the whole point of the
+  # `latest` default is to verify the current published release. Refresh it.
+  echo "  refreshing cached ${IMAGE} ..."
+  docker pull "${IMAGE}"
+  pass "image ${IMAGE} refreshed"
+elif docker image inspect "${IMAGE}" >/dev/null 2>&1; then
   pass "image ${IMAGE} present locally"
 else
   echo "  pulling ${IMAGE} ..."

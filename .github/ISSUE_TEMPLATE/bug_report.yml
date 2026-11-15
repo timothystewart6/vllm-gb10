@@ -22,7 +22,7 @@ body:
     id: image-tag
     attributes:
       label: Image tag
-      placeholder: "v0.20.1-gb10.0"
+      placeholder: "v<major>.<minor>.<patch>-gb10.<N>, or latest"
     validations:
       required: true
 
@@ -46,7 +46,7 @@ body:
       label: Steps to reproduce
       placeholder: |
         docker run --rm -it --gpus all --ipc=host --network host \
-          ghcr.io/timothystewart6/vllm-gb10:v0.20.1-gb10.0 \
+          ghcr.io/timothystewart6/vllm-gb10:latest \
           vllm serve ...
     validations:
       required: true

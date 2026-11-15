@@ -130,20 +130,24 @@ tracked upstream compatibility gaps.
 
 ## Image tags
 
-A successful `main` pipeline publishes four tags.
+A successful `main` pipeline publishes four tags. The examples use the
+current `VLLM_REF` and `GB10_BUILD` values from `versions.env`, so read the
+tag shapes rather than any specific version here.
 
 | Tag | Notes |
 |---|---|
-| `v0.30.0-gb10.3` | Canonical, immutable. vLLM version + stack revision. |
-| `v0.30.0-cu13.2-torch2.13-gb10.3` | Same image with CUDA and PyTorch versions included for quick scanning. |
-| `latest` | Mutable, promoted only after model verification passes. |
+| `v<major>.<minor>.<patch>-gb10.<N>` | Canonical, immutable. vLLM version + stack revision. |
+| `v<major>.<minor>.<patch>-cu<x.y>-torch<x.y>-gb10.<N>` | Same image with CUDA and PyTorch versions included for quick scanning. |
+| `latest` | Mutable, promoted only after model verification passes. Points at the current published release. |
 | `sha-<short_sha>` | Immutable, tied to the exact Git commit that produced it. |
 
 `gb10.<N>` increments when any non-vLLM input changes, including CUDA, PyTorch,
 NCCL, FlashInfer, or lock generation changes on the same vLLM version. It resets
 to `0` when `VLLM_REF` bumps.
 
-There is intentionally no bare `v0.30.0` tag because it would be mutable.
+There is intentionally no bare `v<major>.<minor>.<patch>` tag because it would
+be mutable; `latest` is the single mutable pointer and exists precisely because
+it is promoted only after verification passes.
 
 ## Bumping versions
 

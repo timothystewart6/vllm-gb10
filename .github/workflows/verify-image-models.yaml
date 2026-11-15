@@ -24,12 +24,9 @@ on:
     inputs:
       image_tag:
         description: >-
-          Image to verify. Either a bare tag in the shape vX.Y.Z-gb10.N or a
-          full ghcr.io/timothystewart6/vllm-gb10 reference. Leave blank to
-          verify the current published release (the latest tag, which the
-          build pipeline promotes only after verification passes). The tag
-          deliberately carries no version number so this description never
-          goes stale.
+          Image to verify. Either a bare tag such as v0.30.0-gb10.2 or a full
+          reference such as ghcr.io/timothystewart6/vllm-gb10:v0.30.0-gb10.2.
+          Leave blank to verify the current published release via `latest`.
         required: false
         type: string
       models:
@@ -89,9 +86,10 @@ jobs:
         # A blank input resolves to `latest`, never to a hardcoded literal.
         # build-image.yaml promotes `latest` only after a release passes
         # verification, so `latest` is by construction the current published
-        # release. `workflow_dispatch` defaults cannot be computed, so any
-        # fallback version stored here (or in the description above) can only
-        # go stale and silently re-verify a months-old image.
+        # release. `workflow_dispatch` defaults cannot be computed, so a
+        # version used as the blank-input fallback could go stale. The
+        # release-tag examples in the description are guidance for explicit
+        # inputs only.
         run: |
           set -euo pipefail
           IMAGE_REF='ghcr.io/timothystewart6/vllm-gb10'
@@ -155,11 +153,6 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Pull image
-        # For a blank input this pulls `latest`; the step log records the
-        # digest the pointer resolved to, which is the provenance for the run.
-        run: docker pull "${IMAGE}"
 
       - name: Serve and bench the published image
         # Boots the requested image, proves it serves the catalog of cached

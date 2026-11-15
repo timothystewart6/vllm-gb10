@@ -23,11 +23,10 @@ image.
 from `main` only, pinned actions). It lets a codeowner re-verify any already
 published image tag or any model subset against the catalog without rebuilding
 and without touching the release. Leaving the image tag input blank verifies
-`latest`, the current published release; `workflow_dispatch` defaults cannot be
-computed, so a blank input, rather than a stored version string, is the only way
-for the default to track the current release automatically. Because model
-additions must be a reviewed change to `verify/models.json`, the catalog is the
-single source of truth and there is no ad-hoc model override path.
+`latest`, the current published release. Enter a release tag to re-verify a
+specific immutable image. Because model additions must be a reviewed change to
+`verify/models.json`, the catalog is the single source of truth and there is no
+ad-hoc model override path.
 
 Both workflows invoke the same `verify/run-verify.sh`, so the shared logic lives
 in one script. GitHub Actions does not share YAML anchors across files, so each

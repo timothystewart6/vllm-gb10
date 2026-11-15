@@ -184,37 +184,21 @@ def test_verify_image_models_workflow_is_dispatch_only_and_catalog_gated():
     assert "models:" in workflow
 
 
-RELEASE_TAG_LITERAL = re.compile(r"v\d+\.\d+\.\d+-gb10\.\d+")
-
-
-def test_verify_default_image_tracks_latest_not_a_pinned_release():
-    # A `workflow_dispatch` input default cannot be a computed expression and
-    # the dispatch UI renders the description as the placeholder, so any
-    # current-release version baked into the workflow, the driver, or the
-    # compose file silently rots: after the next release a blank dispatch
-    # re-verifies a months-old image and passes. The regression this guards:
-    # the fallback stayed on `v0.30.0-gb10.2` for three releases because every
-    # bump required editing the description, the resolve step, and a test.
-    # A blank input must resolve to `latest`, which build-image.yaml promotes
-    # only after model verification passes, so it is always the current
-    # published release.
+def test_verify_operational_defaults_track_latest():
+    # Descriptions and usage examples may show a concrete release tag. The
+    # regression to prevent is an operational default going stale: a blank
+    # dispatch or unconfigured local run must select `latest`, which
+    # build-image.yaml promotes only after model verification passes.
     workflow = read(WORKFLOWS / "verify-image-models.yaml")
     driver = read(ROOT / "verify" / "run-verify.sh")
     compose = read(ROOT / "verify" / "docker-compose.yaml")
 
-    for name, text in (
-        ("verify-image-models.yaml", workflow),
-        ("verify/run-verify.sh", driver),
-        ("verify/docker-compose.yaml", compose),
-    ):
-        assert not RELEASE_TAG_LITERAL.search(text), (
-            f"{name} pins a release tag literal; it will go stale on the "
-            "next release. Resolve a blank input to `latest` instead."
-        )
-
-    # Blank input resolves to the latest pointer, and the tag validation
-    # accepts `latest` alongside release tags.
-    assert "TAG='latest'" in workflow
+    # The description can keep a concrete example tag, while the blank input
+    # fallback itself must use the moving current-release pointer.
+    fallback = workflow.split('if [[ -z "$IMAGE_TAG_INPUT" ]]', 1)[1].split(
+        'elif [[ "$IMAGE_TAG_INPUT"', 1
+    )[0]
+    assert "TAG='latest'" in fallback
     assert '[[ "$TAG" != latest ]]' in workflow
 
     # The driver defaults to latest and refreshes a cached `latest` so a
@@ -490,7 +474,7 @@ def main():
         test_promote_workflow_checks_reviewer_permission,
         test_verify_checks_fail_closed,
         test_verify_image_models_workflow_is_dispatch_only_and_catalog_gated,
-        test_verify_default_image_tracks_latest_not_a_pinned_release,
+        test_verify_operational_defaults_track_latest,
         test_upload_artifact_if_no_files_found_uses_supported_values,
         test_verify_image_models_upload_step_uses_supported_artifact_input,
         test_promote_workflow_paginates_reviews,

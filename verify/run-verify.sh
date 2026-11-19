@@ -6,7 +6,10 @@
 # for readiness, runs a deterministic functional test plus optional per-model
 # suites (tool calling, reasoning, multimodal, spec-decode), then runs a
 # llama-benchy workload matrix against each served model from inside the
-# container (via uvx). Models come from verify/models.json, each carrying its
+# container (via uvx). The benchmark text is the public-domain book vendored
+# in verify/corpus/ and served to benchy over loopback HTTP via --book-url,
+# so the bench path never depends on an external website at runtime. Models
+# come from verify/models.json, each carrying its
 # own serve flags/tuning and a `tests` map that selects which optional suites
 # to run. Each model is booted, checked, and benched in turn, torn down between
 # models, so this proves the image handles several architectures, quant
@@ -40,6 +43,8 @@
 #   BENCHY_VERSION=0.4.0             pinned llama-benchy release (uvx @<version>)
 #   BENCH_CONC_PP=2048  BENCH_CONC_TG=128  concurrency workload shape
 #   BENCH_CONC="1 4"                  concurrency levels
+#   CORPUS_PORT=8399   host loopback port serving the vendored bench corpus
+#                      to the in-container benchy
 #   SKIP_BENCH=1       skip the llama-benchy stage
 #   KEEP_SERVER=1      leave the LAST container running after the checks
 #   HEALTH_TIMEOUT_MIN=20   max minutes to wait for /health per model
@@ -94,6 +99,77 @@ DETERMINISTIC_TOKEN="${DETERMINISTIC_TOKEN:-GB10_TEST_OK}"
 # validated against; bump it deliberately, review the release notes, and
 # re-validate on the runner.
 BENCHY_VERSION="${BENCHY_VERSION:-0.4.0}"
+
+# llama-benchy gets its benchmark text from the --book-url URL. Version
+# 0.4.0 fetches it with `requests` (http/https only - file:// URLs do not
+# work) and aborts the whole bench run with "Error downloading or processing
+# book" on any download failure. The upstream default points at the copy
+# hosted by gutenberg.org, which returned HTTP 503 on 2026-11-19 and failed
+# every bench stage of build-image.yaml run 44567984711. Benchmark input
+# must not be a live website, so the public-domain text is vendored under
+# verify/corpus/ (provenance + sha256: verify/corpus/README.md) and this
+# driver serves it to the in-container benchy over host loopback HTTP.
+#
+# Networking evidence: the serving container runs `network_mode: host` in
+# verify/docker-compose.yaml, and benchy runs via `docker compose exec`
+# inside that container's namespaces, so a server bound to the HOST loopback
+# at 127.0.0.1:${CORPUS_PORT} is reachable from benchy on the same localhost
+# the driver's own curl health checks already use for VLLM_PORT. The static
+# server binds loopback only, serves nothing but the corpus dir, uses the
+# preflight-required python3, and is stopped on every exit path by the
+# cleanup trap below.
+CORPUS_DIR="${DIR}/corpus"
+CORPUS_FILENAME="the-adventures-of-sherlock-holmes.txt"
+# Dedicated port that cannot collide with VLLM_PORT (the workflow uses 8010).
+CORPUS_PORT="${CORPUS_PORT:-8399}"
+CORPUS_URL="http://127.0.0.1:${CORPUS_PORT}/${CORPUS_FILENAME}"
+CORPUS_SERVER_PID=""
+
+start_corpus_server() {
+  local corpus size
+  corpus="${CORPUS_DIR}/${CORPUS_FILENAME}"
+  if [[ ! -f "${corpus}" ]]; then
+    echo "ERROR: vendored bench corpus missing: ${corpus}" >&2
+    echo "       (provenance and sha256 live in verify/corpus/README.md)" >&2
+    exit 1
+  fi
+  # The real file is ~607 KB (verify/corpus/README.md). Anything under
+  # 300 KB is a truncated or placeholder checkout that would starve
+  # benchy's corpus, so fail here instead of mid-bench.
+  size="$(wc -c < "${corpus}" | tr -dc '0-9')"
+  if [[ "${size}" -lt 300000 ]]; then
+    echo "ERROR: vendored bench corpus looks truncated: ${corpus} (${size} bytes)" >&2
+    exit 1
+  fi
+  python3 -m http.server "${CORPUS_PORT}" \
+    --bind 127.0.0.1 --directory "${CORPUS_DIR}" >/dev/null 2>&1 &
+  CORPUS_SERVER_PID=$!
+  # Fail fast on a bind/port collision before spending minutes of server
+  # startup only to surface a confusing corpus fetch failure inside benchy.
+  local _
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    if ! kill -0 "${CORPUS_SERVER_PID}" 2>/dev/null; then
+      echo "ERROR: corpus server exited on start (is port ${CORPUS_PORT} in use?)" >&2
+      CORPUS_SERVER_PID=""
+      exit 1
+    fi
+    if curl -sf --max-time 2 -o /dev/null "${CORPUS_URL}"; then
+      return 0
+    fi
+    sleep 0.3
+  done
+  echo "ERROR: corpus server not reachable at ${CORPUS_URL}" >&2
+  stop_corpus_server
+  exit 1
+}
+
+stop_corpus_server() {
+  if [[ -n "${CORPUS_SERVER_PID}" ]]; then
+    kill "${CORPUS_SERVER_PID}" 2>/dev/null || true
+    wait "${CORPUS_SERVER_PID}" 2>/dev/null || true
+    CORPUS_SERVER_PID=""
+  fi
+}
 
 # Publish the config to the environment so `docker compose` can interpolate
 # these values (compose reads the child process environment, not unexported
@@ -173,6 +249,7 @@ echo "  port:        ${VLLM_PORT}"
 echo "  hf_cache:    ${HF_CACHE}"
 echo "  result_dir:  ${RESULT_DIR}"
 echo "  benchy:      uvx llama-benchy@${BENCHY_VERSION} (inside container)"
+echo "  bench corpus: ${CORPUS_URL} (vendored, loopback)"
 echo "  bench_pp:    ${BENCH_PP}"
 echo "  bench_tg:    ${BENCH_TG}"
 echo "  bench_conc:  ${BENCH_CONC} (pp=${BENCH_CONC_PP}/tg=${BENCH_CONC_TG})"
@@ -201,12 +278,21 @@ mkdir -p "${RESULT_DIR}" "${GENERATED_DIR}"
 chmod 0777 "${RESULT_DIR}"
 
 cleanup() {
+  # The corpus server must go away on every exit path, including early
+  # failures before the model loop ever starts.
+  stop_corpus_server
   if [[ "${KEEP_SERVER}" != "1" ]]; then
     say "stopping server"
     docker compose -f "${COMPOSE_FILE}" down --remove-orphans >/dev/null 2>&1 || true
   fi
 }
 trap cleanup EXIT
+
+# Serve the vendored corpus before anything else runs so a port collision
+# or a missing corpus file surfaces immediately, not after a model has
+# burned minutes of startup time on the runner.
+start_corpus_server
+pass "vendored bench corpus served at ${CORPUS_URL}"
 
 # --- 1. ensure the image is present ----------------------------------------
 say "=== [1] image present? ==="
@@ -479,6 +565,7 @@ for MODEL_NAME in ${MODEL_LIST}; do
           --base-url "${BASE_URL}" \
           --model "${MODEL_ID}" \
           --tokenizer "${BENCH_TOKENIZER}" \
+          --book-url "${CORPUS_URL}" \
           --pp ${BENCH_PP_CLAMPED} \
           --tg ${BENCH_TG} \
           --depth 0 \
@@ -519,6 +606,7 @@ for MODEL_NAME in ${MODEL_LIST}; do
             --base-url "${BASE_URL}" \
             --model "${MODEL_ID}" \
             --tokenizer "${BENCH_TOKENIZER}" \
+            --book-url "${CORPUS_URL}" \
             --pp "${BENCH_CONC_PP}" \
             --tg "${BENCH_CONC_TG}" \
             --depth 0 \

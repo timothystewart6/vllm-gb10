@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Contract tests for the CI serve+bench verify harness under verify/."""
 
+import hashlib
 import json
 import re
 import subprocess
@@ -545,6 +546,122 @@ def test_render_verify_report_compact_output():
         assert mod.render(tmpdir) == ""
 
 
+def test_bench_stages_use_vendored_loopback_corpus():
+    """The bench stages must never depend on an external website for their
+    benchmark text. A gutenberg.org 503 outage took down the whole bench
+    matrix of build-image.yaml run 44567984711 (2026-11-19, 8 bench failures):
+    benchy 0.4.0 fetches --book-url with requests at startup and exit(1)s on
+    any download failure. The driver must therefore serve verify/corpus over a
+    loopback-only bound HTTP port, pass --book-url to every uvx llama-benchy
+    command it builds, fail fast on a missing/truncated corpus file, and stop
+    the server on every exit path."""
+    driver = read(VERIFY / "run-verify.sh")
+    lines = driver.splitlines()
+
+    # Named config: corpus dir + dedicated port that cannot collide with the
+    # server port space (the workflow pins VLLM_PORT=8010).
+    assert 'CORPUS_DIR="${DIR}/corpus"' in driver
+    assert 'CORPUS_PORT="${CORPUS_PORT:-8399}"' in driver
+    assert 'CORPUS_URL="http://127.0.0.1:${CORPUS_PORT}/${CORPUS_FILENAME}"' in driver
+
+    # Static server binds loopback only and serves nothing but the corpus dir.
+    assert "--bind 127.0.0.1" in driver
+    assert '--directory "${CORPUS_DIR}"' in driver
+
+    # Reachability contract: benchy runs via `docker compose exec` inside the
+    # serving container, and the compose file gives that container host
+    # networking, so the driver's host loopback server is localhost for the
+    # in-container benchy. Pin both sides so the mechanism cannot silently
+    # drift if the compose network mode ever changes.
+    compose = read(VERIFY / "docker-compose.yaml")
+    assert "network_mode: host" in compose
+    assert "network_mode: host" in driver
+
+    # Every benchy command construction must override the upstream gutenberg
+    # default with the loopback corpus URL. Walk the actual backslash-continued
+    # command blocks (documenting the historical outage in comments is fine;
+    # a bare uvx invocation without --book-url is not).
+    bench_calls = 0
+    for i, line in enumerate(lines):
+        if 'uvx "llama-benchy@' not in line:
+            continue
+        bench_calls += 1
+        cmd = line
+        j = i
+        while cmd.rstrip().endswith("\\"):
+            j += 1
+            assert j < len(lines), f"unterminated bench command at line {i + 1}"
+            cmd += " " + lines[j].strip()
+        assert '--book-url "${CORPUS_URL}"' in cmd, (
+            f"benchy invocation near driver line {i + 1} must pass --book-url "
+            f"pointing at the loopback corpus server"
+        )
+    assert bench_calls == 2, (
+        f"expected exactly 2 pinned benchy invocations (pp/tg matrix + "
+        f"concurrency), found {bench_calls}"
+    )
+
+    # No live gutenberg URL may survive in an executable (non-comment) line.
+    for i, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if stripped.startswith("#") or "gutenberg" not in stripped.lower():
+            continue
+        raise AssertionError(
+            f"driver line {i} still references gutenberg outside a comment: {stripped}"
+        )
+
+    # Fail-fast guards run before the corpus is served, and the corpus server
+    # starts before any benchy invocation can run.
+    assert "vendored bench corpus missing" in driver
+    assert "looks truncated" in driver
+    assert driver.index("\nstart_corpus_server\n") < driver.index('uvx "llama-benchy@')
+
+    # Cleanup: the EXIT trap fires cleanup(), and cleanup stops the corpus
+    # server; stop_corpus_server actually kills the recorded PID.
+    assert "trap cleanup EXIT" in driver
+    cleanup_body = driver[driver.index("cleanup() {"):driver.index("trap cleanup EXIT")]
+    assert "stop_corpus_server" in cleanup_body, (
+        "cleanup() must stop the corpus server so it dies on every exit path"
+    )
+    stop_body = re.search(r"stop_corpus_server\(\) \{.*?\n\}", driver, re.DOTALL)
+    assert stop_body and "kill " in stop_body.group(0), (
+        "stop_corpus_server must kill the running corpus server process"
+    )
+
+
+def test_vendored_corpus_and_provenance_are_complete():
+    """The vendored bench text must really be the ~600 KB 1892 public-domain
+    Sherlock Holmes book with its Gutenberg markers intact, because benchy
+    truncates everything before the START marker and exit(1)s on any corpus
+    problem, and this vendored file is now the whole bench input. Its
+    provenance (author, ebook id 1661, public-domain status, retrieval date,
+    current sha256) must be recorded in verify/corpus/README.md."""
+    corpus = VERIFY / "corpus" / "the-adventures-of-sherlock-holmes.txt"
+    assert corpus.is_file(), "missing vendored bench corpus under verify/corpus/"
+    raw = corpus.read_bytes()
+    # The real text is ~607 KB; this bounds a truncated or placeholder file
+    # while leaving room for a future full-collection edition.
+    assert 300_000 <= len(raw) <= 2_000_000, f"corpus size {len(raw)} looks wrong"
+
+    # The upstream 1661-0.txt ships a UTF-8 BOM; utf-8-sig mirrors how
+    # requests/benchy see the decoded text.
+    text = raw.decode("utf-8-sig")
+    upper = text.upper()
+    assert "ADVENTURES OF SHERLOCK HOLMES" in upper
+    assert "CONAN DOYLE" in upper
+    # benchy scans for exactly this substring; the END marker proves the copy
+    # is the complete book, not a cut-off download.
+    assert "*** START OF THE PROJECT GUTENBERG EBOOK" in text
+    assert "*** END OF THE PROJECT GUTENBERG EBOOK" in text
+    assert "SCANDAL IN BOHEMIA" in upper, "corpus is not the short-story collection"
+
+    readme = read(VERIFY / "corpus" / "README.md").lower()
+    sha = hashlib.sha256(raw).hexdigest()
+    assert sha in readme, "verify/corpus/README.md must record the current sha256"
+    for fragment in ("arthur conan doyle", "1661", "public domain", "2026-11-19", "1892"):
+        assert fragment in readme, f"corpus README missing provenance: {fragment!r}"
+
+
 def main():
     tests = [
         test_verify_harness_files_exist,
@@ -557,6 +674,8 @@ def main():
         test_driver_stages_are_stable_and_deterministic,
         test_driver_runs_functional_tests,
         test_driver_bench_workload_and_lifecycle,
+        test_bench_stages_use_vendored_loopback_corpus,
+        test_vendored_corpus_and_provenance_are_complete,
         test_workflow_verify_job_wires_serve_and_bench,
         test_no_new_external_actions_introduced,
         test_gitignore_covers_generated_overrides,

@@ -23,6 +23,7 @@ runtime kernels, not just "a model starts and says hello."
 | `model-tests.py` | Host functional test suite (python3 stdlib only). Deterministic text + streaming always run; tool/reasoning/multimodal are gated by the catalog `tests` map. |
 | `run-verify.sh` | CI-safe driver: pull, up, wait for /health, `/v1/models`, functional tests, spec-decode probe, in-container benchy + concurrency bench, recorded metrics, clean teardown, next-model-lifecycle check, aggregated summary. Loops the model catalog. |
 | `summarize-bench.py` | Aggregates per-model bench + meta JSON into a combined `summary-<stamp>.json` and `.md`. |
+| `corpus/` | Public-domain llama-benchy benchmark text vendored into the repo (provenance + sha256 in `corpus/README.md`), served to benchy over loopback so the bench stages need no external website. |
 | `fixtures/red-square.png` | 128x128 solid red PNG used by the multimodal test (regenerate with `fixtures/make_red_square.py`). |
 | `.env.example` | Local-run overrides. No `.env` is committed. |
 
@@ -104,7 +105,8 @@ For each model, in order:
    - `multimodal`: send the red square, ask the color, require `red`.
    - `spec_decode`: a generation probe against the served model while
      speculative decoding is configured (Lightning).
-7. `llama-benchy` (in-container) pp/tg workload: prompt sizes
+7. `llama-benchy` (in-container) pp/tg workload against the vendored public
+   domain corpus (see "In-container benchy corpus" below): prompt sizes
    `128 2048 8192 32768` x generation sizes `32 128`, 1 warmup + several
    measured runs (default `BENCH_RUNS=3`), prompt caching disabled
    (`--no-cache`), exact output length (`--exact-tg`). Prompt sizes whose
@@ -188,9 +190,9 @@ Legacy single-model form (`MODEL=<name>` naming a catalog entry) still works.
 
 Env overrides: `MODELS`, `VLLM_PORT`, `HF_CACHE`, `VLLM_CACHE`,
 `VERIFY_RESULT_DIR`, `BENCH_RUNS`, `BENCH_PP`, `BENCH_TG`, `BENCH_CONC_PP`,
-`BENCH_CONC_TG`, `BENCH_CONC`, `DETERMINISTIC_TOKEN`, `KEEP_SERVER`,
-`SKIP_BENCH`, `HEALTH_TIMEOUT_MIN`, `CATALOG`. See the header comment in
-`run-verify.sh`.
+`BENCH_CONC_TG`, `BENCH_CONC`, `CORPUS_PORT`, `DETERMINISTIC_TOKEN`,
+`KEEP_SERVER`, `SKIP_BENCH`, `HEALTH_TIMEOUT_MIN`, `CATALOG`. See the header
+comment in `run-verify.sh`.
 
 A successful run prints `VERIFY_PASS`. Results land in `results/` (bind-mounted
 at `/results` in the container): deterministic/streaming/tool/reasoning/
@@ -217,3 +219,26 @@ served model's snapshot dir inside the container
 loads `tokenizer.json` directly from disk with no network access. Each model's
 snapshot dir exists because the same NFS HF cache is mounted both for serving
 and for the in-container bench.
+
+## In-container benchy corpus
+
+`llama-benchy` gets its benchmark text from the `--book-url` option, and 0.4.0
+fetches it with `requests` at startup (http/https only; `file://` URLs do not
+work, and any download failure exits the whole bench run). The upstream
+default points at the Project Gutenberg copy of "The Adventures of Sherlock
+Holmes" (ebook 1661). When gutenberg.org served HTTP 503 on 2026-11-19, every
+bench stage of build-image.yaml run 44567984711 failed with
+`Error downloading or processing book: 503`, so the harness must not treat an
+external website as benchmark input.
+
+The public-domain text is therefore vendored at
+`verify/corpus/the-adventures-of-sherlock-holmes.txt` (provenance, mirror
+history, and sha256 in `verify/corpus/README.md`), and `run-verify.sh` serves
+it with `python3 -m http.server` bound to `127.0.0.1` on `CORPUS_PORT`
+(default 8399, dedicated so it cannot collide with `VLLM_PORT`). The serving
+container uses `network_mode: host`, so the in-container benchy reaches that
+loopback URL over the host network namespace with no internet access and no
+extra mounts, and both bench stages pass
+`--book-url "http://127.0.0.1:${CORPUS_PORT}/<filename>"`. The server exposes
+nothing outside the corpus directory and is stopped by the driver's exit
+cleanup trap on every path, including early failures.
